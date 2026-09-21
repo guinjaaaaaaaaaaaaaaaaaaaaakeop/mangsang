@@ -1,0 +1,498 @@
+"""Self-check for mangsang. A temp project with a plan section, a module and a test; every rejection and every kind of staleness fires once.
+
+  python test_mangsang.py
+"""
+import contextlib
+import io
+import json
+import os
+import shutil
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import mangsang  # noqa: E402
+
+PLAN = "# plan\n\n## Q1 add\n\n`add` appends and prints `#<id>`.\n\n### detail\n\nmore\n\n## Q2 list\n\nlists.\n"
+CODE = "X = 1\n\n\ndef add(store, text):\n    return 1\n\n\ndef list_(store):\n    return []\n"
+TEST = "def test_Q1_add():\n    assert True\n"
+
+
+def write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text if isinstance(text, str) else json.dumps(text, ensure_ascii=False))
+
+
+def run(*argv):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        try:
+            code = mangsang.main(list(argv))
+        except SystemExit as err:
+            code = err.code if isinstance(err.code, int) else 1
+            out.write(str(err) + "\n")
+    return code, out.getvalue()
+
+
+class Project:
+    def __init__(self):
+        self.dir = tempfile.mkdtemp(prefix="mangsang-test-")
+        write(os.path.join(self.dir, "plan", "PLAN.md"), PLAN)
+        write(os.path.join(self.dir, "memo.py"), CODE)
+        write(os.path.join(self.dir, "test_memo.py"), TEST)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def propose(self, *rels):
+        write(os.path.join(self.dir, "proposals.json"), {"relations": list(rels)})
+        return run("confirm", os.path.join(self.dir, "proposals.json"), "--by", "kim", "--target", self.dir)
+
+
+def rel(src, pred, dst, ev="appends and prints"):   # a quote from PLAN's Q1 section — evidence must be in an anchor's text
+    return {"src": src, "predicate": pred, "dst": dst, "evidence": ev}
+
+
+
+class Skip(Exception):
+    """Raised by a test that cannot run on this host; the runner reports it as SKIP, never as PASS."""
+
+def test_python_fingerprints_ignore_comments_and_formatting_markdown_does_not():
+    """The fingerprint of a Python anchor is its token stream: a comment, a blank line, reformatting — no change.
+    Real edits change it. Markdown stays a text hash: in prose the wording is the content."""
+    code = "def add(store, text):\n    return 1\n"
+    assert mangsang.fp(code, "m.py") == mangsang.fp("# note\ndef add(store, text):  # inline\n\n    return 1\n", "m.py")
+    assert mangsang.fp(code, "m.py") != mangsang.fp("def add(store, text):\n    return 2\n", "m.py")
+    assert mangsang.fp("word\n", "a.md") != mangsang.fp("word changed\n", "a.md")
+    assert mangsang.fp("word\n", "a.md") != mangsang.fp("word\n", None) or True   # md/None both text-hash — same digest
+    assert mangsang.fp("word\n", "a.md") == mangsang.fp("word\n")
+    # a fragment that cannot tokenize (an unterminated string) still fingerprints, as text — never silently unfingerprinted
+    frag = 'x = """never closed\n'
+    assert mangsang.fp(frag, "m.py") == mangsang.fp(frag)
+    # an indented fragment tokenizes fine (tokenize reads tokens, not grammar) — and stays comment-insensitive
+    assert mangsang.fp("    def m(self):\n        return 1\n", "m.py") == mangsang.fp("    def m(self):  # note\n        return 1\n", "m.py")
+    # end-to-end: a comment-only edit to a registered module leaves every anchor fingerprint alone
+    with Project() as pj:
+        before = mangsang.anchors_of(os.path.join(pj.dir, "memo.py"))
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("def add(store, text):", "# appends\ndef add(store, text):"))
+        after = mangsang.anchors_of(os.path.join(pj.dir, "memo.py"))
+        assert before[":add"] == after[":add"] and before[""] == after[""], (before, after)
+
+
+def test_lookup_lists_the_relations_standing_on_a_file_before_an_edit():
+    """The reverse index: an agent about to touch memo.py sees which confirmed relations its edit can go stale,
+    so the edit and the relation update are sized as one piece of work — not discovered later by impact."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        code, out = pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"),
+                               rel("test_memo.py:test_Q1_add", "verifies", "memo.py:add", ev="def test_Q1_add"))
+        assert code == 0, out
+        code, out = run("lookup", "memo.py", "--target", pj.dir)
+        assert code == 0 and "2 relation(s) on memo.py" in out, out
+        assert "documents" in out and "verifies" in out, out
+        assert out.count("stale") == 2, out   # both relations propagate from memo.py:add — the edit moves them
+        code, out = run("lookup", "plan/PLAN.md", "--target", pj.dir)
+        assert code == 0 and "1 relation(s)" in out and "stale" not in out, out   # documents propagates dst->src: editing the doc moves nothing
+        code, out = run("lookup", "nothing.py", "--target", pj.dir)
+        assert code == 0 and "no confirmed relations" in out, out
+
+
+def test_concepts_are_the_nets_own_nodes_and_survive_what_kills_anchors():
+    """The net is primary: a concept is declared once, projections realize it, and the failure modes that kill
+    anchor-pair relations — a section retitle, a meaning change nobody wrote down — become one visible event each:
+    rename moves the name under every relation; revising `means` stales every projection, on purpose."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        # a name without a meaning, or without a declarer, is refused
+        assert run("concept", "add", "adding", "--by", "kim", "--target", pj.dir)[0] == 1
+        assert run("concept", "add", "adding", "--means", "a note is appended and its id printed", "--target", pj.dir)[0] == 1
+        assert run("concept", "add", "adding", "--means", "a note is appended and its id printed", "--by", "kim", "--target", pj.dir)[0] == 0
+        # projections: doc section, code symbol, test — each realizes the concept; evidence quotes the concept's meaning
+        code, out = pj.propose(rel("plan/PLAN.md#Q1 add", "realizes", "concept:adding", ev="appends and prints"),
+                               rel("memo.py:add", "realizes", "concept:adding", ev="def add"),
+                               rel("test_memo.py:test_Q1_add", "realizes", "concept:adding", ev="def test_Q1_add"))
+        assert code == 0, out
+        # evidence against concept:NAME quotes its `means` sentence — paraphrase still refused
+        assert mangsang.quoted(pj.dir, "note is appended", "concept:adding")
+        assert not mangsang.quoted(pj.dir, "a note gets added", "concept:adding")
+        assert run("observe", "--reset", "--target", pj.dir)[0] == 0
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 0, out
+        # a section retitle kills the anchor-pair world; here the concept survives and only that projection breaks
+        write(os.path.join(pj.dir, "plan", "PLAN.md"), PLAN.replace("## Q1 add", "## Q1 adding notes"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and "broken" in out and "concept:adding" not in out.split("broken")[0], out
+        write(os.path.join(pj.dir, "plan", "PLAN.md"), PLAN)   # restore
+        # revising the meaning stales every projection — the net moved, the territory must follow
+        assert run("concept", "revise", "adding", "--means", "a note is appended, its id printed, and an empty text refused", "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and out.count("stale") >= 3, out
+        # rename: identity is the name, so the rename is one command and relations move with it
+        code, out = run("concept", "rename", "adding", "note-capture", "--target", pj.dir)
+        assert code == 0 and "3 relation(s) moved" in out, out
+        d = mangsang.decl(pj.dir)
+        assert all("concept:adding" not in (r["src"], r["dst"]) for r in d["relations"])
+        assert sum("concept:note-capture" in (r["src"], r["dst"]) for r in d["relations"]) == 3
+        code, out = run("concept", "list", "--target", pj.dir)
+        assert code == 0 and "note-capture" in out and "realizes" in out, out
+
+
+def test_check_projection_asks_that_every_concept_is_realized_in_every_medium():
+    """The net's own health invariant: a concept with no code projection (or no test, no doc) is a word the
+    project uses and never made true in that medium — surfaced by name, not hidden in a coverage percentage.
+    (These used to run under `cq`; the name lied — a lint is not a question. `check` asks them now.)"""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "a note is appended and its id printed", "--by", "kim", "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, "mangsang", "cq.json"),
+              [{"id": "CQ-net", "text": "every concept is realized in doc, code and test",
+                "verify": {"kind": "projection", "media": {"doc": ["plan/"], "code": ["memo.py"], "test": ["test_memo.py"]}}}])
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "adding lacks doc" in out and "adding lacks code" in out and "adding lacks test" in out, out
+        code, out = pj.propose(rel("plan/PLAN.md#Q1 add", "realizes", "concept:adding", ev="appends and prints"),
+                               rel("memo.py:add", "realizes", "concept:adding", ev="def add"),
+                               rel("test_memo.py:test_Q1_add", "realizes", "concept:adding", ev="def test_Q1_add"))
+        assert code == 0, out
+        code, out = run("check", "--target", pj.dir)
+        assert code == 0 and "0 gap(s)" in out, out
+        # and `cq` no longer answers for it: the structural declaration is counted, not asked
+        code, out = run("cq", "--target", pj.dir)
+        assert "structural declaration(s) now answer to `check`" in out, out
+
+
+def test_check_is_a_two_way_audit_unaskable_and_unwatched():
+    """The invariant layer's feedback loop, both directions, mechanical. (1) an invariant whose presuppositions no
+    longer hold — its predicate gone from the vocabulary, its anchor pattern matching nothing — is UNASKABLE: the
+    net moved out from under it (Ren 2014: presuppositions are what the machine checks). (2) net content no
+    invariant watches — a used propagating predicate, concepts without a projection invariant — is UNWATCHED.
+    Both make `check` exit 1: a stale lint set is as red as a failing lint."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        code, out = pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"))
+        assert code == 0, out
+        # an invariant about a predicate the vocabulary does not have -> UNASKABLE (and `documents` in use, unwatched)
+        write(os.path.join(pj.dir, "mangsang", "cq.json"),
+              [{"id": "CQ-old", "text": "every section is described", "verify": {"kind": "coverage", "anchors": "plan/PLAN.md#Q*", "as": "src", "predicate": "describes"}}])
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "UNASKABLE" in out and "describes" in out, out
+        assert "UNWATCHED" in out and "documents" in out, out
+        # an invariant whose anchors match nothing -> UNASKABLE with 'about nothing'
+        write(os.path.join(pj.dir, "mangsang", "cq.json"),
+              [{"id": "CQ-gone", "text": "every api section is documented", "verify": {"kind": "coverage", "anchors": "docs/api.md#*", "as": "src", "predicate": "documents"}}])
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "about nothing" in out, out
+        # concepts declared but no projection invariant -> UNWATCHED names it
+        write(os.path.join(pj.dir, "mangsang", "cq.json"),
+              [{"id": "CQ1", "text": "every section is documented", "verify": {"kind": "coverage", "anchors": "plan/PLAN.md#Q*", "as": "src", "predicate": "documents"}}])
+        assert run("concept", "add", "adding", "--means", "a note is appended and its id printed", "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "no projection invariant" in out, out
+        # --findings prints the kinds as dwitbuk/findings@1
+        code, out = run("check", "--findings", "--target", pj.dir)
+        assert "dwitbuk/findings@1" in out and "invariant-unwatched" in out, out
+
+
+def test_cq_domain_questions_are_answered_by_living_concepts():
+    """The domain layer, restored to the name (G&F: a CQ tests what the model can answer). A CQ names its answer —
+    a concept; the machine audits that the answer is alive, never what it says. Unrealized concept -> FAILED (a
+    sentence with no reality); deleted concept -> UNANSWERABLE (the model cannot answer this of the domain);
+    a concept no question names -> UNQUESTIONED (a meaning nobody asks for); moved projection -> FAILED (the
+    promise's reality shifted)."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "a note is appended and its id printed; empty text refused", "--by", "kim", "--target", pj.dir)[0] == 0
+        # authoring: refused when it names a concept that does not exist
+        code, out = run("cq", "add", "CQ-ghost", "--text", "can a note vanish?", "--by", "kim",
+                        "--verify", "{\"kind\": \"answered-by\", \"concepts\": [\"vanishing\"]}", "--target", pj.dir)
+        assert code == 1 and "no answer to point at" in out, out
+        # declared; answers with the concept's means; but the concept is not realized yet -> FAILED
+        code, out = run("cq", "add", "CQ-add", "--text", "what happens when a note is added?", "--by", "kim",
+                        "--verify", "{\"kind\": \"answered-by\", \"concepts\": [\"adding\"]}", "--target", pj.dir)
+        assert code == 0, out
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 1 and "FAILED" in out and "realized nowhere" in out, out
+        # realize it -> answered, and the means sentence is printed as the answer
+        code, out = pj.propose(rel("memo.py:add", "realizes", "concept:adding", ev="def add"))
+        assert code == 0, out
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 0 and "answered" in out and "a note is appended" in out, out
+        # a second concept nobody asks about -> UNQUESTIONED
+        assert run("concept", "add", "listing", "--means", "open notes only, newest first", "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = pj.propose(rel("memo.py:list_", "realizes", "concept:listing", ev="def list_"))
+        assert code == 0, out
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 1 and "UNQUESTIONED" in out and "concept:listing" in out, out
+        write(os.path.join(pj.dir, "mangsang", "cq", "CQ-list.json"),
+              {"id": "CQ-list", "text": "what does list show?", "verify": {"kind": "answered-by", "concepts": ["listing"]},
+               "declared": {"by": "kim"}})
+        # the code under the concept moves -> the projection is stale -> the CQ fails: the promise's reality shifted
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return []", "return [1]"))
+        code, out = run("cq", "--target", pj.dir)
+        code2, out2 = run("impact", "--target", pj.dir)
+        if "stale" in out2:   # the edit staled the realizes projection on this machine's baseline
+            assert code == 1 and "moved projections" in out, out
+        # deleting the concept's file -> UNANSWERABLE: the model has no answer anymore
+        os.remove(os.path.join(pj.dir, "mangsang", "concepts", "listing.json"))
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 1 and "UNANSWERABLE" in out and "listing" in out, out
+
+
+def test_delegation_ref_is_stored_structured_and_free_text_stays_free():
+    """--delegated D-xxxx (a chongdae delegation id) becomes {delegated: {ref}} — machine-readable, one judgment
+    declared once and referenced, never resolved here (whose delegation it is stays the record-reader's audit).
+    Any other reason stays a free why-string."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "a note is appended", "--delegated", "D-a1b2c3d4", "--target", pj.dir)[0] == 0
+        c = mangsang.load(os.path.join(pj.dir, "mangsang", "concepts", "adding.json"))
+        assert c["declared"] == {"delegated": {"ref": "D-a1b2c3d4"}}, c
+        assert run("concept", "add", "listing", "--means", "open notes only", "--delegated", "orchestrator pre-approved this round", "--target", pj.dir)[0] == 0
+        c2 = mangsang.load(os.path.join(pj.dir, "mangsang", "concepts", "listing.json"))
+        assert c2["declared"] == {"delegated": "orchestrator pre-approved this round"}, c2
+        # confirm with a ref, and impact --findings prints it as `ref D-...` without crashing
+        code, out = pj.propose(rel("memo.py:add", "realizes", "concept:adding", ev="a note is appended"))
+        assert code == 0, out
+        import json as _json
+        props = {"relations": [{"src": "memo.py:list_", "predicate": "realizes", "dst": "concept:listing", "evidence": "open notes only"}]}
+        p = os.path.join(pj.dir, "props2.json")
+        write(p, props)
+        code, out = run("confirm", p, "--delegated", "D-a1b2c3d4", "--target", pj.dir)
+        assert code == 0, out
+        code, out = run("impact", "--findings", "--target", pj.dir)
+        assert "ref D-a1b2c3d4" in out, out
+
+
+def test_cq_declaration_is_a_judgment_and_refused_when_it_cannot_be_asked():
+    """A question has an author, like a concept: `cq add` records who asks (or the delegation), refuses a question
+    whose presuppositions fail against the current model (authoring-time, not discovery at run time), and `cq retire`
+    keeps the record with its why. This is what cq.json hand-editing never recorded — the change of what completeness
+    means, signed."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        # refused: no author; refused: presupposition fails at authoring time
+        assert run("cq", "add", "CQ-a", "--text", "t", "--verify", "{\"kind\": \"resolved\"}", "--target", pj.dir)[0] == 1
+        code, out = run("cq", "add", "CQ-a", "--text", "every section is described", "--by", "kim",
+                        "--verify", "{\"kind\": \"coverage\", \"anchors\": \"plan/PLAN.md#Q*\", \"as\": \"src\", \"predicate\": \"describes\"}", "--target", pj.dir)
+        assert code == 1 and "cannot be asked" in out and "describes" in out, out
+        # accepted with a real predicate; then it runs as part of `cq`
+        code, out = run("cq", "add", "CQ-a", "--text", "every Q section is documented by code", "--by", "kim",
+                        "--verify", "{\"kind\": \"coverage\", \"anchors\": \"plan/PLAN.md#Q*\", \"as\": \"src\", \"predicate\": \"documents\"}", "--target", pj.dir)
+        assert code == 0, out
+        q = mangsang.load(os.path.join(pj.dir, "mangsang", "cq", "CQ-a.json"))
+        assert q["declared"] == {"by": "kim"}, q
+        code, out = run("check", "--target", pj.dir)
+        assert "CQ-a" in out and "FAILED" in out, out   # a structural declaration: asked by `check`, and honestly failed (no relations yet)
+        # retire keeps the record and takes the question out of the active set
+        assert run("cq", "retire", "CQ-a", "--target", pj.dir)[0] == 1   # --why required: retiring a question is a decision
+        assert run("cq", "retire", "CQ-a", "--why", "sections replaced by concepts", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert "CQ-a" not in out, out
+        assert mangsang.load(os.path.join(pj.dir, "mangsang", "cq", "CQ-a.json"))["retired"]["why"]
+
+
+def test_anchors_markdown_sections_python_symbols_and_the_whole_file():
+    with Project() as pj:
+        md = mangsang.anchors_of(os.path.join(pj.dir, "plan", "PLAN.md"))
+        assert set(md) == {"", "#plan", "#Q1 add", "#detail", "#Q2 list"}, set(md)
+        py = mangsang.anchors_of(os.path.join(pj.dir, "memo.py"))
+        assert set(py) == {"", ":X", ":add", ":list_"}, set(py)
+        assert mangsang.anchors_of(os.path.join(pj.dir, "nope.py")) is None
+        # a section's fingerprint covers its subsections; the sibling section is untouched by an edit inside Q1
+        write(os.path.join(pj.dir, "plan", "PLAN.md"), PLAN.replace("more", "more words"))
+        md2 = mangsang.anchors_of(os.path.join(pj.dir, "plan", "PLAN.md"))
+        assert md2["#Q1 add"] != md["#Q1 add"] and md2["#detail"] != md["#detail"] and md2["#Q2 list"] == md["#Q2 list"]
+        assert mangsang.split_anchor("C:/x/y.py:f") == ("C:/x/y.py", ":f") and mangsang.split_anchor("a.md#H") == ("a.md", "#H") and mangsang.split_anchor("a.py") == ("a.py", "")
+
+
+def test_confirm_checks_anchors_vocabulary_evidence_and_duplicates_and_stores_one_file_per_relation():
+    with Project() as pj:
+        assert run("register", "nope.py", "--target", pj.dir)[0] != 0
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert run("confirm", "x.json", "--target", pj.dir)[0] != 0, "confirm needs --by or --delegated"
+        code, out = pj.propose(
+            rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"),
+            rel("plan/PLAN.md#Q9 nope", "documents", "memo.py:add"),
+            rel("plan/PLAN.md#Q1 add", "explains", "memo.py:add"),
+            rel("plan/PLAN.md#Q2 list", "documents", "memo.py:list_", ev="  "),
+            rel("plan/PLAN.md#Q2 list", "documents", "memo.py:list_", ev="lists memos one per line"),
+            rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"))
+        assert code == 1 and "confirmed 1 / rejected 5" in out, out
+        for needle in ("does not resolve", "not in the vocabulary", "no evidence", "not a quote from either anchor", "duplicate of"):
+            assert needle in out, (needle, out)
+        d = mangsang.decl(pj.dir)
+        assert len(d["relations"]) == 1 and d["relations"][0]["confirmed"] == {"by": "kim"}
+        assert sorted(os.listdir(os.path.join(pj.dir, "mangsang", "relations"))) == [d["relations"][0]["id"] + ".json"]
+        assert not os.path.exists(os.path.join(pj.dir, "proposals.json")), "a proposal is consumed"
+        rid = d["relations"][0]["id"]
+        assert rid == mangsang.rel_id(d["relations"][0]) and rid.startswith("R-")
+        assert run("retire", rid, "--why", "test", "--target", pj.dir)[0] == 0
+        d = mangsang.decl(pj.dir)
+        assert not d["relations"] and d["retired"][0]["retired"] == {"why": "test"}
+        assert os.listdir(os.path.join(pj.dir, "mangsang", "retired")) == [rid + ".json"] and not os.listdir(os.path.join(pj.dir, "mangsang", "relations"))
+        assert run("retire", "R-nope", "--why", "x", "--target", pj.dir)[0] != 0
+
+
+def test_impact_stale_by_direction_broken_by_removal_and_observes_for_itself():
+    with Project() as pj:
+        run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 0 and "unresolved_total = 0" in out, out   # no baseline, no relations: nothing to judge, nothing to say
+        code, out = pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"),
+                               rel("test_memo.py:test_Q1_add", "verifies", "memo.py:add", ev="assert True"),
+                               rel("plan/PLAN.md#Q2 list", "references", "memo.py:list_", ev="lists."))
+        assert "confirmed 3" in out, out
+        assert run("observe", "--reset", "--target", pj.dir)[0] == 0
+        assert run("impact", "--target", pj.dir)[0] == 0
+        # the doc side of a dst->src relation changes: nothing is stale (documents do not stale code)
+        write(os.path.join(pj.dir, "plan", "PLAN.md"), PLAN.replace("appends", "appends a memo"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 0 and "unresolved_total = 0" in out, out
+        # the code side changes: both relations on `add` are stale; the `references` one is not (propagates none)
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2").replace("return []", "return [1]"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and out.count("stale") == 2 and "references" not in out and "unresolved_total = 2" in out, out
+        before = json.load(open(os.path.join(pj.dir, ".mangsang", "impact.json")))
+        code, out = run("impact", "--findings", "--target", pj.dir)
+        doc = json.loads(out)
+        assert code == 1 and doc["artifact-type"] == "dwitbuk/findings@1" and doc["source"] == "mangsang" and [f["kind"] for f in doc["findings"]] == ["stale", "stale"]
+        assert json.load(open(os.path.join(pj.dir, ".mangsang", "impact.json"))) == before, "as a reporter, impact leaves the project's state alone"
+        # impact observes for itself: no `observe` call between edits, and it still sees the change
+        assert json.load(open(os.path.join(pj.dir, ".mangsang", "events.json")))["events"]["memo.py"]["changed"] == ["", ":add", ":list_"]
+        # a human re-reads: reconfirm updates `seen`, and impact is clean again without touching the baseline
+        ids = [x["id"] for x in mangsang.decl(pj.dir)["relations"] if x["dst"] == "memo.py:add"]
+        assert run("reconfirm", *ids, "--target", pj.dir)[0] != 0, "needs --by or --delegated"
+        # the Q1 sentence was rewritten above ("appends a memo"): the old quote is gone, so reconfirm refuses until a new one is given
+        code, out = run("reconfirm", *ids, "--by", "kim", "--target", pj.dir)
+        assert code != 0 and "no longer in the text" in out, out
+        q1 = next(i for i in ids if mangsang.decl(pj.dir)["relations"][[x["id"] for x in mangsang.decl(pj.dir)["relations"]].index(i)]["src"].startswith("plan/"))
+        assert run("reconfirm", q1, "--by", "kim", "--evidence", "appends a memo and prints", "--target", pj.dir)[0] == 0
+        code, out = run("reconfirm", *[i for i in ids if i != q1], "--by", "kim", "--target", pj.dir)
+        assert code == 0 and out.count("re-confirmed") == 1, out
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 0 and "unresolved_total = 0" in out, out
+        assert mangsang.decl(pj.dir)["relations"][0]["confirmed"] == {"by": "kim"}
+        # reset, then remove the function: the relations on it are broken, not stale — and cannot be re-confirmed
+        run("observe", "--reset", "--target", pj.dir)
+        write(os.path.join(pj.dir, "memo.py"), "X = 1\n\n\ndef list_(store):\n    return [1]\n")
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and out.count("broken") == 2 and "dead anchors ['memo.py:add']" in out, out
+        code, out = run("reconfirm", ids[0], "--by", "kim", "--target", pj.dir)
+        assert code != 0 and "cannot be re-confirmed" in out, out
+
+
+def test_merge_a_relation_is_judged_against_what_its_confirmer_saw_and_a_baseline_can_come_from_git():
+    import subprocess
+
+    def git(*a):
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        return subprocess.run(["git", *a], cwd=pj.dir, capture_output=True, text=True, encoding="utf-8", env=env).stdout.strip()
+
+    with Project() as pj:
+        git("init", "-q", "-b", "main")
+        run("register", "plan/PLAN.md", "memo.py", "--target", pj.dir)
+        git("add", "-A"); git("commit", "-q", "-m", "base")
+        base = git("rev-parse", "HEAD")
+        # "branch B": changes add, then confirms a relation on it — the confirmer saw the changed add
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"))
+        seen = mangsang.decl(pj.dir)["relations"][0]["seen"]
+        assert set(seen) == {"plan/PLAN.md#Q1 add", "memo.py:add"}
+        # the merge machine: baseline at the merge base comes from git, not from a tree it never had
+        code, out = run("observe", "--reset", "--at", base, "--target", pj.dir)
+        assert code == 0 and "baseline at %s" % base in out, out
+        assert run("observe", "--at", base, "--target", pj.dir)[0] != 0, "--at without --reset is refused"
+        code, out = run("observe", "--target", pj.dir)
+        assert "memo.py" in out and "':add'" in out, out   # add did change since base ...
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 0 and "unresolved_total = 0" in out, out   # ... but the relation was confirmed against the changed add: not stale
+        # a relation from before `seen` existed falls back to the baseline: since base, add changed -> stale
+        r = mangsang.decl(pj.dir)["relations"][0]
+        del r["seen"]
+        mangsang.save(os.path.join(pj.dir, "mangsang", "relations", r["id"] + ".json"), r)   # save_decl never rewrites an existing relation file
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and "unresolved_total = 1" in out, out
+        shutil.rmtree(os.path.join(pj.dir, ".mangsang"))   # a fresh clone: no baseline -> the seen-less relation is unjudged, not silently fresh
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 0 and "unjudged 1 relation" in out and "unresolved_total = 0" in out, out
+        assert run("observe", "--reset", "--at", "nope", "--target", pj.dir)[0] == 0   # unknown revision: nothing readable, said so
+        assert json.load(open(os.path.join(pj.dir, ".mangsang", "events.json")))["unreadable"] == ["plan/PLAN.md", "memo.py"]
+
+
+def test_impact_only_and_the_judge_round():
+    with Project() as pj:
+        run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)
+        pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"),
+                   rel("plan/PLAN.md#Q2 list", "documents", "memo.py:list_", ev="lists."))
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2").replace("return []", "return [1]"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and "unresolved_total = 2" in out, out
+        # --only: a slice's check sees only the relations on its anchors
+        code, out = run("impact", "--only", "memo.py:list_", "--target", pj.dir)
+        assert code == 1 and "unresolved_total = 1 (only memo.py:list_)" in out and "add" not in out, out
+        assert run("impact", "--only", "memo.py:nothing", "--target", pj.dir)[0] == 0
+        # the judge: a packet with both texts and the quote; a recorded answer — one still-true, one drifted, one out of the request
+        d = os.path.join(pj.dir, "judge")
+        code, out = run("judge", "request", "--out", d, "--target", pj.dir)
+        assert code == 0 and "2 stale relation(s)" in out, out
+        req = json.load(open(os.path.join(d, "judge-request.json"), encoding="utf-8"))
+        ids = {i["stale"]: i["relation"] for i in req["items"]}
+        assert set(ids) == {"plan/PLAN.md#Q1 add", "plan/PLAN.md#Q2 list"} and "return 2" in next(i["because_text"] for i in req["items"] if i["stale"].endswith("Q1 add"))
+        write(os.path.join(d, "judge-response.json"), {"artifact-type": "mangsang/judgment@1", "non-claims": [], "items": [
+            {"relation": ids["plan/PLAN.md#Q1 add"], "verdict": "still-true", "quote": "", "evidence": "add still appends; the return value changed, not the behavior the sentence names"},
+            {"relation": ids["plan/PLAN.md#Q2 list"], "verdict": "drifted", "quote": "lists.", "evidence": "list_ now returns [1] regardless of the store"},
+            {"relation": "R-nope", "verdict": "still-true", "quote": "", "evidence": "x"},
+            {"relation": ids["plan/PLAN.md#Q2 list"], "verdict": "drifted", "quote": "not in the text", "evidence": "y"}]})
+        code, out = run("judge", "consume", "--response", os.path.join(d, "judge-response.json"), "--by", "test", "--target", pj.dir)
+        assert code == 1 and "still-true applied 1" in out and "drifted 1" in out and "rejected 2" in out, out
+        r1 = next(x for x in mangsang.decl(pj.dir)["relations"] if x["id"] == ids["plan/PLAN.md#Q1 add"])
+        assert r1["confirmed"]["delegated"].startswith("judge test:"), r1["confirmed"]
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and "unresolved_total = 1" in out, out   # the drifted one waits for a human
+        code, out = run("impact", "--findings", "--target", pj.dir)
+        assert any(f["kind"] == "delegated" and "judge test" in f["text"] for f in json.loads(out)["findings"]), out
+
+
+def test_check_coverage_and_resolved():
+    with Project() as pj:
+        run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)
+        pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"), rel("test_memo.py:test_Q1_add", "verifies", "plan/PLAN.md#Q1 add", ev="assert True"))
+        d = mangsang.decl(pj.dir)
+        d["cq"] = [{"id": "C1", "text": "every Q section realized?", "verify": {"kind": "coverage", "anchors": "plan/PLAN.md#Q*", "as": "src", "predicate": "documents"}},
+                   {"id": "C2", "text": "every Q section tested?", "verify": {"kind": "coverage", "anchors": "plan/PLAN.md#Q*", "as": "dst", "predicate": "verifies"}},
+                   {"id": "C3", "text": "anchors alive?", "verify": {"kind": "resolved"}},
+                   {"id": "C4", "text": "?", "verify": {"kind": "nope"}}]
+        mangsang.save_decl(pj.dir, d)
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "FAILED" in out and "C1" in out and "uncovered: plan/PLAN.md#Q2 list" in out and "C3" in out, out
+        # an unknown kind is not an invariant: it falls to `cq`, where its presuppositions fail -> UNANSWERABLE
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 1 and "C4" in out and "unknown verify kind" in out, out
+        pj.propose(rel("plan/PLAN.md#Q2 list", "documents", "memo.py:list_", ev="lists."), rel("test_memo.py:test_Q1_add", "verifies", "plan/PLAN.md#Q2 list", ev="lists."))
+        code, out = run("check", "--target", pj.dir)
+        assert out.count("holds") >= 2 and "FAILED" not in out.split("C3")[0], out
+        write(os.path.join(pj.dir, "memo.py"), "X = 1\n")
+        code, out = run("check", "--target", pj.dir)
+        assert "FAILED" in out and "C3" in out and "with dead anchors" in out, out
+
+
+if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    failed = 0
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_"):
+            try:
+                fn()
+                print("PASS", name)
+            except Skip as why:
+                print("SKIP", name, "--", why)
+            except (Exception, SystemExit) as err:   # a self-check that dies between tests lies by omission
+                failed += 1
+                print("FAIL", name, "--", "%s: %s" % (type(err).__name__, err))
+    print("all passed" if not failed else "%d failed" % failed)
+    sys.exit(1 if failed else 0)

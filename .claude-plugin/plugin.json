@@ -1,0 +1,8 @@
+{
+  "name": "mangsang",
+  "version": "1.0.0",
+  "engines": {
+    "python": ">=3.9"
+  },
+  "description": "The coherence manager for every artifact in a project — plan, code, tests. Stores the relations a human confirmed between anchors (a document section, a function, a test), fingerprints them, and says which relation went stale when one end changed. Machines keep it because the next agent has no memory and nobody can read everything."
+}
