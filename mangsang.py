@@ -584,6 +584,7 @@ def cmd_check(args):
     whole' — while a competency question asks 'does the model answer this'. Same declaration machinery (an invariant
     is declared, signed, retired like a CQ — which patterns must be covered is per-project policy), separate name,
     separate command, so `cq 4/4 answered` can never again mean 'lint passed'."""
+    say = (lambda *a, **k: None) if getattr(args, "findings", False) else print   # as a reporter, stdout is the findings JSON and nothing else
     d = decl(args.target)
     files, _ = snapshot(args.target, d["registry"])
     all_anchors = ["%s%s" % (f, k) for f, ks in files.items() for k in ks]
@@ -594,16 +595,16 @@ def cmd_check(args):
         presup = cq_presuppositions(d, files, q)
         if presup:
             unaskable += 1
-            print("  %-12s %s  %s" % ("UNASKABLE", q["id"], q["text"]))
+            say("  %-12s %s  %s" % ("UNASKABLE", q["id"], q["text"]))
             for m in presup:
-                print("      %s" % m)
+                say("      %s" % m)
             findings.append({"kind": "invariant-unaskable", "where": q["id"], "source": "mangsang", "note": "; ".join(presup)})
             continue
         ok, detail = eval_invariant(d, files, all_anchors, q)
         failed += not ok
         if not ok:
             findings.append({"kind": "invariant-failed", "where": q["id"], "source": "mangsang", "note": detail})
-        print("  %-12s %s  %s — %s" % ("holds" if ok else "FAILED", q["id"], q["text"], detail))
+        say("  %-12s %s  %s — %s" % ("holds" if ok else "FAILED", q["id"], q["text"], detail))
     # the audit: parts of the net no invariant watches (was cq's predicate-level `unquestioned` — it belongs here:
     # 'no lint covers this predicate' is a health gap, not a domain question nobody asked)
     questioned = set()
@@ -618,12 +619,12 @@ def cmd_check(args):
     used = {r["predicate"] for r in d["relations"] if d["vocabulary"].get(r["predicate"], {}).get("propagates", "none") != "none"}
     unwatched = sorted(used - questioned) + (["concepts (no projection invariant)"] if d["concepts"] and not any_projection else [])
     for u in unwatched:
-        print("  %-12s %s — the net holds this and no invariant watches it; declare one or say why not" % ("UNWATCHED", u))
+        say("  %-12s %s — the net holds this and no invariant watches it; declare one or say why not" % ("UNWATCHED", u))
         findings.append({"kind": "invariant-unwatched", "where": u, "source": "mangsang",
                          "note": "in use by confirmed relations (or declared concepts) but watched by no declared invariant"})
     if getattr(args, "findings", False):
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "findings": findings}, ensure_ascii=False, indent=1))
-    print("invariants %d · holds %d · failed %d · unaskable %d · unwatched %d"
+    say("invariants %d · holds %d · failed %d · unaskable %d · unwatched %d"
           % (len(active), len(active) - failed - unaskable, failed, unaskable, len(unwatched)))
     return 1 if failed or unaskable or unwatched else 0
 
@@ -646,6 +647,7 @@ def cmd_cq(args):
     The reverse audit: a concept no question names is UNQUESTIONED — the model holds a meaning nobody asks for."""
     if getattr(args, "mode", "run") != "run":
         return cq_declare(args)
+    say = (lambda *a, **k: None) if getattr(args, "findings", False) else print   # as a reporter, stdout is the findings JSON and nothing else
     d = decl(args.target)
     files, _ = snapshot(args.target, d["registry"])
     active = [q for q in cq_active(d) if q.get("verify", {}).get("kind") not in INVARIANT_KINDS]
@@ -667,9 +669,9 @@ def cmd_cq(args):
         presup = cq_presuppositions(d, files, q)
         if presup:
             unanswerable += 1
-            print("  %-12s %s  %s" % ("UNANSWERABLE", q["id"], q["text"]))
+            say("  %-12s %s  %s" % ("UNANSWERABLE", q["id"], q["text"]))
             for m in presup:
-                print("      %s" % m)
+                say("      %s" % m)
             findings.append({"kind": "cq-unanswerable", "where": q["id"], "source": "mangsang",
                              "note": "; ".join(presup)})
             continue
@@ -686,21 +688,21 @@ def cmd_cq(args):
         if not ok:
             findings.append({"kind": "cq-failed", "where": q["id"], "source": "mangsang", "note": "; ".join(problems)})
         answer = "; ".join("%s: %s" % (n, byname[n]["means"]) for n in names if n in byname)
-        print("  %-12s %s  %s" % ("answered" if ok else "FAILED", q["id"], q["text"]))
-        print("      %s %s" % ("=" if ok else "?", answer[:240]))
+        say("  %-12s %s  %s" % ("answered" if ok else "FAILED", q["id"], q["text"]))
+        say("      %s %s" % ("=" if ok else "?", answer[:240]))
         for p in problems:
-            print("      %s" % p)
+            say("      %s" % p)
     # the reverse audit: which concepts does no question name? (G&F: content the questions do not justify)
     named = {n for q in active for n in q.get("verify", {}).get("concepts", [])}
     unquestioned = sorted(c["name"] for c in d["concepts"] if c["name"] not in named)
     for u in unquestioned:
-        print("  %-12s concept:%s — the model holds this meaning and no question asks for it; write the CQ or say why not" % ("UNQUESTIONED", u))
+        say("  %-12s concept:%s — the model holds this meaning and no question asks for it; write the CQ or say why not" % ("UNQUESTIONED", u))
         findings.append({"kind": "cq-unquestioned", "where": "concept:" + u, "source": "mangsang",
                          "note": "declared and realized, but named by no competency question"})
     if getattr(args, "findings", False):
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "findings": findings}, ensure_ascii=False, indent=1))
     tail = " · %d structural declaration(s) now answer to `check`" % structural if structural else ""
-    print("cq %d · answered %d · failed %d · unanswerable %d · unquestioned %d%s"
+    say("cq %d · answered %d · failed %d · unanswerable %d · unquestioned %d%s"
           % (len(active), len(active) - failed - unanswerable, failed, unanswerable, len(unquestioned), tail))
     return 1 if failed or unanswerable or unquestioned else 0
 

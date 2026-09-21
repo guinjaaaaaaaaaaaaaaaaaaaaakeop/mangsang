@@ -357,6 +357,12 @@ def test_impact_stale_by_direction_broken_by_removal_and_observes_for_itself():
         code, out = run("impact", "--target", pj.dir)
         assert code == 1 and out.count("stale") == 2 and "references" not in out and "unresolved_total = 2" in out, out
         before = json.load(open(os.path.join(pj.dir, ".mangsang", "impact.json")))
+        # as reporters, check and cq answer with the JSON alone — green or red — so a reviewer can parse stdout (dwitbuk marked both
+        # "reporter-failed" on a clean project because the human table came first)
+        for cmd in ("check", "cq"):
+            code, out = run(cmd, "--findings", "--target", pj.dir)
+            doc = json.loads(out)
+            assert doc["artifact-type"] == "dwitbuk/findings@1" and doc["source"] == "mangsang", (cmd, out[:200])
         code, out = run("impact", "--findings", "--target", pj.dir)
         doc = json.loads(out)
         assert code == 1 and doc["artifact-type"] == "dwitbuk/findings@1" and doc["source"] == "mangsang" and [f["kind"] for f in doc["findings"]] == ["stale", "stale"]
