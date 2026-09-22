@@ -94,6 +94,7 @@ def test_lookup_lists_the_relations_standing_on_a_file_before_an_edit():
         assert code == 0, out
         code, out = run("lookup", "memo.py", "--target", pj.dir)
         assert code == 0 and "2 relation(s) on memo.py" in out, out
+        assert "plan/PLAN.md#Q1 add documents [memo.py:add]" in out and "test_memo.py:test_Q1_add verifies [memo.py:add]" in out, out   # as stored, src predicate dst; the looked-up anchor marked, never moved to the front
         assert "documents" in out and "verifies" in out, out
         assert out.count("stale") == 2, out   # both relations propagate from memo.py:add — the edit moves them
         code, out = run("lookup", "plan/PLAN.md", "--target", pj.dir)

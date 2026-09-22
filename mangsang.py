@@ -806,13 +806,16 @@ def cmd_lookup(args):
                 prop = d["vocabulary"].get(r["predicate"], {}).get("propagates", "none")
                 other = r["dst"] if a == r["src"] else r["src"]
                 moves = (a == r["dst"] and prop in ("dst->src", "both")) or (a == r["src"] and prop in ("src->dst", "both"))
-                rels.append((r["id"], a, r["predicate"], other, moves))
+                rels.append((r["id"], r["src"], r["predicate"], r["dst"], a, moves))
                 break
     if not rels:
         print("no confirmed relations touch %s" % args.path)
         return 0
-    for rid, a, pred, other, moves in rels:
-        print("  %s  %s %s %s%s" % (rid, a, pred, other, "  — changing this anchor makes the relation stale" if moves else ""))
+    for rid, src, pred, dst, a, moves in rels:
+        # the relation as it is stored, src predicate dst — never reordered around the looked-up anchor (a reader who copied the
+        # line into a proposal got src and dst swapped when the anchor was the dst)
+        mark = lambda x: "[%s]" % x if x == a else x
+        print("  %s  %s %s %s%s" % (rid, mark(src), pred, mark(dst), "  — changing this anchor makes the relation stale" if moves else ""))
     print("%d relation(s) on %s — an edit here and their update are one piece of work, not two" % (len(rels), args.path))
     return 0
 

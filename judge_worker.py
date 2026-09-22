@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 SCHEMA = {"type": "object", "additionalProperties": False, "required": ["artifact-type", "items", "non-claims"],
-          "properties": {"artifact-type": {"const": "mangsang/judgment@1"},
+          "properties": {"artifact-type": {"type": "string", "const": "mangsang/judgment@1"},   # codex's structured output refuses a property with no `type`
                          "items": {"type": "array", "items": {
                              "type": "object", "additionalProperties": False, "required": ["relation", "verdict", "quote", "evidence"],
                              "properties": {"relation": {"type": "string"}, "verdict": {"enum": ["still-true", "drifted", "cannot-tell"]},
