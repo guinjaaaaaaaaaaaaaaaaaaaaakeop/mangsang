@@ -26,6 +26,9 @@ def write(path, text):
 
 
 def run(*argv):
+    # the self-check plays a person at a terminal; the session that runs it may be an agent's (its env says so)
+    for k in mangsang.AGENT_ENV:
+        os.environ.pop(k, None)
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         try:
@@ -266,6 +269,57 @@ def test_a_turn_is_taken_from_the_hosts_transcript_verbatim_and_names_are_the_ro
         code, out = run("concept", "add", "feed", "--means", "one list, newest first", "--by", "kim", "--target", pj.dir)
         assert code == 1 and "not in mangsang/people.json" in out, out
         assert run("concept", "add", "feed", "--means", "one list, newest first", "--by", "lee", "--target", pj.dir)[0] == 0
+
+
+def test_a_stale_relation_shows_what_changed_since_it_was_confirmed():
+    """`seen` knows that an anchor changed; the person re-reading needs to see how. The text as confirmed comes from git —
+    the commit that last wrote the relation's file — and is diffed against now, in `impact --show` and before `reconfirm`."""
+    import subprocess
+    with Project() as pj:
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+        git("init", "-q")
+        assert run("register", "plan/PLAN.md", "memo.py", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"))[0] == 0
+        git("add", "-A"); git("commit", "-qm", "confirmed")
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        code, out = run("impact", "--show", "--target", pj.dir)
+        assert code == 1 and "-    return 1" in out and "+    return 2" in out and "memo.py:add @ now" in out, out
+        rid = mangsang.decl(pj.dir)["relations"][0]["id"]
+        code, out = run("reconfirm", rid, "--by", "kim", "--evidence", "appends and prints", "--target", pj.dir)
+        assert code == 0 and "changed since" in out and "+    return 2" in out, out
+
+
+def test_an_agent_signs_a_persons_name_only_where_that_person_said_yes():
+    """Run by an agent (its env says so), `--by lee` is lee's judgment only if lee approved it somewhere on record: the
+    signature cites the source (`--approved-in source:ID`, spoken by lee). Without one the agent signs `--delegated`."""
+    def agent_run(*argv):
+        out = io.StringIO()
+        os.environ["CLAUDECODE"] = "1"
+        try:
+            with contextlib.redirect_stdout(out):
+                try:
+                    code = mangsang.main(list(argv))
+                except SystemExit as err:
+                    code = err.code if isinstance(err.code, int) else 1
+                    out.write(str(err) + "\n")
+        finally:
+            os.environ.pop("CLAUDECODE", None)
+            mangsang.APPROVED_IN = None
+        return code, out.getvalue()
+    with Project() as pj:
+        said = os.path.join(pj.dir, "ok.txt")
+        write(said, "yes, declare it\n")
+        assert run("source", "add", "L1", "--file", said, "--speaker", "lee", "--target", pj.dir)[0] == 0
+        write(said, "sure\n")
+        assert run("source", "add", "K1", "--file", said, "--speaker", "kim", "--target", pj.dir)[0] == 0
+        code, out = agent_run("concept", "add", "a", "--means", "m", "--by", "lee", "--target", pj.dir)
+        assert code == 1 and "--approved-in source:ID" in out, out
+        code, out = agent_run("concept", "add", "a", "--means", "m", "--by", "lee", "--approved-in", "source:K1", "--target", pj.dir)
+        assert code == 1 and "was said by kim, not lee" in out, out
+        assert agent_run("concept", "add", "a", "--means", "m", "--by", "lee", "--approved-in", "source:L1", "--target", pj.dir)[0] == 0
+        c = mangsang.load(os.path.join(pj.dir, "mangsang", "concepts", "a.json"))
+        assert c["declared"] == {"by": "lee", "approved-in": "source:L1"}, c
+        assert agent_run("concept", "add", "b", "--means", "m", "--delegated", "the agent's reading", "--target", pj.dir)[0] == 0
 
 
 def test_check_projection_asks_that_every_concept_is_realized_in_every_medium():

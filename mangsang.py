@@ -54,13 +54,17 @@ OBS = ".mangsang"
 DELEGATION_REF = re.compile(r"^D-[0-9a-f]+$")
 
 
+APPROVED_IN = None   # set by main when an agent signs in a person's name: the source where that person approved
+AGENT_ENV = ("CLAUDECODE", "CODEX_THREAD_ID", "AGENT_WORKER")
+
+
 def signature(by, delegated):
     """The judgment's author line. A --delegated value matching a delegation id (D-xxxx, chongdae's `delegate`)
     is stored as a structured reference — machine-readable, so no reason string is pasted N times — but mangsang
     never resolves it: whose delegation it is and whether it exists is the record-reader's audit (dwitbuk), not
     this engine's coupling. Any other value stays a free-form why-string, as before."""
     if by:
-        return {"by": by}
+        return {"by": by, **({"approved-in": APPROVED_IN} if APPROVED_IN else {})}
     if delegated and DELEGATION_REF.match(delegated.strip()):
         return {"delegated": {"ref": delegated.strip()}}
     return {"delegated": delegated}
@@ -418,6 +422,34 @@ def compute_impact(target, d, only=None, persist=True):
     return stale, broken, sorted(set(unjudged)), files
 
 
+def what_changed(target, r, anchor):
+    """The anchor's text as its confirmer saw it and as it reads now, as a unified diff — so a person re-reading a stale
+    relation reads the change, not just the fact of one. `seen` keeps fingerprints, not text; git keeps the text: the commit
+    that last wrote the relation's file is when it was confirmed, and the anchor is read from the tree at that commit
+    (a concept's `means` from its file then). None when there is no such commit (the relation was never committed)."""
+    import difflib, subprocess
+    git = lambda *a: subprocess.run(["git", *a], cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    for folder in ("relations", "retired"):
+        c = git("log", "-1", "--format=%H", "--", "%s/%s/%s.json" % (DECL, folder, r["id"])).stdout.strip()
+        if c:
+            break
+    else:
+        return None
+    f, key = split_anchor(anchor)
+    if f == "concept":
+        old = git("show", "%s:%s/concepts/%s.json" % (c, DECL, key.lstrip(":")))
+        old_text = json.loads(old.stdout).get("means") if old.returncode == 0 and old.stdout.strip() else None
+    elif f == "source":
+        return None   # what was said does not change
+    else:
+        old = git("show", "%s:%s" % (c, f))
+        old_text = (anchor_texts(f, old.stdout.replace("\r\n", "\n")) or {}).get(key) if old.returncode == 0 else None
+    new_text = (texts_of(target, f) or {}).get(key)
+    if old_text is None or new_text is None or old_text == new_text:
+        return None
+    return "".join(difflib.unified_diff(old_text.splitlines(True), new_text.splitlines(True), "%s @ %s" % (anchor, c[:8]), "%s @ now" % anchor, n=1))
+
+
 def cmd_impact(args):
     d = decl(args.target)
     stale, broken, unjudged, files = compute_impact(args.target, d, args.only)
@@ -432,6 +464,10 @@ def cmd_impact(args):
         return 1 if stale or broken else 0
     for x in stale:
         print("  stale   %s  %s  <- %s" % (x["id"], x["stale"], x["because"]))
+        if getattr(args, "show", False):
+            rel = next((r for r in d["relations"] if r["id"] == x["id"]), None)
+            diff = what_changed(args.target, rel, x["because"]) if rel else None
+            print("\n".join("      " + l for l in (diff or "(no committed text to compare: the change is known by its fingerprint only)").rstrip().split("\n")))
     for b in broken:
         print("  broken  %s  dead anchors %s" % (b["id"], b["dead"]))
     if unjudged:
@@ -812,6 +848,10 @@ def cmd_reconfirm(args):
         dead = [a for a in (r["src"], r["dst"]) if split_anchor(a)[0] not in files or split_anchor(a)[1] not in files[split_anchor(a)[0]]]
         if dead:
             raise SystemExit("%s: anchor %s is gone — a relation on a dead anchor cannot be re-confirmed; retire it" % (rid, dead))
+        for a in (r["src"], r["dst"]):   # what the person re-read: the change itself, printed with the record of it
+            diff = what_changed(args.target, r, a)
+            if diff:
+                print("  %s changed since %s was confirmed:\n%s" % (a, rid, "\n".join("      " + l for l in diff.rstrip().split("\n"))))
         if args.evidence:
             r["evidence"] = args.evidence
         if not quoted(args.target, r["evidence"], r["src"], r["dst"]):
@@ -1205,6 +1245,7 @@ def main(argv=None):
         if name == "confirm":
             p.add_argument("proposals")
             p.add_argument("--by", default=None)
+            p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
             p.add_argument("--delegated", default=None)
         if name == "cq":
             p.add_argument("mode", nargs="?", default="run", choices=["run", "add", "revise", "retire"])
@@ -1213,6 +1254,7 @@ def main(argv=None):
             p.add_argument("--verify", default=None, help="JSON: domain questions are {\"kind\": \"answered-by\", \"concepts\": [...]} — the named concepts carry the answer; {\"kind\": \"open\"} is asked before anything answers it; structural kinds (coverage|projection|resolved) are declared here too but answer to `check`")
             p.add_argument("--why", default=None, help="retire: what made this question no longer worth asking")
             p.add_argument("--by", default=None)
+            p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
             p.add_argument("--delegated", default=None)
             p.add_argument("--findings", action="store_true", help="print failed/unanswerable/unquestioned as dwitbuk/findings@1 JSON")
         if name == "check":
@@ -1220,6 +1262,7 @@ def main(argv=None):
         if name == "impact":
             p.add_argument("--findings", action="store_true", help="print stale/broken as dwitbuk/findings@1 JSON")
             p.add_argument("--only", nargs="*", default=None, help="judge only relations touching these anchor prefixes (a slice's check)")
+            p.add_argument("--show", action="store_true", help="for each stale relation, print what changed: the anchor's text when it was confirmed (from git) against now")
         if name == "judge":
             p.add_argument("mode", choices=["request", "consume"])
             p.add_argument("--out", default="mangsang-judge")
@@ -1236,6 +1279,7 @@ def main(argv=None):
         if name == "reconfirm":
             p.add_argument("ids", nargs="+")
             p.add_argument("--by", default=None)
+            p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
             p.add_argument("--delegated", default=None)
             p.add_argument("--evidence", default=None, help="the sentence that holds now, when the old quote is gone from the text (one id at a time)")
         if name == "lookup":
@@ -1259,10 +1303,23 @@ def main(argv=None):
             p.add_argument("new", nargs="?", default=None, help="rename: the new name")
             p.add_argument("--means", default=None, help="one sentence: what this name means in this project")
             p.add_argument("--by", default=None)
+            p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
             p.add_argument("--delegated", default=None)
     args = ap.parse_args(argv)
     if getattr(args, "by", None) and args.cmd != "judge":
         check_person(args.target, args.by)   # a signature is a person's: with a roster, only a listed name signs
+        if any(os.environ.get(k) for k in AGENT_ENV):
+            # an agent is running this: a person's name on a judgment needs the place that person said yes — a source they
+            # spoke — or it is the agent's judgment wearing their name (seen: a relation signed as the owner by mistake)
+            ref = (getattr(args, "approved_in", None) or "").replace("source:", "")
+            src = next((x for x in decl(args.target)["sources"] if x["id"] == ref), None) if ref else None
+            if not src:
+                raise SystemExit("an agent signs --by %s only with --approved-in source:ID — the source where %s approved this; "
+                                 "otherwise sign --delegated \"<why>\"" % (args.by, args.by))
+            if src.get("speaker") != args.by:
+                raise SystemExit("--approved-in source:%s was said by %s, not %s" % (ref, src.get("speaker"), args.by))
+            global APPROVED_IN
+            APPROVED_IN = "source:" + ref
     return {"register": cmd_register, "confirm": cmd_confirm, "observe": cmd_observe, "impact": cmd_impact,
             "cq": cmd_cq, "check": cmd_check, "retire": cmd_retire, "reconfirm": cmd_reconfirm, "judge": cmd_judge,
             "lookup": cmd_lookup, "concept": cmd_concept, "source": cmd_source, "report": cmd_report}[args.cmd](args)
