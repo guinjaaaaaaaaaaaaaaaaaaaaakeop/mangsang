@@ -28,7 +28,7 @@ Each runs the engine and shows its output. `mangsang.py --help` for arguments.
 | command | does |
 |---|---|
 | `/mangsang:register` | Watch these files (anchors: file, file#heading for Markdown, file:symbol for Python) |
-| `/mangsang:source` | Keep what was said or written, verbatim, as the anchor `source:ID` (`add ID --file F\|- --speaker WHO [--locator WHERE] [--replies-to ID]`; `-` reads stdin). Both sides of a conversation are sources, and an answer is kept with the turn it answers. The same id with other text is refused — a correction is a new source. `list` shows what each source grounds |
+| `/mangsang:source` | Keep what was said or written, verbatim, as the anchor `source:ID` (`add ID --file F\|- --speaker WHO [--locator WHERE] [--replies-to ID]`; `-` reads stdin — or `--from-transcript SESSION.jsonl --match "phrase" [--kind person\|agent\|question\|answer]`, which takes the one turn containing the phrase from the host's own session record, verbatim, the agent's turn under its model's name, the locator filled in). Both sides of a conversation are sources, and an answer is kept with the turn it answers. The same id with other text is refused — a correction is a new source. `list` shows what each source grounds |
 | `/mangsang:concept` | The net's own nodes: `add NAME --means "..."` declares one (with `--by` or `--delegated`); `revise` changes its meaning and stales every projection; `rename` moves the name under every relation and every question that names it, in one command; `list` shows each concept with its projections |
 | `/mangsang:confirm` | Store proposed relations after checking anchors, vocabulary, evidence (a quote that appears in one anchor's text — paraphrase is rejected) and duplicates |
 | `/mangsang:observe` | Fingerprint every anchor; `--reset` takes a new baseline, `--reset --at REV` takes it from git (a merge base) |
@@ -49,6 +49,7 @@ Each runs the engine and shows its output. `mangsang.py --help` for arguments.
 | `mangsang/concepts/<name>.json` | yes | the net's nodes — one per file, each a name, its `means` sentence, and who declared it |
 | `mangsang/relations/<id>.json`, `mangsang/retired/<id>.json` | yes | one relation per file, so relations added on different branches merge as distinct files; each carries `seen`, the anchor fingerprints its confirmer saw |
 | `mangsang/cq/<id>.json` (and legacy `cq.json`) | yes | one competency question per file: text for people, a verify spec for the engine, its author; retired questions keep the record |
+| `mangsang/people.json` | yes | optional roster: `{"people": [names], "agents": [speaker prefixes]}` — when present, a `--by` or `--speaker` not on it is refused |
 | `mangsang/sources/<id>.json` | yes | what a person said or wrote, verbatim, with the speaker and where — one per file, never rewritten. Committed like every record: in a public repository, their words are public |
 | `.mangsang/` | no | this machine's baseline (for `observe` events, and for judging relations from before `seen`), events, impact |
 

@@ -229,6 +229,45 @@ def test_a_model_grounded_in_what_people_said_open_questions_and_the_report():
         assert code == 1 and "source:U1" in out, out
 
 
+def test_a_turn_is_taken_from_the_hosts_transcript_verbatim_and_names_are_the_rosters():
+    """Retyping a conversation into a source is where words drift: the host already keeps them. `--from-transcript` takes the
+    one turn that contains `--match`, as the host recorded it — the agent's words under its model's name, a multiple-choice
+    question as the tool carried it. A roster (`mangsang/people.json`) makes a made-up signature a refusal."""
+    with Project() as pj:
+        tr = os.path.join(pj.dir, "session-abc.jsonl")
+        lines = [
+            {"type": "user", "uuid": "u1", "timestamp": "t1", "message": {"role": "user", "content": "the feed shows everything, newest first"}},
+            {"type": "assistant", "uuid": "a1", "timestamp": "t2", "message": {"id": "m1", "model": "claude-x", "content": [{"type": "text", "text": "So: one list, newest first."}]}},
+            {"type": "assistant", "uuid": "a2", "timestamp": "t2", "message": {"id": "m1", "model": "claude-x", "content": [{"type": "text", "text": "Is that right?"}]}},
+            {"type": "assistant", "uuid": "a3", "timestamp": "t3", "message": {"id": "m2", "model": "claude-x", "content": [{"type": "tool_use", "id": "q1", "name": "AskUserQuestion", "input": {"questions": [{"question": "Times in UTC?"}]}}]}},
+            {"type": "user", "uuid": "u2", "timestamp": "t4", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "q1", "content": "answered: Times in UTC?=reader's local"}]}},
+            {"type": "user", "uuid": "u3", "timestamp": "t5", "message": {"role": "user", "content": "<task-notification>done</task-notification>"}},
+        ]
+        write(tr, "\n".join(json.dumps(x) for x in lines) + "\n")
+        # the agent's turn: its text blocks of one message joined, spoken by its model, located in the session
+        assert run("source", "add", "A1", "--from-transcript", tr, "--match", "newest first.", "--kind", "agent", "--target", pj.dir)[0] == 0
+        a1 = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "A1.json"))
+        assert a1["text"] == "So: one list, newest first.\n\nIs that right?" and a1["speaker"] == "Claude (claude-x)", a1
+        assert a1["locator"] == "session session-abc, agent a1 at t2" and a1["verbatim-from"] == "host transcript", a1
+        # ambiguous: the phrase is in two turns
+        code, out = run("source", "add", "X", "--from-transcript", tr, "--match", "newest first", "--target", pj.dir)
+        assert code == 1 and "found 2 turn(s)" in out, out
+        # a person's turn needs the name they gave; a question and its answer are kept as the tool carried them
+        assert run("source", "add", "U1", "--from-transcript", tr, "--match", "everything", "--target", pj.dir)[0] == 1
+        write(os.path.join(pj.dir, "mangsang", "people.json"), {"people": ["lee"], "agents": ["Claude ("]})
+        code, out = run("source", "add", "U1", "--from-transcript", tr, "--match", "everything", "--speaker", "haklee", "--target", pj.dir)
+        assert code == 1 and "not in mangsang/people.json" in out, out   # a name read off an account is refused
+        assert run("source", "add", "U1", "--from-transcript", tr, "--match", "everything", "--speaker", "lee", "--target", pj.dir)[0] == 0
+        assert run("source", "add", "Q1", "--from-transcript", tr, "--match", "Times in UTC?", "--kind", "question", "--target", pj.dir)[0] == 0
+        assert run("source", "add", "Q1a", "--from-transcript", tr, "--match", "reader's local", "--kind", "answer", "--speaker", "lee", "--replies-to", "Q1", "--target", pj.dir)[0] == 0
+        assert '"question": "Times in UTC?"' in mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "Q1.json"))["text"]
+        assert run("source", "add", "N", "--from-transcript", tr, "--match", "task-notification", "--speaker", "lee", "--target", pj.dir)[0] == 1, "a host notification is not a person's turn"
+        # signatures too
+        code, out = run("concept", "add", "feed", "--means", "one list, newest first", "--by", "kim", "--target", pj.dir)
+        assert code == 1 and "not in mangsang/people.json" in out, out
+        assert run("concept", "add", "feed", "--means", "one list, newest first", "--by", "lee", "--target", pj.dir)[0] == 0
+
+
 def test_check_projection_asks_that_every_concept_is_realized_in_every_medium():
     """The net's own health invariant: a concept with no code projection (or no test, no doc) is a word the
     project uses and never made true in that medium — surfaced by name, not hidden in a coverage percentage.
