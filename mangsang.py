@@ -850,6 +850,67 @@ def cmd_lookup(args):
     return 0
 
 
+def transcript_turns(path):
+    """A host session transcript (Claude Code's JSONL) as the turns a person would recognize: what the person typed, what the
+    agent answered in text (blocks of one message joined), each multiple-choice question it asked and the answer it got —
+    each as the host recorded it, with its id, time and (for the agent) model. Tool traffic other than questions is left out:
+    it is how the agent worked, not what was said."""
+    turns, agent = [], {}
+    for line in io.open(path, encoding="utf-8", errors="replace"):
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(d, dict) or d.get("isSidechain"):
+            continue
+        msg, when, uid = d.get("message") or {}, d.get("timestamp"), d.get("uuid")
+        c = msg.get("content")
+        if d.get("type") == "user" and isinstance(c, str) and not d.get("isMeta"):
+            turns.append({"kind": "person", "text": c, "uuid": uid, "at": when})
+        elif d.get("type") == "user" and isinstance(c, list):
+            for x in c:
+                if isinstance(x, dict) and x.get("type") == "text" and not d.get("isMeta"):
+                    turns.append({"kind": "person", "text": x.get("text", ""), "uuid": uid, "at": when})
+                if isinstance(x, dict) and x.get("type") == "tool_result" and x.get("tool_use_id") in agent.get("asks", {}):
+                    body = x.get("content")
+                    body = "\n".join(b.get("text", "") for b in body if isinstance(b, dict)) if isinstance(body, list) else str(body)
+                    turns.append({"kind": "answer", "text": body, "uuid": uid, "at": when})
+        elif d.get("type") == "assistant" and isinstance(c, list):
+            mid = msg.get("id") or uid
+            for x in c:
+                if not isinstance(x, dict):
+                    continue
+                if x.get("type") == "text":
+                    last = turns[-1] if turns else None
+                    if last and last.get("kind") == "agent" and last.get("message") == mid:
+                        last["text"] += "\n\n" + x.get("text", "")
+                    else:
+                        turns.append({"kind": "agent", "text": x.get("text", ""), "uuid": uid, "at": when, "message": mid, "model": msg.get("model")})
+                elif x.get("type") == "tool_use" and x.get("name") == "AskUserQuestion":
+                    agent.setdefault("asks", {})[x.get("id")] = True
+                    turns.append({"kind": "question", "text": json.dumps(x.get("input"), ensure_ascii=False, indent=1), "uuid": uid, "at": when,
+                                  "model": msg.get("model")})
+    host_notes = ("<task-notification>", "<local-command", "<command-name>", "<system-reminder>", "[Request interrupted")
+    return [t for t in turns if t["text"].strip() and not (t["kind"] == "person" and t["text"].lstrip().startswith(host_notes))]
+
+
+def people(target):
+    """`mangsang/people.json` — who may sign and speak here: {"people": [names], "agents": [speaker prefixes]}. Absent, any
+    name is taken (the old behavior); present, a name that is not on it is refused, so a signature cannot be made up from
+    an account or an email."""
+    return load(os.path.join(target, DECL, "people.json"), None)
+
+
+def check_person(target, name, as_speaker=False):
+    roster = people(target)
+    if not roster or name is None:
+        return
+    if name in roster.get("people", []) or (as_speaker and any(name.startswith(a) for a in roster.get("agents", []))):
+        return
+    raise SystemExit("%r is not in mangsang/people.json — ask the person which name they sign and speak under and add it there; "
+                     "never derive one from an account, an email or session metadata" % name)
+
+
 def cmd_source(args):
     """What a person said or wrote, kept verbatim as the anchor `source:ID`. A model built from a conversation needs its
     ground on record the way a model built from a plan has the plan: the concept's `means` is the project's reading, the
@@ -869,9 +930,28 @@ def cmd_source(args):
         return 0
     if not re.fullmatch(r"[\w-]+", args.id or ""):
         raise SystemExit("a source id is a word: letters, digits, _ or -")
-    if not (args.file and args.speaker):
-        raise SystemExit("--file (the words, verbatim; `-` reads stdin) and --speaker (who said them) — a source without both is hearsay")
-    text = (sys.stdin.read() if args.file == "-" else io.open(args.file, encoding="utf-8").read()).replace("\r\n", "\n")
+    if args.from_transcript:
+        # the words taken from the host's own record of the session, not retyped: exactly one turn must contain --match
+        if not args.match:
+            raise SystemExit("--from-transcript needs --match \"a phrase from the turn\" — the one turn that contains it is kept, whole")
+        hits = [t for t in transcript_turns(args.from_transcript) if args.match in t["text"] and (not args.kind or t["kind"] == args.kind)]
+        if len(hits) != 1:
+            raise SystemExit("--match found %d turn(s) in the transcript%s — give a phrase that only the turn you mean contains"
+                             % (len(hits), "".join("\n  %s %s: %s" % (t["kind"], t["uuid"], " ".join(t["text"].split())[:80]) for t in hits[:5])))
+        turn = hits[0]
+        if turn["kind"] in ("agent", "question"):
+            args.speaker = args.speaker or "Claude (%s)" % (turn.get("model") or "unknown model")
+        elif not args.speaker:
+            raise SystemExit("this turn is the person's: --speaker says who they are (the name they gave, not one read from the account)")
+        session = os.path.splitext(os.path.basename(args.from_transcript))[0]
+        args.locator = args.locator or "session %s, %s %s at %s" % (session, turn["kind"], turn["uuid"], turn["at"])
+        args.file = None
+        text = turn["text"].replace("\r\n", "\n")
+    else:
+        if not (args.file and args.speaker):
+            raise SystemExit("--file (the words, verbatim; `-` reads stdin) or --from-transcript, and --speaker (who said them) — a source without both is hearsay")
+        text = (sys.stdin.read() if args.file == "-" else io.open(args.file, encoding="utf-8").read()).replace("\r\n", "\n")
+    check_person(args.target, args.speaker, as_speaker=True)
     if not text.strip():
         raise SystemExit("%s is empty" % ("stdin" if args.file == "-" else args.file))
     if args.replies_to and not any(y["id"] == args.replies_to for y in d["sources"]):
@@ -885,8 +965,10 @@ def cmd_source(args):
             print("source %s already kept, unchanged" % args.id)
             return 0
         raise SystemExit("source %s exists with other text — what was said does not change; keep the correction as a new source" % args.id)
+    if args.from_transcript:
+        x["verbatim-from"] = "host transcript"
     save(os.path.join(folder, args.id + ".json"), x)
-    if args.file != "-":
+    if args.file and args.file != "-":
         print("(the input %s is not the record — %s is; remove it or keep it, it is not read again)" % (args.file, os.path.join(DECL, "sources", args.id + ".json")))
     print("source %s kept (%d chars, %s) — relate a concept to it as `source:%s realizes concept:NAME`, the quote as evidence"
           % (args.id, len(text), args.speaker, args.id))
@@ -1165,6 +1247,9 @@ def main(argv=None):
             p.add_argument("--replies-to", default=None, help="the source this turn answers — an answer is kept with its question")
             p.add_argument("--speaker", default=None, help="who said or wrote them")
             p.add_argument("--locator", default=None, help="where they were said: a meeting, a transcript, a URL")
+            p.add_argument("--from-transcript", default=None, help="a host session transcript (Claude Code JSONL): take the turn from it, verbatim, instead of --file")
+            p.add_argument("--match", default=None, help="with --from-transcript: a phrase only the wanted turn contains")
+            p.add_argument("--kind", default=None, choices=["person", "agent", "question", "answer"], help="with --from-transcript: only turns of this kind")
         if name == "report":
             p.add_argument("--out", default=None, help="write the Markdown page here (never into mangsang/, .mangsang/ or a registered file); default stdout")
             p.add_argument("--html", default=None, help="write one self-contained HTML page here: the graph draws in any browser, offline")
@@ -1176,6 +1261,8 @@ def main(argv=None):
             p.add_argument("--by", default=None)
             p.add_argument("--delegated", default=None)
     args = ap.parse_args(argv)
+    if getattr(args, "by", None) and args.cmd != "judge":
+        check_person(args.target, args.by)   # a signature is a person's: with a roster, only a listed name signs
     return {"register": cmd_register, "confirm": cmd_confirm, "observe": cmd_observe, "impact": cmd_impact,
             "cq": cmd_cq, "check": cmd_check, "retire": cmd_retire, "reconfirm": cmd_reconfirm, "judge": cmd_judge,
             "lookup": cmd_lookup, "concept": cmd_concept, "source": cmd_source, "report": cmd_report}[args.cmd](args)
