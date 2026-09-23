@@ -6,6 +6,10 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
 (`documents`, `verifies`); staleness is judged against what a confirmer saw, per anchor fingerprint.
 
   register <path>...            watch these files (anchors: `file`, `file#heading` for Markdown, `file:symbol` for Python)
+  source add ID --file F|- --speaker WHO [--locator L] [--replies-to ID]
+                                keep what was said or written, verbatim and unchangeable, as the anchor `source:ID` — a concept
+                                grounded in a conversation relates to it like to any projection, with a quote as evidence. Both
+                                sides of a conversation are sources: "yes, both" means nothing without the question it answers
   concept [add|revise|rename|list] declare/change the net's own nodes; `concept:NAME` anchors relations; revising `means` stales every projection
   confirm <proposals.json> --by NAME | --delegated WHY
                                 store relations after checking: anchors exist, predicate is in the vocabulary, no duplicates
@@ -17,9 +21,14 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
   judge consume --response FILE --by WHO  the judge's verdicts: still-true -> re-confirmed by delegation (recorded as such), drifted (with a
                                 quote from the text) and cannot-tell -> printed for a human; judge_worker.py runs one packet
   cq [run]                      ask the competency questions; audits both directions — a question whose presuppositions fail is UNANSWERABLE
-                                (the model moved out from under it), model content no question examines is UNQUESTIONED; exit 1 on any of the three
+                                (the model moved out from under it), model content no question examines is UNQUESTIONED; exit 1 on any of the three.
+                                A question declared `{"kind": "open"}` is asked before anything answers it: listed OPEN, an observation, not a failure
   cq add|revise|retire ID       declare a question (--text + --verify JSON, --by|--delegated) — refused if it cannot be asked of the current model;
                                 retiring keeps the record (--why). One file per CQ under mangsang/cq/; legacy cq.json still read
+  report [--out FILE] [--html FILE]
+                                the net as one page for a person: concepts and what realizes them, the questions and their state,
+                                the sources; a Mermaid graph. Markdown, or --html: one self-contained file whose graph draws in any
+                                browser with no network (mermaid is vendored and inlined). Read-only — derived, not committed
   retire <id> --why WHY         drop a relation, keeping it (and why) in `retired`
   lookup <path>                 before touching a file: the confirmed relations standing on it (read-only) — size the edit as code + relations
   reconfirm <id>... --by NAME | --delegated WHY [--evidence "..."]
@@ -28,6 +37,8 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
 Two places. `mangsang/` is the project's knowledge (registry, vocabulary, cq, one file per relation) — committed, changed only when a human
 confirms. `.mangsang/` is this machine's observation (baseline, events, impact) — not committed.
 mangsang never proposes a relation and never judges meaning; it checks, stores, fingerprints and diffs.
+`source add` keeps what people said as anchors (`mangsang/sources/<id>.json`); a model can be grounded in a conversation as
+well as in a plan, and the same quote rule holds.
 """
 import argparse
 import ast
@@ -87,8 +98,8 @@ def decl(target):
     d = {"registry": load(os.path.join(root, "registry.json"), []),
          "vocabulary": load(os.path.join(root, "vocabulary.json"), None) or dict(DEFAULT_VOCAB),
          "cq": load(os.path.join(root, "cq.json"), []),
-         "relations": [], "retired": [], "concepts": [], "cq_declared": []}
-    for kind, key in (("relations", "relations"), ("retired", "retired"), ("concepts", "concepts"), ("cq", "cq_declared")):
+         "relations": [], "retired": [], "concepts": [], "cq_declared": [], "sources": []}
+    for kind, key in (("relations", "relations"), ("retired", "retired"), ("concepts", "concepts"), ("cq", "cq_declared"), ("sources", "sources")):
         folder = os.path.join(root, kind)
         for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
             if name.endswith(".json"):
@@ -188,10 +199,13 @@ def anchors_of(path, text=None):
 
 
 def texts_of(target, f):
-    """{anchor-key: text} for a file — or for the reserved virtual file `concept`, whose anchors are the concepts
-    themselves and whose text is each concept's `means` sentence. One reader for real and net-own anchors alike."""
+    """{anchor-key: text} for a file — or for a reserved virtual file: `concept`, whose anchors are the concepts themselves
+    and whose text is each concept's `means` sentence; `source`, whose anchors are what people said, verbatim. One reader
+    for real and net-own anchors alike."""
     if f == "concept":
         return {":" + c["name"]: c["means"] for c in decl(target)["concepts"]}
+    if f == "source":
+        return {":" + x["id"]: x["text"] for x in decl(target)["sources"]}
     return anchor_texts(os.path.join(target, f))
 
 
@@ -218,7 +232,7 @@ def split_anchor(anchor):
     return anchor, ""
 
 
-def snapshot(target, registry, at=None, concepts=None):
+def snapshot(target, registry, at=None, concepts=None, sources=None):
     """Anchors of every registered file — from the working tree, or from git at revision `at` (a merge base, a release).
     Concepts enter as a virtual file `concept`: each is an anchor `concept:NAME` whose text is its `means` sentence.
     So the net's own nodes go through the same machinery as everything else — a concept's meaning is fingerprinted,
@@ -236,10 +250,14 @@ def snapshot(target, registry, at=None, concepts=None):
             unreadable.append(entry["path"])
         else:
             files[entry["path"]] = got
-    if concepts is None:
-        concepts = decl(target)["concepts"]
+    if concepts is None or sources is None:
+        d = decl(target)
+        concepts = d["concepts"] if concepts is None else concepts
+        sources = d["sources"] if sources is None else sources
     if concepts:
         files["concept"] = {":" + c["name"]: fp(c["means"]) for c in concepts}
+    if sources:   # what someone said does not change; a source is an anchor that can only die (never stale), like the record it is
+        files["source"] = {":" + x["id"]: fp(x["text"]) for x in sources}
     return files, unreadable
 
 
@@ -352,13 +370,13 @@ def diff_events(base, files):
     return events
 
 
-def compute_impact(target, d, only=None):
+def compute_impact(target, d, only=None, persist=True):
     """(stale, broken, unjudged, files). Stale = an anchor the relation propagates from differs from what its confirmer saw (`seen`);
     relations without `seen` are judged against this machine's baseline, or listed as unjudged when there is none."""
     base_path = os.path.join(target, OBS, "baseline.json")
     files, _ = snapshot(target, d["registry"])
     ev = diff_events(load(base_path)["files"], files) if os.path.exists(base_path) else None
-    if ev is not None:
+    if ev is not None and persist:
         save(os.path.join(target, OBS, "events.json"), {"events": ev})
     unjudged = []
 
@@ -525,13 +543,19 @@ def cq_presuppositions(d, files, q):
             missing.append("presupposes predicate 'realizes' — not in the vocabulary")
         if not d["concepts"]:
             missing.append("presupposes declared concepts — none exist (`concept add`)")
+        anchors_now = ["%s%s" % (f, k) for f, ks in files.items() for k in ks]   # anchors, not only file names: `source:` names a virtual file's anchors
         for medium, prefixes in (v.get("media") or {}).items():
-            if not any(p.startswith(tuple(prefixes)) for p in files):
+            if not any(a.startswith(tuple(prefixes)) for a in anchors_now):
                 missing.append("presupposes medium %r (%s) — no registered file matches" % (medium, ", ".join(prefixes)))
         if not v.get("media"):
             missing.append("presupposes `media` naming each medium's anchor prefixes")
     elif v.get("kind") == "resolved":
         pass   # asks only about the relations themselves; always askable
+    elif v.get("kind") == "open":
+        # asked before anything answers it: a model built from conversation starts with what nobody has answered yet.
+        # It presupposes nothing — and names no answer, so a later `revise` to answered-by is where the answer is signed
+        if set(v) != {"kind"}:
+            missing.append("an open question names no answer — `{\"kind\": \"open\"}` alone; `cq revise` to answered-by when one exists")
     elif v.get("kind") == "answered-by":
         # a domain question presupposes its answer's home: the named concepts. The machine cannot judge whether a
         # means-sentence really answers the text (that is the declarer's signature); it checks that the answer exists.
@@ -665,6 +689,12 @@ def cmd_cq(args):
     byname = {c["name"]: c for c in d["concepts"]}
     failed = unanswerable = 0
     findings = []
+    opened = [q for q in active if q.get("verify", {}).get("kind") == "open"]
+    for q in opened:
+        say("  %-12s %s  %s" % ("OPEN", q["id"], q["text"]))
+        findings.append({"kind": "cq-open", "layer": "observation", "where": q["id"], "source": "mangsang",
+                         "note": "asked and not yet answered — a declared gap, not a failure"})
+    active = [q for q in active if q not in opened]
     for q in active:
         presup = cq_presuppositions(d, files, q)
         if presup:
@@ -702,8 +732,8 @@ def cmd_cq(args):
     if getattr(args, "findings", False):
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "findings": findings}, ensure_ascii=False, indent=1))
     tail = " · %d structural declaration(s) now answer to `check`" % structural if structural else ""
-    say("cq %d · answered %d · failed %d · unanswerable %d · unquestioned %d%s"
-          % (len(active), len(active) - failed - unanswerable, failed, unanswerable, len(unquestioned), tail))
+    say("cq %d · answered %d · failed %d · unanswerable %d · unquestioned %d · open %d%s"
+          % (len(active) + len(opened), len(active) - failed - unanswerable, failed, unanswerable, len(unquestioned), len(opened), tail))
     return 1 if failed or unanswerable or unquestioned else 0
 
 
@@ -820,6 +850,180 @@ def cmd_lookup(args):
     return 0
 
 
+def cmd_source(args):
+    """What a person said or wrote, kept verbatim as the anchor `source:ID`. A model built from a conversation needs its
+    ground on record the way a model built from a plan has the plan: the concept's `means` is the project's reading, the
+    source is what was actually said, and the relation between them carries the quote — so a later reader can check the
+    reading against the words, and a revised meaning stales the grounding like any projection. A source never changes:
+    a correction is a new source (the person said something else later), never an edit — the same id with other text
+    is refused. The engine does not read meaning out of it; the agent proposes, a person confirms, as everywhere."""
+    d = decl(args.target)
+    folder = os.path.join(args.target, DECL, "sources")
+    if args.mode == "list":
+        for x in d["sources"]:
+            used = [r["id"] for r in d["relations"] if "source:" + x["id"] in (r["src"], r["dst"])]
+            print("  %s  %s%s%s — %s" % (x["id"], x["speaker"], " (%s)" % x["locator"] if x.get("locator") else "",
+                                        ", replying to %s" % x["replies-to"] if x.get("replies-to") else "",
+                                        "grounds %s" % ", ".join(used) if used else "grounds nothing yet"))
+        print("%d source(s)" % len(d["sources"]))
+        return 0
+    if not re.fullmatch(r"[\w-]+", args.id or ""):
+        raise SystemExit("a source id is a word: letters, digits, _ or -")
+    if not (args.file and args.speaker):
+        raise SystemExit("--file (the words, verbatim; `-` reads stdin) and --speaker (who said them) — a source without both is hearsay")
+    text = (sys.stdin.read() if args.file == "-" else io.open(args.file, encoding="utf-8").read()).replace("\r\n", "\n")
+    if not text.strip():
+        raise SystemExit("%s is empty" % ("stdin" if args.file == "-" else args.file))
+    if args.replies_to and not any(y["id"] == args.replies_to for y in d["sources"]):
+        # an answer is only as meaningful as its question: "both are right" records nothing unless the turn it answers is kept too
+        raise SystemExit("--replies-to %s: no such source — keep the turn it answers first (whoever said it)" % args.replies_to)
+    x = {"id": args.id, "text": text, "speaker": args.speaker, **({"locator": args.locator} if args.locator else {}),
+         **({"replies-to": args.replies_to} if args.replies_to else {})}
+    old = next((y for y in d["sources"] if y["id"] == args.id), None)
+    if old:
+        if old["text"] == text:
+            print("source %s already kept, unchanged" % args.id)
+            return 0
+        raise SystemExit("source %s exists with other text — what was said does not change; keep the correction as a new source" % args.id)
+    save(os.path.join(folder, args.id + ".json"), x)
+    if args.file != "-":
+        print("(the input %s is not the record — %s is; remove it or keep it, it is not read again)" % (args.file, os.path.join(DECL, "sources", args.id + ".json")))
+    print("source %s kept (%d chars, %s) — relate a concept to it as `source:%s realizes concept:NAME`, the quote as evidence"
+          % (args.id, len(text), args.speaker, args.id))
+    return 0
+
+
+def cmd_report(args):
+    """The net for a person to read, on one page: each concept with its meaning and what realizes it (fresh, stale or
+    broken, with the quote it was confirmed on), each question with its state, the sources, and a Mermaid graph.
+    Nothing here is new judgment — it is a rendering of the record, regenerable any time and read-only (no baseline,
+    event or impact file is written), so it is not committed; the record is."""
+    d = decl(args.target)
+    stale, broken, _, files = compute_impact(args.target, d, persist=False)
+    moved = {x["id"]: "stale" for x in stale}
+    moved.update({x["id"]: "broken" for x in broken})
+    esc = lambda t: " ".join(str(t).split()).replace("|", "\\|")
+    node = lambda a: "n" + hashlib.sha1(a.encode("utf-8")).hexdigest()[:8]
+    label = lambda a: a.replace("#", "#35;").replace('"', "#quot;")   # Mermaid reads `#...;` as an entity: a heading anchor's `#` must be one
+    out = ["# %s — the net" % os.path.basename(os.path.abspath(args.target)), "",
+           "Rendered from `mangsang/` by `mangsang report`; the record is the source, this page is not. %d concept(s), %d relation(s), %d question(s), %d source(s)."
+           % (len(d["concepts"]), len(d["relations"]), len(cq_active(d)), len(d["sources"])), ""]
+    domain = [q for q in cq_active(d) if q.get("verify", {}).get("kind") not in INVARIANT_KINDS]
+    if d["relations"] or d["concepts"] or domain:
+        out += ["```mermaid", "flowchart LR"]
+        ends = {a for r in d["relations"] for a in (r["src"], r["dst"])} | {"concept:" + c["name"] for c in d["concepts"]}
+        for a in sorted(ends):
+            shape = '(["%s"])' if a.startswith("concept:") else '["%s"]'
+            out.append("  %s%s" % (node(a), shape % label(a)))
+        for r in d["relations"]:
+            state = moved.get(r["id"])
+            out.append('  %s %s|"%s"| %s' % (node(r["src"]), "-.->" if state else "-->", r["predicate"] + (" (%s)" % state if state else ""), node(r["dst"])))
+        for q in domain:   # the questions are part of the model: what it must answer, and who answers it (or that nobody does yet)
+            qn = node("cq:" + q.get("id", "?"))
+            kind = q.get("verify", {}).get("kind")
+            out.append('  %s{{"%s"}}' % (qn, label("%s%s: %s" % ("OPEN " if kind == "open" else "", q.get("id", "?"), " ".join(q.get("text", "").split())[:80]))))
+            for n in q.get("verify", {}).get("concepts", []):
+                out.append('  %s ==>|"answered by"| %s' % (qn, node("concept:" + n)))
+        out += ["```", "", "Rounded nodes are concepts, hexagons are questions (OPEN: nothing answers it yet); a dotted edge is a relation "
+                "whose end moved since it was confirmed.", ""]
+    out += ["## Concepts", ""]
+    for c in sorted(d["concepts"], key=lambda c: c["name"]):
+        out += ["### %s" % c["name"], "", "> %s" % esc(c["means"]), ""]
+        for r in (r for r in d["relations"] if "concept:" + c["name"] in (r["src"], r["dst"])):
+            other = r["src"] if r["dst"] == "concept:" + c["name"] else r["dst"]
+            out.append("- `%s` %s — %s · “%s”" % (other, r["predicate"], moved.get(r["id"], "fresh"), esc(r["evidence"])))
+        if not any("concept:" + c["name"] in (r["src"], r["dst"]) for r in d["relations"]):
+            out.append("- nothing realizes it yet")
+        out.append("")
+    out += ["## Questions", ""]
+    named = {c["name"] for c in d["concepts"]}
+    for q in cq_active(d):
+        v = q.get("verify", {})
+        if v.get("kind") == "open":
+            state = "OPEN"
+        elif v.get("kind") in INVARIANT_KINDS:
+            state = "invariant (`check`)"
+        elif cq_presuppositions(d, files, q):
+            state = "UNANSWERABLE"
+        else:
+            shaky = [r["id"] for r in d["relations"] if r["predicate"] == "realizes" and r["dst"][len("concept:"):] in v.get("concepts", []) and r["id"] in moved]
+            realized = all(any(r["predicate"] == "realizes" and r["dst"] == "concept:" + n for r in d["relations"]) for n in v.get("concepts", []))
+            state = "answered" if realized and not shaky else "FAILED"
+        out.append("- **%s** %s — %s%s" % (q.get("id", "?"), esc(q.get("text", "")), state,
+                                           "; answered by " + ", ".join(n for n in v.get("concepts", []) if n in named) if v.get("concepts") else ""))
+    out += ["", "## Sources", ""]
+    for x in d["sources"]:
+        out += ["### %s — %s%s%s" % (x["id"], x["speaker"], " (%s)" % x["locator"] if x.get("locator") else "",
+                                      ", replying to %s" % x["replies-to"] if x.get("replies-to") else ""), ""]
+        out += ["> " + line if line.strip() else ">" for line in x["text"].rstrip().split("\n")] + [""]
+    text = "\n".join(out).rstrip() + "\n"
+    if not (args.out or args.html):
+        print(text, end="")
+        return 0
+    guarded = [os.path.abspath(os.path.join(args.target, x)) for x in (DECL, OBS)]
+    registered = {os.path.abspath(os.path.join(args.target, e["path"])) for e in d["registry"]}
+    for given, body in ((args.out, lambda: text), (args.html, lambda: report_html(text, out[0][2:]))):
+        if not given:
+            continue
+        dest = os.path.abspath(given if os.path.isabs(given) else os.path.join(args.target, given))
+        if any(dest == g or dest.startswith(g + os.sep) for g in guarded) or dest in registered:
+            raise SystemExit("%s is part of the record or a registered file — a rendering goes elsewhere" % given)
+        with io.open(dest, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(body())
+        print("report -> %s (derived: regenerate, do not commit)" % given)
+    return 0
+
+
+MERMAID_JS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor", "mermaid", "mermaid.min.js")
+
+
+def report_html(md, title):
+    """The report's Markdown as one self-contained HTML page. The graph is drawn in the reader's browser by mermaid,
+    vendored in this plugin (vendor/mermaid, pinned) and inlined here — no network, nothing to install, and the file
+    still draws when it is moved or sent. The Markdown is mangsang's own, so a converter for exactly its shapes
+    (headings, lists, quotes, the mermaid fence, `code`, **bold**) is enough; every text is escaped before markup."""
+    import html as H
+    inline = lambda t: re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", re.sub(r"`([^`]+)`", r"<code>\1</code>", H.escape(t, quote=False)))
+    body, lines, i = [], md.split("\n"), 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("```mermaid"):
+            j = lines.index("```", i + 1)
+            body.append('<pre class="mermaid">%s</pre>' % H.escape("\n".join(lines[i + 1:j]), quote=False))   # mermaid reads textContent
+            i = j + 1
+            continue
+        m = re.match(r"^(#{1,3}) (.*)", line)
+        if m:
+            body.append("<h%d>%s</h%d>" % (len(m.group(1)), inline(m.group(2)), len(m.group(1))))
+        elif line.startswith("> ") or line == ">":
+            quote = []
+            while i < len(lines) and (lines[i].startswith("> ") or lines[i] == ">"):
+                quote.append(inline(lines[i][2:]))
+                i += 1
+            body.append("<blockquote>%s</blockquote>" % "<br>".join(quote))
+            continue
+        elif line.startswith("- "):
+            items = []
+            while i < len(lines) and (lines[i].startswith("- ") or lines[i].startswith("  - ")):
+                items.append(("<li class=sub>" if lines[i].startswith("  ") else "<li>") + inline(lines[i].strip()[2:]) + "</li>")
+                i += 1
+            body.append("<ul>%s</ul>" % "".join(items))
+            continue
+        elif line.strip():
+            body.append("<p>%s</p>" % inline(line))
+        i += 1
+    with io.open(MERMAID_JS, encoding="utf-8") as fh:
+        js = fh.read().replace("</script", "<\\/script")
+    return ("<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            "<title>%s</title><style>body{font:15px/1.55 -apple-system,system-ui,sans-serif;max-width:1100px;margin:2em auto;padding:0 16px;color:#1d1d1f}"
+            "blockquote{margin:.4em 0 .8em;padding:.2em .9em;border-left:3px solid #c7c7cc;color:#3a3a3c}code{background:#f2f2f7;padding:0 .25em;border-radius:3px}"
+            "pre.mermaid{overflow:auto;background:#fafafa;border:1px solid #e5e5ea;border-radius:6px;padding:1em}li.sub{margin-left:1.5em;list-style:circle}"
+            "@media (prefers-color-scheme:dark){body{background:#1c1c1e;color:#e5e5ea}blockquote{color:#c7c7cc;border-color:#48484a}code{background:#2c2c2e}"
+            "pre.mermaid{background:#fff}}</style></head><body>\n%s\n<script>%s</script>\n"
+            "<script>mermaid.initialize({startOnLoad:true,securityLevel:'strict',maxTextSize:500000,flowchart:{htmlLabels:false}});</script>\n</body></html>\n"
+            % (H.escape(title), "\n".join(body), js))
+
+
 def cmd_concept(args):
     """The net's own nodes. `concept add NAME --means "..."` declares what a name means — one sentence, the concept's
     identity. Documents, code and tests then *realize* it (predicate `realizes`, src = the projection, dst = concept:NAME).
@@ -879,8 +1083,19 @@ def cmd_concept(args):
                 moved += 1
         c["name"] = args.new
         os.remove(os.path.join(args.target, DECL, "concepts", args.name + ".json"))
+        # the questions that name it as their answer move with it too (retired ones included: a retired question can be
+        # re-added); left behind, every one of them would read UNANSWERABLE after a rename that changed no meaning
+        asked = 0
+        for q in d["cq"] + d["cq_declared"]:
+            names = (q.get("verify") or {}).get("concepts") or []
+            if args.name in names:
+                q["verify"]["concepts"] = [args.new if n == args.name else n for n in names]
+                asked += 1
+                if q in d["cq_declared"]:
+                    save(os.path.join(args.target, DECL, "cq", q["id"] + ".json"), q)
         save_decl(args.target, d)
-        print("concept %s -> %s: %d relation(s) moved with it — the name is the identity, so the rename is one command, not a retirement" % (args.name, args.new, moved))
+        print("concept %s -> %s: %d relation(s) and %d question(s) moved with it — the name is the identity, so the rename is one command, not a retirement"
+              % (args.name, args.new, moved, asked))
         return 0
     # list
     if not d["concepts"]:
@@ -900,7 +1115,7 @@ def cmd_concept(args):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="mangsang", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("register", "confirm", "observe", "impact", "cq", "check", "retire", "reconfirm", "judge", "lookup", "concept"):
+    for name in ("register", "confirm", "observe", "impact", "cq", "check", "retire", "reconfirm", "judge", "lookup", "concept", "source", "report"):
         p = sub.add_parser(name)
         p.add_argument("--target", default=".")
         if name == "register":
@@ -913,7 +1128,7 @@ def main(argv=None):
             p.add_argument("mode", nargs="?", default="run", choices=["run", "add", "revise", "retire"])
             p.add_argument("id", nargs="?", default=None)
             p.add_argument("--text", default=None, help="the question, for people")
-            p.add_argument("--verify", default=None, help="JSON: domain questions are {\"kind\": \"answered-by\", \"concepts\": [...]} — the named concepts carry the answer; structural kinds (coverage|projection|resolved) are declared here too but answer to `check`")
+            p.add_argument("--verify", default=None, help="JSON: domain questions are {\"kind\": \"answered-by\", \"concepts\": [...]} — the named concepts carry the answer; {\"kind\": \"open\"} is asked before anything answers it; structural kinds (coverage|projection|resolved) are declared here too but answer to `check`")
             p.add_argument("--why", default=None, help="retire: what made this question no longer worth asking")
             p.add_argument("--by", default=None)
             p.add_argument("--delegated", default=None)
@@ -943,6 +1158,16 @@ def main(argv=None):
             p.add_argument("--evidence", default=None, help="the sentence that holds now, when the old quote is gone from the text (one id at a time)")
         if name == "lookup":
             p.add_argument("path", help="a file (as registered): print the confirmed relations standing on it before you touch it")
+        if name == "source":
+            p.add_argument("mode", nargs="?", default="list", choices=["add", "list"])
+            p.add_argument("id", nargs="?", default=None)
+            p.add_argument("--file", default=None, help="the words, verbatim (UTF-8); `-` reads them from stdin, leaving no input file behind")
+            p.add_argument("--replies-to", default=None, help="the source this turn answers — an answer is kept with its question")
+            p.add_argument("--speaker", default=None, help="who said or wrote them")
+            p.add_argument("--locator", default=None, help="where they were said: a meeting, a transcript, a URL")
+        if name == "report":
+            p.add_argument("--out", default=None, help="write the Markdown page here (never into mangsang/, .mangsang/ or a registered file); default stdout")
+            p.add_argument("--html", default=None, help="write one self-contained HTML page here: the graph draws in any browser, offline")
         if name == "concept":
             p.add_argument("mode", nargs="?", default="list", choices=["add", "revise", "rename", "list"])
             p.add_argument("name", nargs="?", default=None)
@@ -953,7 +1178,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     return {"register": cmd_register, "confirm": cmd_confirm, "observe": cmd_observe, "impact": cmd_impact,
             "cq": cmd_cq, "check": cmd_check, "retire": cmd_retire, "reconfirm": cmd_reconfirm, "judge": cmd_judge,
-            "lookup": cmd_lookup, "concept": cmd_concept}[args.cmd](args)
+            "lookup": cmd_lookup, "concept": cmd_concept, "source": cmd_source, "report": cmd_report}[args.cmd](args)
 
 
 if __name__ == "__main__":

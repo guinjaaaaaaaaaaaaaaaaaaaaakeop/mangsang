@@ -135,12 +135,98 @@ def test_concepts_are_the_nets_own_nodes_and_survive_what_kills_anchors():
         assert code == 1 and out.count("stale") >= 3, out
         # rename: identity is the name, so the rename is one command and relations move with it
         code, out = run("concept", "rename", "adding", "note-capture", "--target", pj.dir)
-        assert code == 0 and "3 relation(s) moved" in out, out
+        assert code == 0 and "3 relation(s) and 0 question(s) moved" in out, out
         d = mangsang.decl(pj.dir)
         assert all("concept:adding" not in (r["src"], r["dst"]) for r in d["relations"])
         assert sum("concept:note-capture" in (r["src"], r["dst"]) for r in d["relations"]) == 3
         code, out = run("concept", "list", "--target", pj.dir)
         assert code == 0 and "note-capture" in out and "realizes" in out, out
+
+
+def test_a_model_grounded_in_what_people_said_open_questions_and_the_report():
+    """A model built from a conversation: the words kept verbatim as `source:ID`, a concept grounded in them by a quote,
+    a question asked before anything answers it, the answer signed when it exists, a rename that carries the question,
+    and one page a person can read — which writes nothing."""
+    with Project() as pj:
+        said = os.path.join(pj.dir, "talk", "u1.txt")
+        write(said, "A draw is replayed. After three draws in a row the game ends with no winner.\n")
+        # a source needs its words and its speaker; it is kept once and never changes
+        assert run("source", "add", "U1", "--file", said, "--target", pj.dir)[0] == 1
+        assert run("source", "add", "U1", "--file", said, "--speaker", "lee", "--locator", "meeting 09-22", "--target", pj.dir)[0] == 0
+        assert "unchanged" in run("source", "add", "U1", "--file", said, "--speaker", "lee", "--target", pj.dir)[1]
+        write(said, "A draw is never replayed.\n")
+        code, out = run("source", "add", "U1", "--file", said, "--speaker", "lee", "--target", pj.dir)
+        assert code == 1 and "new source" in out, out
+        # both sides are sources: the agent's reading and the person's "yes" to it, kept as a reply — from stdin, no input file left
+        write(said, "A draw is replayed. After three draws in a row the game ends with no winner.\n")
+        old_stdin = sys.stdin
+        try:
+            sys.stdin = io.StringIO("So: a draw means every hand is the same. Is that right?\n")
+            assert run("source", "add", "A1", "--file", "-", "--speaker", "Claude (model)", "--replies-to", "U1", "--target", pj.dir)[0] == 0
+            sys.stdin = io.StringIO("Yes, as you said.\n")
+            code, out = run("source", "add", "U2", "--file", "-", "--speaker", "lee", "--replies-to", "A9", "--target", pj.dir)
+            assert code == 1 and "no such source" in out, out   # an answer without its question is refused
+            sys.stdin = io.StringIO("Yes, as you said.\n")
+            assert run("source", "add", "U2", "--file", "-", "--speaker", "lee", "--replies-to", "A1", "--target", pj.dir)[0] == 0
+        finally:
+            sys.stdin = old_stdin
+        assert mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "U2.json"))["replies-to"] == "A1"
+        assert "replying to A1" in run("source", "list", "--target", pj.dir)[1]
+        # a question asked before any concept answers it: open, alone; an open question naming an answer is refused
+        assert run("cq", "add", "CQ-tie", "--text", "What happens after a draw?", "--verify", '{"kind": "open", "concepts": ["x"]}', "--by", "lee", "--target", pj.dir)[0] == 1
+        assert run("cq", "add", "CQ-tie", "--text", "What happens after a draw?", "--verify", '{"kind": "open"}', "--by", "lee", "--target", pj.dir)[0] == 0
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 0 and "OPEN" in out and "open 1" in out, out   # a declared gap is not a failure
+        code, out = run("cq", "--findings", "--target", pj.dir)
+        doc = json.loads(out)
+        assert [(f["kind"], f["layer"]) for f in doc["findings"]] == [("cq-open", "observation")], doc   # the reviewer lists it, nobody disposes of it
+        # the reading, grounded: the evidence quotes the source; a paraphrase of it is refused like any other
+        assert run("concept", "add", "replay", "--means", "a drawn round is played again; three draws in a row end the game undecided", "--by", "lee", "--target", pj.dir)[0] == 0
+        code, out = pj.propose(rel("source:U1", "realizes", "concept:replay", ev="a draw gets played once more"))
+        assert code == 1 and "not a quote" in out, out
+        code, out = pj.propose(rel("source:U1", "realizes", "concept:replay", ev="A draw is replayed."))
+        assert code == 0, out
+        # `said` is a medium like doc/code/test: every concept grounded in something someone said
+        assert run("cq", "add", "grounded", "--text", "is every concept grounded in what was said?", "--verify",
+                   '{"kind": "projection", "media": {"said": ["source:"]}}', "--by", "lee", "--target", pj.dir)[0] == 0
+        assert run("check", "--target", pj.dir)[0] == 0
+        # the answer arrives: the question is revised to name it (what it was before is the record's history, in git)
+        assert run("cq", "revise", "CQ-tie", "--verify", '{"kind": "answered-by", "concepts": ["replay"]}', "--by", "lee", "--target", pj.dir)[0] == 0
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 0 and "answered" in out and "open 0" in out, out
+        # a rename carries the question with it — a meaning that did not change must not make it unanswerable
+        code, out = run("concept", "rename", "replay", "draw-replay", "--target", pj.dir)
+        assert code == 0 and "1 relation(s) and 1 question(s) moved" in out, out
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 0 and "UNANSWERABLE" not in out, out
+        # revising the reading stales its grounding: someone must re-read the words against the new sentence
+        assert run("observe", "--reset", "--target", pj.dir)[0] == 0
+        assert run("concept", "revise", "draw-replay", "--means", "a drawn round is played again until someone wins", "--by", "lee", "--target", pj.dir)[0] == 0
+        events = os.path.join(pj.dir, ".mangsang", "events.json")
+        before = io.open(events, encoding="utf-8").read()
+        # the page: concepts with their quotes and state, questions with their state (the grounding just went stale), the words; it writes nothing
+        code, out = run("report", "--target", pj.dir)
+        assert code == 0 and "```mermaid" in out and "stale" in out and "“A draw is replayed.”" in out, out
+        assert '{{"CQ-tie: What happens after a draw?"}}' in out and '==>|"answered by"|' in out, out   # the questions are in the graph
+        assert "What happens after a draw? — FAILED" in out and "> A draw is replayed." in out, out
+        assert io.open(events, encoding="utf-8").read() == before, "report must not write observation state"
+        assert run("report", "--out", "mangsang/view.md", "--target", pj.dir)[0] == 1   # never into the record
+        assert run("report", "--out", "NET.md", "--target", pj.dir)[0] == 0 and os.path.exists(os.path.join(pj.dir, "NET.md"))
+        # --html: one file that draws offline — mermaid inlined, nothing fetched — and every text of the record escaped
+        old_stdin = sys.stdin
+        try:
+            sys.stdin = io.StringIO("<script>alert(1)</script> said nobody\n")
+            assert run("source", "add", "U3", "--file", "-", "--speaker", "lee", "--target", pj.dir)[0] == 0
+        finally:
+            sys.stdin = old_stdin
+        assert run("report", "--html", "NET.html", "--target", pj.dir)[0] == 0
+        page = io.open(os.path.join(pj.dir, "NET.html"), encoding="utf-8").read()
+        assert "<script src" not in page and "mermaid.initialize" in page and len(page) > 1000000, "mermaid must be inlined, not fetched"
+        assert '<pre class="mermaid">flowchart LR' in page and "&lt;script&gt;alert(1)&lt;/script&gt; said nobody" in page
+        assert page.count("<script>") == 2, "only the page's own two scripts; the record's text is never markup"
+        assert run("report", "--html", "mangsang/x.html", "--target", pj.dir)[0] == 1
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and "source:U1" in out, out
 
 
 def test_check_projection_asks_that_every_concept_is_realized_in_every_medium():

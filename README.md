@@ -7,6 +7,11 @@ of the files and sections that realize it; revising what it *means* stales every
 also tie artifacts to each other (`documents`, `verifies`); each is confirmed by a human, fingerprinted, and reported
 stale when an end changed. Machines keep the net because the next agent has no memory and nobody can read everything.
 
+A model can also start from people rather than from a plan: what was said in a planning talk or an interview — by the
+person and by the agent they talked to — is kept verbatim as a source (`source:ID`), an answer with the turn it answers;
+a concept is grounded in it by a quote, and what the talk asked but did not answer is kept as an open question until
+something does.
+
 ## Install
 
 ```
@@ -23,7 +28,8 @@ Each runs the engine and shows its output. `mangsang.py --help` for arguments.
 | command | does |
 |---|---|
 | `/mangsang:register` | Watch these files (anchors: file, file#heading for Markdown, file:symbol for Python) |
-| `/mangsang:concept` | The net's own nodes: `add NAME --means "..."` declares one (with `--by` or `--delegated`); `revise` changes its meaning and stales every projection; `rename` moves the name under every relation in one command; `list` shows each concept with its projections |
+| `/mangsang:source` | Keep what was said or written, verbatim, as the anchor `source:ID` (`add ID --file F\|- --speaker WHO [--locator WHERE] [--replies-to ID]`; `-` reads stdin). Both sides of a conversation are sources, and an answer is kept with the turn it answers. The same id with other text is refused — a correction is a new source. `list` shows what each source grounds |
+| `/mangsang:concept` | The net's own nodes: `add NAME --means "..."` declares one (with `--by` or `--delegated`); `revise` changes its meaning and stales every projection; `rename` moves the name under every relation and every question that names it, in one command; `list` shows each concept with its projections |
 | `/mangsang:confirm` | Store proposed relations after checking anchors, vocabulary, evidence (a quote that appears in one anchor's text — paraphrase is rejected) and duplicates |
 | `/mangsang:observe` | Fingerprint every anchor; `--reset` takes a new baseline, `--reset --at REV` takes it from git (a merge base) |
 | `/mangsang:impact` | Report stale and broken relations; exit 1 when anything is unresolved. `--only ANCHOR-PREFIX..` judges only the relations touching those anchors — a slice's check; the whole-tree invariant belongs to the merge and goal checks. `--findings` prints `dwitbuk/findings@1` (stale, broken, and relations re-confirmed by delegation) |
@@ -31,6 +37,7 @@ Each runs the engine and shows its output. `mangsang.py --help` for arguments.
 | `/mangsang:cq` | Ask the domain questions (`answered-by`: a concept's `means` carries the answer); audit that answers are alive, both directions (see below). `add`/`revise`/`retire` declare questions and invariants alike. `--findings` prints the red as `dwitbuk/findings@1` |
 | `/mangsang:check` | Ask the net's invariants (`coverage`/`projection`/`resolved`) — its health, not its questions. `--findings` prints the red as `dwitbuk/findings@1` |
 | `/mangsang:lookup` | Before touching a file: the confirmed relations standing on it, and which ones the edit would make stale — size the task as the edit plus those relations. Read-only |
+| `/mangsang:report` | The net on one page for a person: each concept with its meaning and what realizes it (fresh, stale or broken, with the confirmed quote), each question with its state, the sources, and a Mermaid graph of concepts, projections and questions. Read-only; `--out FILE` writes it as Markdown, `--html FILE` as one self-contained page whose graph draws in any browser with no network and nothing installed — anywhere but the record or a registered file. Derived — regenerate it, do not commit it |
 | `/mangsang:retire` | Drop a relation, keeping it and the reason in retired/ |
 | `/mangsang:reconfirm` | A human re-read stale relations and they still hold: `seen` becomes what the tree has now. Refused on a dead anchor (retire) or when the evidence quote is gone from the text (`--evidence` gives the sentence that holds now) |
 
@@ -42,12 +49,17 @@ Each runs the engine and shows its output. `mangsang.py --help` for arguments.
 | `mangsang/concepts/<name>.json` | yes | the net's nodes — one per file, each a name, its `means` sentence, and who declared it |
 | `mangsang/relations/<id>.json`, `mangsang/retired/<id>.json` | yes | one relation per file, so relations added on different branches merge as distinct files; each carries `seen`, the anchor fingerprints its confirmer saw |
 | `mangsang/cq/<id>.json` (and legacy `cq.json`) | yes | one competency question per file: text for people, a verify spec for the engine, its author; retired questions keep the record |
+| `mangsang/sources/<id>.json` | yes | what a person said or wrote, verbatim, with the speaker and where — one per file, never rewritten. Committed like every record: in a public repository, their words are public |
 | `.mangsang/` | no | this machine's baseline (for `observe` events, and for judging relations from before `seen`), events, impact |
 
 ## Anchors, predicates, quotes
 
-`file`, `file#Heading text` (Markdown), `file:symbol` (Python top-level def/class/constant), and `concept:NAME` — the
-concepts pass through the same machinery as files, their `means` sentence as the anchor's text.
+`file`, `file#Heading text` (Markdown), `file:symbol` (Python top-level def/class/constant), `concept:NAME` and
+`source:ID` — concepts and sources pass through the same machinery as files, a concept's `means` sentence or a source's
+words as the anchor's text. A source never changes, so a relation on it goes stale only from its other end: revise the
+concept a conversation grounded, and someone must re-read the words against the new sentence. In a `projection`
+invariant `source:` is a medium like any prefix — `{"said": ["source:"]}` asks that every concept be grounded in
+something someone said.
 `documents` and `verifies` propagate `dst->src` (when the code changes, the section or test may be stale); `realizes`
 propagates both ways (a revised meaning stales the projection; a changed projection may have outgrown the meaning);
 `references` propagates nothing.
@@ -84,6 +96,9 @@ confirm); it audits that the answer is *alive*. Three reds: **FAILED** (the answ
 its projections moved since confirmation — the promise's reality shifted; re-read before trusting the sentence),
 **UNANSWERABLE** (the concept a question names is gone: the model cannot answer this of the domain), **UNQUESTIONED**
 (a concept no question names — the model holds a meaning nobody asks for; write the question or say why not).
+A question may also be asked before anything answers it — `{"kind": "open"}`, naming no concept: `cq` lists it
+**OPEN**, and `--findings` reports it as an observation, not a red. When a concept carries the answer, `cq revise` to
+`answered-by`.
 
 Both layers' declarations live in `mangsang/cq/` and are judgments alike: `cq add ID --text "..." --verify '{...}'
 --by WHO` records the author, is refused when the current model cannot support it, and `cq retire --why` keeps the
@@ -91,9 +106,10 @@ record. Structural kinds declared there answer to `check`; `answered-by` answers
 
 ## Limits
 
-- Never proposes a relation and never judges meaning. A stale relation is a question for a human (or a judge role); the answer is `retire` or `reconfirm`, after reading.
+- Never proposes a relation and never judges meaning — not even between two sources that disagree; that is a person's question, asked with both quotes. A stale relation is a question for a human (or a judge role); the answer is `retire` or `reconfirm`, after reading.
 - Optional for a project. Absent, what it would have watched is a non-claim.
 - The judge is a proposal: still-true is applied as a delegation (`confirmed: {delegated: "judge …"}`), never as a person's confirmation; drifted is a quote a person acts on. The old product's judge measured recall 1.00 / specificity 1.00 on planted drift; this port is not re-measured.
+- `report --html` inlines mermaid 11.17.2, vendored unmodified under `vendor/mermaid/` (MIT; provenance and hash in `SOURCE.md`) — the one piece of code here not written for mangsang, pinned so that it changes only with a mangsang version.
 - Not built yet: repair candidates after a rename, other languages' symbols.
 
 ## Versioning
