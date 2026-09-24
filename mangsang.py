@@ -621,10 +621,20 @@ def cq_presuppositions(d, files, q):
             missing.append("presupposes predicate %r — not in the vocabulary" % pred)
         if v.get("as") not in (None, "src", "dst"):
             missing.append("`as` must be src or dst")
-        pat = re.compile("^" + re.escape(v.get("anchors", "")).replace("\\*", ".*") + "$")
-        all_anchors = ["%s%s" % (f, k) for f, ks in files.items() for k in ks]
-        if not any(pat.match(a) for a in all_anchors):
-            missing.append("presupposes anchors matching %r — nothing in the tree matches; the question is about nothing" % v.get("anchors"))
+        if isinstance(v.get("members"), dict):
+            # the targets are chosen by a relation: the concepts that are <predicate> concept:<of>
+            m = v["members"]
+            if m.get("predicate") not in d["vocabulary"]:
+                missing.append("presupposes predicate %r (members) — not in the vocabulary" % m.get("predicate"))
+            if m.get("of") not in {c["name"] for c in d["concepts"]}:
+                missing.append("presupposes concept %r (members) — not declared" % m.get("of"))
+            elif not members(d, m):
+                missing.append("presupposes concepts that are %s %s — none are; the question is about nothing" % (m.get("predicate"), m.get("of")))
+        else:
+            pat = re.compile("^" + re.escape(v.get("anchors", "")).replace("\\*", ".*") + "$")
+            all_anchors = ["%s%s" % (f, k) for f, ks in files.items() for k in ks]
+            if not any(pat.match(a) for a in all_anchors):
+                missing.append("presupposes anchors matching %r — nothing in the tree matches; the question is about nothing" % v.get("anchors"))
     elif v.get("kind") == "projection":
         if "realizes" not in d["vocabulary"]:
             missing.append("presupposes predicate 'realizes' — not in the vocabulary")
@@ -663,17 +673,78 @@ def cq_presuppositions(d, files, q):
 INVARIANT_KINDS = ("coverage", "projection", "resolved")
 
 
+def reach(d, names):
+    """What the concepts `names` stand on: every concept reachable through relations between concepts along which a change
+    travels toward them — the vocabulary's `propagates`, the rule `impact` already judges staleness by. A project that adds
+    `requires` (dst->src) to its vocabulary says "when the fixture changes, the activity may be stale"; the same sentence
+    says the activity's question is also about the fixture. Returns {name: (from, relation id)} for each reached concept
+    (the starts excluded), so a caller can say how it was reached. Relations to or from anything but a concept (a document
+    section, code, a source) are projections, not dependencies, and are not followed."""
+    out, queue = {}, list(names)
+    starts = set(names)
+    while queue:
+        cur = queue.pop(0)
+        for r in d["relations"]:
+            if not (r["src"].startswith("concept:") and r["dst"].startswith("concept:")):
+                continue
+            prop = d["vocabulary"].get(r["predicate"], {}).get("propagates", "none")
+            src, dst = r["src"][len("concept:"):], r["dst"][len("concept:"):]
+            nxt = dst if src == cur and prop in ("dst->src", "both") else src if dst == cur and prop in ("src->dst", "both") else None
+            if nxt and nxt not in starts and nxt not in out:
+                out[nxt] = (cur, r["id"])
+                queue.append(nxt)
+    return out
+
+
+def answer_health(d, names, moved):
+    """(problems, reached) for a question answered by `names`: each named concept must be realized somewhere; it and
+    everything it stands on (`reach`) must have no moved projection, and the relations it stands on must not have moved.
+    `moved`: relation id -> "stale" | "broken"."""
+    reached = reach(d, names)
+    problems = []
+    for n in names:
+        if not any(r["predicate"] == "realizes" and r["dst"] == "concept:" + n for r in d["relations"]):
+            problems.append("%s is declared but realized nowhere — the answer is a sentence with no reality behind it" % n)
+    for n in list(names) + list(reached):
+        ids = [r["id"] for r in d["relations"] if r["predicate"] == "realizes" and r["dst"] == "concept:" + n and r["id"] in moved]
+        via = "" if n in names else " (through %s)" % reached[n][0]
+        if ids:
+            problems.append("%s%s has moved projections (%s) — the sentence stands but what realizes it changed since confirmation" % (n, via, ", ".join(ids)))
+    for n, (frm, rid) in reached.items():
+        if rid in moved:
+            rel = next(r for r in d["relations"] if r["id"] == rid)
+            problems.append("%s %s %s (%s) is %s — what %s stands on changed since it was confirmed; re-read it"
+                            % (rel["src"][len("concept:"):], rel["predicate"], rel["dst"][len("concept:"):], rid, moved[rid], frm))
+    return problems, reached
+
+
+def members(d, spec):
+    """The concepts a relation selects: every concept X with `X <predicate> concept:<of>` — followed transitively along the
+    same predicate, so `shower is-a fixture` and `fixture is-a thing` put shower among the things."""
+    pred, of = spec.get("predicate"), spec.get("of")
+    out, frontier = set(), {of}
+    while frontier:
+        nxt = {r["src"][len("concept:"):] for r in d["relations"] if r["predicate"] == pred and r["src"].startswith("concept:")
+               and r["dst"] in {"concept:" + f for f in frontier}} - out - {of}
+        out |= nxt
+        frontier = nxt
+    return sorted(out)
+
+
 def eval_invariant(d, files, all_anchors, q):
     """One invariant, evaluated: (ok, detail). These are the net's health checks — the fsck, not the questions."""
     v = q.get("verify", {})
     if v.get("kind") == "coverage":
-        pat = re.compile("^" + re.escape(v["anchors"]).replace("\\*", ".*") + "$")
-        targets = [a for a in all_anchors if pat.match(a)]
+        if isinstance(v.get("members"), dict):
+            targets = ["concept:" + n for n in members(d, v["members"])]
+        else:
+            pat = re.compile("^" + re.escape(v["anchors"]).replace("\\*", ".*") + "$")
+            targets = [a for a in all_anchors if pat.match(a)]
         role = v.get("as", "src")
         covered = {r[role] for r in d["relations"] if r["predicate"] == v.get("predicate", r["predicate"])}
         missing = [a for a in targets if a not in covered]
         ok = bool(targets) and not missing
-        return ok, "%d anchors, %d uncovered%s" % (len(targets), len(missing), (": " + ", ".join(missing)) if missing else "")
+        return ok, "%d %s, %d uncovered%s" % (len(targets), "concept(s)" if isinstance(v.get("members"), dict) else "anchors", len(missing), (": " + ", ".join(missing)) if missing else "")
     if v.get("kind") == "projection":
         media = v.get("media") or {}
         missing = []
@@ -782,15 +853,8 @@ def cmd_cq(args):
     active = [q for q in cq_active(d) if q.get("verify", {}).get("kind") not in INVARIANT_KINDS]
     structural = len(cq_active(d)) - len(active)
     stale, broken, _, _ = compute_impact(args.target, d, None)
-    shaky = {}   # concept name -> relation ids whose realizes-projection moved or died
-    for x in stale:
-        rel = next(r for r in d["relations"] if r["id"] == x["id"])
-        if rel["predicate"] == "realizes" and rel["dst"].startswith("concept:"):
-            shaky.setdefault(rel["dst"][len("concept:"):], []).append(x["id"])
-    for b in broken:
-        rel = next((r for r in d["relations"] if r["id"] == b["id"]), None)
-        if rel and rel["predicate"] == "realizes" and rel["dst"].startswith("concept:"):
-            shaky.setdefault(rel["dst"][len("concept:"):], []).append(b["id"])
+    moved = {x["id"]: "stale" for x in stale}
+    moved.update({x["id"]: "broken" for x in broken})
     byname = {c["name"]: c for c in d["concepts"]}
     failed = unanswerable = 0
     findings = []
@@ -811,13 +875,8 @@ def cmd_cq(args):
                              "text": "; ".join(presup)})
             continue
         names = q["verify"].get("concepts", [])
-        problems = []
-        for n in names:
-            pro = [r for r in d["relations"] if r["predicate"] == "realizes" and r["dst"] == "concept:" + n]
-            if not pro:
-                problems.append("%s is declared but realized nowhere — the answer is a sentence with no reality behind it" % n)
-            elif n in shaky:
-                problems.append("%s has moved projections (%s) — the sentence stands but what realizes it changed since confirmation" % (n, ", ".join(shaky[n])))
+        problems, reached = answer_health(d, names, moved)
+        q["_reached"] = reached
         ok = not problems
         failed += not ok
         if not ok:
@@ -825,10 +884,17 @@ def cmd_cq(args):
         answer = "; ".join("%s: %s" % (n, byname[n]["means"]) for n in names if n in byname)
         say("  %-12s %s  %s" % ("answered" if ok else "FAILED", q["id"], q["text"]))
         say("      %s %s" % ("=" if ok else "?", answer[:240]))
+        if reached:
+            by = {}
+            for n, (frm, rid) in reached.items():
+                pred = next(r["predicate"] for r in d["relations"] if r["id"] == rid)
+                by.setdefault(pred, []).append(n)
+            say("        through %s" % "; ".join("%s: %s" % (p, ", ".join(ns)) for p, ns in sorted(by.items())))
         for p in problems:
             say("      %s" % p)
     # the reverse audit: which concepts does no question name? (G&F: content the questions do not justify)
-    named = {n for q in active for n in q.get("verify", {}).get("concepts", [])}
+    # a concept is asked for when a question names it or stands on it (`reach`)
+    named = {n for q in active for n in q.get("verify", {}).get("concepts", [])} | {n for q in active for n in q.pop("_reached", {})}
     unquestioned = sorted(c["name"] for c in d["concepts"] if c["name"] not in named)
     for u in unquestioned:
         say("  %-12s concept:%s — the model holds this meaning and no question asks for it; write the CQ or say why not" % ("UNQUESTIONED", u))
@@ -1242,9 +1308,8 @@ def render_questions(d, files, moved):
         elif cq_presuppositions(d, files, q):
             state = "UNANSWERABLE"
         else:
-            shaky = [r["id"] for r in d["relations"] if r["predicate"] == "realizes" and r["dst"][len("concept:"):] in v.get("concepts", []) and r["id"] in moved]
-            realized = all(any(r["predicate"] == "realizes" and r["dst"] == "concept:" + n for r in d["relations"]) for n in v.get("concepts", []))
-            state = "answered" if realized and not shaky else "FAILED"
+            problems, _ = answer_health(d, v.get("concepts", []), moved)
+            state = "answered" if not problems else "FAILED"
         out.append("- **%s** %s — %s%s · %s" % (q.get("id", "?"), esc(q.get("text", "")), state,
                                                 "; answered by " + ", ".join(n for n in v.get("concepts", []) if n in named) if v.get("concepts") else "", signed(q.get("declared"))))
     return out

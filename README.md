@@ -230,6 +230,22 @@ Both layers' declarations live in `mangsang/cq/` and are judgments alike: `cq ad
 --by WHO` records the author, is refused when the current model cannot support it, and `cq retire --why` keeps the
 record. Structural kinds declared there answer to `check`; `answered-by` answers to `cq`. Both exit 1 on any red.
 
+### Relations between concepts: what a question stands on
+
+A project may add its own predicates between concepts to `mangsang/vocabulary.json` — `requires` (an activity needs a
+fixture, `propagates: dst->src`), `is-a` (a kind, `propagates: none`), whatever its domain says. mangsang does not know
+what they mean; it reads their `propagates`, the same rule `impact` judges staleness by:
+
+- **A question stands on what its answer stands on.** `cq` follows, from each concept a question names, every relation
+  between concepts along which a change travels toward it, and counts what it reaches as asked for (`through requires:
+  …` in the output) — no longer `UNQUESTIONED`. When one of those concepts, or a relation on the way, moved since it was
+  confirmed, the question is `FAILED`, naming the path. Relations to sections, code or sources are projections, not
+  dependencies, and are not followed. A project with no relations between concepts sees no difference.
+- **A coverage invariant can choose its targets by a relation.** `{"kind": "coverage", "predicate": "requires",
+  "members": {"predicate": "is-a", "of": "fixture"}, "as": "dst"}` asks that every concept that is-a fixture (followed
+  transitively along is-a) be the `dst` of some `requires` — every fixture needed by something. Kinds are concepts, with
+  a meaning and a ground like any other; mangsang has no classification of its own.
+
 ## Limits
 
 - Never proposes a relation and never judges meaning — not even between two sources that disagree; that is a person's

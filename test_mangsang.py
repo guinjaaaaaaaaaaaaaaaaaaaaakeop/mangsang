@@ -809,3 +809,43 @@ def test_move_carries_broken_relations_to_the_symbols_new_home_and_leaves_the_am
         assert left == {"memo.py:list_", "memo.py:X"}, left   # ambiguous and homeless: a person's call
         code, out = run("impact", "--target", pj.dir)
         assert out.count("broken") == 2, out
+
+
+def test_a_question_stands_on_what_its_answer_requires_and_coverage_can_select_by_a_relation():
+    """Seen on a playground (bathroom): a project added `requires` (activity -> fixture, dst->src) to its vocabulary, and cq
+    called every fixture UNQUESTIONED — the answer stopped at the activity. The question is about what the activity stands
+    on: cq follows relations between concepts along which a change travels toward the answer (the vocabulary's own
+    `propagates`, impact's rule), counts them as asked for, and fails the question when one of them moved. A coverage
+    invariant may choose its targets by a relation (`members`: the concepts that are <predicate> <of>), transitively."""
+    with Project() as pj:
+        write(os.path.join(pj.dir, "doc.md"), "# d\n\n## shower\n\nwash under running water.\n\n## showerhead\n\nwater comes from above.\n\n## drain\n\nwater goes down.\n\n## mirror\n\nyou see yourself.\n")
+        assert run("register", "doc.md", "--target", pj.dir)[0] == 0
+        voc = dict(mangsang.DEFAULT_VOCAB, requires={"propagates": "dst->src", "means": "src needs dst"}, **{"is-a": {"propagates": "none", "means": "src is a dst"}})
+        write(os.path.join(pj.dir, "mangsang", "vocabulary.json"), voc)
+        for name, means in (("showering", "washing under a shower; it needs a showerhead and a drain"), ("showerhead", "where water comes from above"),
+                            ("drain", "where water goes down"), ("mirror", "where you see yourself"), ("fixture", "a thing fixed in the room"), ("thing", "anything in the room")):
+            assert run("concept", "add", name, "--means", means, "--by", "kim", "--target", pj.dir)[0] == 0
+        pj.propose(rel("doc.md#shower", "realizes", "concept:showering", ev="wash under running water."), rel("doc.md#showerhead", "realizes", "concept:showerhead", ev="water comes from above."),
+                   rel("doc.md#drain", "realizes", "concept:drain", ev="water goes down."), rel("doc.md#mirror", "realizes", "concept:mirror", ev="you see yourself."),
+                   rel("concept:showering", "requires", "concept:showerhead", ev="it needs a showerhead"), rel("concept:showering", "requires", "concept:drain", ev="and a drain"),
+                   rel("concept:showerhead", "is-a", "concept:fixture", ev="where water comes from above"), rel("concept:drain", "is-a", "concept:fixture", ev="where water goes down"),
+                   rel("concept:mirror", "is-a", "concept:fixture", ev="where you see yourself"), rel("concept:fixture", "is-a", "concept:thing", ev="a thing fixed in the room"))
+        assert run("cq", "add", "how-shower", "--text", "what does a shower need?", "--verify", '{"kind": "answered-by", "concepts": ["showering"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        assert set(mangsang.reach(mangsang.decl(pj.dir), ["showering"])) == {"showerhead", "drain"}, "requires is followed; is-a (propagates none) is not"
+        code, out = run("cq", "--target", pj.dir)
+        assert "through requires: showerhead, drain" in out and "UNQUESTIONED concept:showerhead" not in out and "UNQUESTIONED concept:drain" not in out, out
+        assert "UNQUESTIONED concept:mirror" in out, "a fixture no question stands on is still unasked"
+        # coverage by a relation: every fixture (and, transitively, every thing) is required by something
+        assert run("cq", "add", "every-fixture-needed", "--text", "is every fixture needed?", "--verify",
+                   '{"kind": "coverage", "predicate": "requires", "members": {"predicate": "is-a", "of": "thing"}, "as": "dst"}', "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert "FAILED       every-fixture-needed" in out and "4 concept(s), 2 uncovered" in out and "concept:mirror" in out and "concept:fixture" in out, out
+        code, out = run("cq", "add", "bad", "--text", "?", "--verify", '{"kind": "coverage", "predicate": "requires", "members": {"predicate": "is-a", "of": "nothing"}, "as": "dst"}', "--by", "kim", "--target", pj.dir)
+        assert code != 0 and "not declared" in out, out
+        # what the answer stands on moves: the question fails, saying through what
+        assert run("observe", "--reset", "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, "doc.md"), io.open(os.path.join(pj.dir, "doc.md"), encoding="utf-8").read().replace("water goes down.", "water goes down, fast."))
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 1 and "FAILED       how-shower" in out and "drain (through showering) has moved projections" in out, out
+        page = run("report", "--target", pj.dir)[1]
+        assert "what does a shower need? — FAILED" in page, page

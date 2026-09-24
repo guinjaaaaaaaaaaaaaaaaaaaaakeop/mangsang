@@ -273,6 +273,39 @@ def test_coverage_and_projection_are_deterministic_and_monotone_in_relations():
     prop()
 
 
+# ---------------------------------------------------------------- 6. a question stands on exactly what a change would reach it from
+
+def test_reach_is_the_reverse_of_where_a_change_travels():
+    need_hypothesis()
+    kinds = {"needs": "dst->src", "feeds": "src->dst", "twin": "both", "names": "none"}
+
+    @given(edges=st.lists(st.tuples(st.integers(0, 4), st.sampled_from(sorted(kinds)), st.integers(0, 4)), max_size=8), start=st.integers(0, 4))
+    @settings(**PROPERTY)
+    def prop(edges, start):
+        d = {"vocabulary": {k: {"propagates": v} for k, v in kinds.items()},
+             "relations": [{"id": "R%d" % i, "src": "concept:c%d" % a, "predicate": p, "dst": "concept:c%d" % b} for i, (a, p, b) in enumerate(edges) if a != b]}
+        got = set(mangsang.reach(d, ["c%d" % start]))
+        # independently: X is reached iff a change at X travels, relation by relation, to the start
+        def moves(frm):   # the concepts a change at `frm` makes stale, one step
+            out = set()
+            for r in d["relations"]:
+                s_, t = r["src"][8:], r["dst"][8:]
+                pr = kinds[r["predicate"]]
+                if t == frm and pr in ("dst->src", "both"): out.add(s_)
+                if s_ == frm and pr in ("src->dst", "both"): out.add(t)
+            return out
+        want = set()
+        for x in ("c%d" % i for i in range(5)):
+            seen, frontier = set(), {x}
+            while frontier:
+                seen |= frontier
+                frontier = set().union(*(moves(f) for f in frontier)) - seen
+            if "c%d" % start in seen and x != "c%d" % start:
+                want.add(x)
+        assert got == want, (edges, start, got, want)
+
+    prop()
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
