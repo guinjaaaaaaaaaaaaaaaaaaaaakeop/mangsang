@@ -271,6 +271,103 @@ def test_a_turn_is_taken_from_the_hosts_transcript_verbatim_and_names_are_the_ro
         assert run("concept", "add", "feed", "--means", "one list, newest first", "--by", "lee", "--target", pj.dir)[0] == 0
 
 
+def test_a_playground_round_what_a_day_of_use_found():
+    """Read back from a public playground (rock-paper-scissors): every record object says which mangsang wrote it, and a
+    committed one written by a build that is no release is a finding; a re-confirmation and a revision keep what they
+    replace; the title heading is a section of its own, not the whole file; `impact --show` works when the target is a
+    directory inside a repository; the report keeps sources out of the graph, lists approval-only sources apart, shows
+    who signed what, and `--check` says whether a committed page is current; a person's yes to the agent's own proposal
+    is recorded as that; the reporters' findings carry `text`, the field the finding type requires."""
+    import subprocess
+    with Project() as pj:
+        # the target is a directory inside the repository — the playground's shape
+        root = pj.dir
+        sub = os.path.join(root, "rps")
+        write(os.path.join(sub, "README.md"), "# game\n\nintro line\n\n## hands\n\nthree hands.\n\n## draw\n\nsame hand draws.\n")
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=root, capture_output=True, text=True)
+        git("init", "-q")
+        write(os.path.join(sub, "mangsang", "people.json"), {"people": ["lee"], "agents": ["Claude ("]})
+        assert run("register", "README.md", "--target", sub)[0] == 0
+        # the title heading is its own section: editing the last section does not touch it
+        md = mangsang.anchors_of(os.path.join(sub, "README.md"))
+        assert md["#game"] != md[""] and mangsang.anchor_texts(os.path.join(sub, "README.md"))["#game"] == "# game\n\nintro line\n\n", md
+        # sources: the agent's proposal, the person's one-word yes to it, and the person's own words
+        old_stdin = sys.stdin
+        try:
+            sys.stdin = io.StringIO("Concepts: hand (three), draw.\n")
+            assert run("source", "add", "A1", "--file", "-", "--speaker", "Claude (m)", "--target", sub)[0] == 0
+            sys.stdin = io.StringIO("ok go\n")
+            assert run("source", "add", "L1", "--file", "-", "--speaker", "lee", "--replies-to", "A1", "--target", sub)[0] == 0
+            sys.stdin = io.StringIO("a draw is when every hand shown is the same\n")
+            assert run("source", "add", "L2", "--file", "-", "--speaker", "lee", "--target", sub)[0] == 0
+        finally:
+            sys.stdin = old_stdin
+        # an agent signs lee's name on lee's yes to the agent's list: recorded as an approval of a proposal
+        os.environ["CLAUDECODE"] = "1"
+        try:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = mangsang.main(["concept", "add", "hand", "--means", "one of three", "--by", "lee", "--approved-in", "source:L1", "--target", sub])
+            assert code == 0, out.getvalue()
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = mangsang.main(["concept", "add", "draw", "--means", "every hand shown is the same", "--by", "lee", "--approved-in", "source:L2", "--target", sub])
+            assert code == 0, out.getvalue()
+        finally:
+            os.environ.pop("CLAUDECODE", None)
+            mangsang.APPROVED_IN = mangsang.APPROVAL_OF = None
+        hand = mangsang.load(os.path.join(sub, "mangsang", "concepts", "hand.json"))
+        draw = mangsang.load(os.path.join(sub, "mangsang", "concepts", "draw.json"))
+        assert hand["declared"] == {"by": "lee", "approved-in": "source:L1", "approval-of": "source:A1"}, hand["declared"]
+        assert draw["declared"] == {"by": "lee", "approved-in": "source:L2"}, draw["declared"]
+        # every record object says which mangsang wrote it — a field
+        assert hand["written_by"] == mangsang.engine() and mangsang.load(os.path.join(sub, "mangsang", "sources", "L2.json"))["written_by"] == mangsang.engine()
+        assert not os.path.exists(os.path.join(sub, "mangsang", "cq.json")), "a new project gets no empty legacy list"
+        write(os.path.join(sub, "proposals.json"), {"relations": [
+            {"src": "README.md#hands", "predicate": "realizes", "dst": "concept:hand", "evidence": "three hands."},
+            {"src": "README.md#draw", "predicate": "realizes", "dst": "concept:draw", "evidence": "same hand draws."},
+            {"src": "source:L2", "predicate": "realizes", "dst": "concept:draw", "evidence": "every hand shown is the same"}]})
+        assert run("confirm", "proposals.json", "--delegated", "test", "--target", sub)[0] == 0
+        assert run("cq", "add", "what-draw", "--text", "what is a draw?", "--verify", '{"kind": "answered-by", "concepts": ["draw"]}', "--by", "lee", "--target", sub)[0] == 0
+        rid = next(r["id"] for r in mangsang.decl(sub)["relations"] if r["src"] == "README.md#draw")
+        assert mangsang.load(os.path.join(sub, "mangsang", "relations", rid + ".json"))["written_by"] == mangsang.engine()
+        git("add", "-A"); git("commit", "-qm", "confirmed")
+        # a committed record written by a working source is a finding for the reviewer (this self-check runs from one);
+        # the approval of a proposal is an observation; every finding has `text`
+        code, out = run("check", "--findings", "--target", sub)
+        doc = json.loads(out)
+        kinds = {f["kind"] for f in doc["findings"]}
+        assert ("unreleased-writer" in kinds) == ("+g" in mangsang.engine()), (mangsang.engine(), kinds)
+        assert "agent-proposed" in kinds and all(f.get("text") for f in doc["findings"]), doc
+        assert next(f for f in doc["findings"] if f["kind"] == "agent-proposed")["where"] == "concept:hand"
+        code, out = run("cq", "--findings", "--target", sub)
+        assert all(f.get("text") for f in json.loads(out)["findings"]), out
+        # the report: no source in the graph, the approval-only yes under Approvals, signatures shown; --check on a kept page
+        assert run("report", "--out", "MODEL.md", "--target", sub)[0] == 0
+        page = io.open(os.path.join(sub, "MODEL.md"), encoding="utf-8").read()
+        graph = page.split("```mermaid")[1].split("```")[0]
+        assert "source:" not in graph and "concept:draw" in graph, graph
+        assert "## Approvals" in page and "**L1** — lee, replying to A1 (Claude (m)): “ok go” — approves `concept:hand`" in page, page
+        assert "### L2 — lee" in page and "### L1" not in page and "### A1 — Claude (m) — grounds nothing yet" in page, page   # a standalone source that grounds nothing stays under Sources, in full; only an answer that merely approves goes under Approvals
+        assert "declared by lee (approved in `source:L1`, answering the agent's `source:A1`)" in page and "delegated: test" in page and "Rendered from `mangsang/` by mangsang " in page, page
+        assert run("report", "--check", "MODEL.md", "--target", sub)[0] == 0
+        # the last section changes: the title section stays fresh, the draw relation goes stale, and --show reads the old text from
+        # git although the target is a subdirectory; reconfirm keeps what it replaces; revise keeps the old meaning
+        write(os.path.join(sub, "README.md"), "# game\n\nintro line\n\n## hands\n\nthree hands.\n\n## draw\n\nsame hand draws. always.\n")
+        code, out = run("impact", "--show", "--target", sub)
+        assert code == 1 and "-same hand draws." in out and "+same hand draws. always." in out and "#game" not in out, out
+        code, out = run("report", "--check", "MODEL.md", "--target", sub)
+        assert code == 1 and "behind the record" in out, out
+        assert run("reconfirm", rid, "--by", "lee", "--target", sub)[0] == 0
+        r = mangsang.load(os.path.join(sub, "mangsang", "relations", rid + ".json"))
+        assert len(r["history"]) == 1 and r["history"][0]["confirmed"] == {"delegated": "test"} and r["confirmed"] == {"by": "lee"}, r
+        assert run("concept", "revise", "draw", "--means", "no hand beats another", "--by", "lee", "--target", sub)[0] == 0
+        draw = mangsang.load(os.path.join(sub, "mangsang", "concepts", "draw.json"))
+        assert draw["history"] == [{"means": "every hand shown is the same", "declared": {"by": "lee", "approved-in": "source:L2"}}], draw
+        assert run("cq", "revise", "what-draw", "--text", "what counts as a draw?", "--by", "lee", "--target", sub)[0] == 0
+        assert mangsang.load(os.path.join(sub, "mangsang", "cq", "what-draw.json"))["history"][0]["text"] == "what is a draw?"
+
+
 def test_a_stale_relation_shows_what_changed_since_it_was_confirmed():
     """`seen` knows that an anchor changed; the person re-reading needs to see how. The text as confirmed comes from git —
     the commit that last wrote the relation's file — and is diffed against now, in `impact --show` and before `reconfirm`."""
