@@ -856,3 +856,21 @@ def test_a_question_stands_on_what_its_answer_requires_and_coverage_can_select_b
         assert code == 1 and "FAILED       how-shower" in out and "drain (through showering) has moved projections" in out, out
         page = run("report", "--target", pj.dir)[1]
         assert "what does a shower need? — FAILED" in page, page
+
+
+def test_show_prints_every_end_that_moved():
+    """A relation whose section and concept both changed (a kind's meaning revised while its section was rewritten) showed
+    no diff at all: the lookup went by "A and B", which is no anchor. Each moved end is shown."""
+    import subprocess
+    with Project() as pj:
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+        git("init", "-q")
+        assert run("register", "plan/PLAN.md", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "appending one memo", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "realizes", "concept:adding"))[0] == 0
+        git("add", "-A"); git("commit", "-qm", "confirmed")
+        write(os.path.join(pj.dir, "plan", "PLAN.md"), PLAN.replace("appends and prints", "appends and prints, then saves"))
+        assert run("concept", "revise", "adding", "--means", "appending one memo and saving it", "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("impact", "--show", "--target", pj.dir)
+        assert code == 1 and "and concept:adding" in out, out
+        assert "+`add` appends and prints, then saves" in out and "+appending one memo and saving it" in out, out

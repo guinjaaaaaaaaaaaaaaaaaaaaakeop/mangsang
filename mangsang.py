@@ -462,7 +462,8 @@ def compute_impact(target, d, only=None, persist=True):
             # `because` is the end that actually changed — for `both` it used to name dst whatever had moved, so a section
             # edit read as "<- concept:x" and `--show` went looking for a change in the concept
             other = r["src"] if changed[0] == r["dst"] else r["dst"]
-            stale.append({"id": r["id"], "stale": other if len(changed) == 1 else r["src"], "because": changed[0] if len(changed) == 1 else "%s and %s" % (r["src"], r["dst"])})
+            stale.append({"id": r["id"], "stale": other if len(changed) == 1 else r["src"], "because": changed[0] if len(changed) == 1 else "%s and %s" % (r["src"], r["dst"]),
+                          "changed": changed})   # the ends that moved, as anchors — `because` is their name for a reader
     return stale, broken, sorted(set(unjudged)), files
 
 
@@ -517,8 +518,11 @@ def cmd_impact(args):
         print("  stale   %s  %s  <- %s" % (x["id"], x["stale"], x["because"]))
         if getattr(args, "show", False):
             rel = next((r for r in d["relations"] if r["id"] == x["id"]), None)
-            diff = what_changed(args.target, rel, x["because"]) if rel else None
-            print("\n".join("      " + l for l in (diff or "(no earlier text in git to compare against — the relation was not committed when it was confirmed, or the anchor is a source, which never changes; the change is known by its fingerprint)").rstrip().split("\n")))
+            # every end that moved: a relation whose section and concept both changed shows both (it used to show neither —
+            # "A and B" is no anchor, and the diff was looked up by it)
+            for end in x.get("changed") or [x["because"]]:
+                diff = what_changed(args.target, rel, end) if rel else None
+                print("\n".join("      " + l for l in (diff or "(%s: no earlier text in git to compare against — the relation was not committed when it was confirmed, or the anchor is a source, which never changes; the change is known by its fingerprint)" % end).rstrip().split("\n")))
     for b in broken:
         print("  broken  %s  dead anchors %s" % (b["id"], b["dead"]))
     if unjudged:
