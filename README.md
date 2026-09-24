@@ -126,4 +126,12 @@ copy under one version; `hunsu install --refresh <plugin>` recopies after the bu
 
 ## Self-check
 
-`python test_mangsang.py` — a temp project; every stop, rejection and kind of finding fires once, with recorded provider responses where a model would have answered. No model calls.
+`python test_mangsang.py` — a temp project; every rejection and every kind of staleness fires once. No model calls.
+
+`python test_properties.py` — the design's rules, tried against situations a machine makes up ([Hypothesis](https://hypothesis.readthedocs.io/),
+a developer's dependency only: `pip install hypothesis`; without it every property is SKIPped, never passed). A section edit
+moves exactly that section's anchors; a stale relation names the end that changed and only when it propagates; `impact --show`
+finds the earlier text wherever the target sits in a repository; any sequence of `reconfirm`, `revise`, `rename` keeps every
+earlier judgment and never makes a question unanswerable; coverage and projection are functions of the net and never get
+worse from another relation. Four of the seven defects a day on a playground found (2026-09-24) were of this kind — in
+situations nobody had written an example for.
