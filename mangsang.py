@@ -31,6 +31,8 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 browser with no network (mermaid is vendored and inlined). Read-only — derived, not committed
   retire <id> --why WHY         drop a relation, keeping it (and why) in `retired`
   lookup <path>                 before touching a file: the confirmed relations standing on it (read-only) — size the edit as code + relations
+  move [ID...] --by NAME | --delegated WHY [--dry-run]   after a refactoring: a broken relation whose dead `file:symbol` / `file#heading` has exactly one
+                                new home is retired (why: moved) and re-confirmed there with the same evidence; ambiguous or homeless ones are left for a person
   reconfirm <id>... --by NAME | --delegated WHY [--evidence "..."]
                                 a human re-read a stale relation and it still holds: `seen` becomes what the tree has now; the evidence must still be in the text
 
@@ -490,8 +492,12 @@ def what_changed(target, r, anchor):
         old = git("show", "%s:./%s" % (c, f))
         old_text = (anchor_texts(f, old.stdout.replace("\r\n", "\n")) or {}).get(key) if old.returncode == 0 else None
     new_text = (texts_of(target, f) or {}).get(key)
-    if old_text is None or new_text is None or old_text == new_text:
+    if old_text is None or new_text is None:
         return None
+    if old_text == new_text:
+        # the words are the same and the fingerprint is not: the rule that cuts the anchor changed under it (a title heading's
+        # section, a token-fingerprint format) — nothing to re-read; a reconfirm records the new fingerprint
+        return "(the text of %s is exactly what it was at %s — only its fingerprint's rule changed; nothing to re-read)" % (anchor, c[:8])
     return "".join(difflib.unified_diff(old_text.splitlines(True), new_text.splitlines(True), "%s @ %s" % (anchor, c[:8]), "%s @ now" % anchor, n=1))
 
 
@@ -959,6 +965,76 @@ def cmd_lookup(args):
     return 0
 
 
+def cmd_move(args):
+    """A refactoring moved a symbol or a section: the anchor died and the relation on it is `broken`, though the thing it
+    named is right there under another file. Retire-and-repropose by hand for twenty-one relations was a refactoring's
+    afternoon (and three were missed, found by counting). `move` does the mechanical part: for each broken relation whose
+    dead anchor is `file:symbol` or `file#heading`, the registered files are searched for the same key; exactly one home ->
+    the relation is retired (why: moved) and re-confirmed on the new anchor with the same evidence — which must still be a
+    quote there, or the move is refused for that relation. Ambiguous (two homes) or homeless keys are printed, untouched:
+    naming the home is a judgment. `--dry-run` only reports."""
+    if not (args.by or args.delegated or args.dry_run):
+        raise SystemExit("say who moves them (--by) or why the human delegated it (--delegated), or --dry-run to see what would move")
+    d = decl(args.target)
+    _, broken, _, files = compute_impact(args.target, d, persist=False)
+    wanted = set(args.ids or [])
+    homes = {}   # key (":symbol" / "#heading") -> [files that have it now]
+    for f, keys in files.items():
+        for k in keys:
+            if k:
+                homes.setdefault(k, []).append(f)
+    moved, refused = [], []
+    for b in broken:
+        r = next((x for x in d["relations"] if x["id"] == b["id"]), None)
+        if not r or (wanted and r["id"] not in wanted):
+            continue
+        new = dict(r)
+        why = None
+        for end in ("src", "dst"):
+            if r[end] not in b["dead"]:
+                continue
+            f, key = split_anchor(r[end])
+            if not key or f in ("concept", "source"):
+                why = "%s is not a moved symbol or section" % r[end]
+                break
+            cands = sorted(set(homes.get(key, [])) - {f})
+            if len(cands) != 1:
+                why = "%s: %s" % (r[end], "no registered file has %s now" % key if not cands else "%s is in %s — say which" % (key, ", ".join(cands)))
+                break
+            new[end] = cands[0] + key
+        if not why and new["src"] == r["src"] and new["dst"] == r["dst"]:
+            why = "nothing to move"
+        if not why and not quoted(args.target, r["evidence"], new["src"], new["dst"]):
+            why = "the evidence %r is not in the text at %s — the words moved too; propose it anew with the sentence that holds there" % (r["evidence"][:60], new["src"] if new["src"] != r["src"] else new["dst"])
+        if why:
+            refused.append((r, why))
+            continue
+        moved.append((r, new))
+    for r, why in refused:
+        print("  left    %s  %s %s %s — %s" % (r["id"], r["src"], r["predicate"], r["dst"], why))
+    for r, new in moved:
+        print("  %s %s -> %s %s %s" % ("would move" if args.dry_run else "moved", r["id"], new["src"], new["predicate"], new["dst"]))
+    if args.dry_run or not moved:
+        print("%d relation(s) %s, %d left" % (len(moved), "would move" if args.dry_run else "moved", len(refused)))
+        return 0 if moved or not refused else 1
+    root = os.path.join(args.target, DECL, "relations")
+    known = {x["id"] for x in d["relations"]}
+    for r, new in moved:
+        d["relations"].remove(r)
+        d["retired"].append({**r, "retired": {"why": "moved: %s %s %s -> %s %s %s" % (r["src"], r["predicate"], r["dst"], new["src"], new["predicate"], new["dst"])}})
+        nid = rel_id(new)
+        if nid in known:
+            print("  (the relation already exists at %s as %s; the old one is retired)" % (new["src"], nid))
+            continue
+        known.add(nid)
+        d["relations"].append({"id": nid, "src": new["src"], "predicate": new["predicate"], "dst": new["dst"], "evidence": r["evidence"],
+                               "seen": {a: files[split_anchor(a)[0]][split_anchor(a)[1]] for a in (new["src"], new["dst"])},
+                               "confirmed": signature(args.by, args.delegated), "moved-from": r["id"]})
+    save_decl(args.target, d)
+    print("%d relation(s) moved (the old ones retired with why: moved), %d left for a person" % (len(moved), len(refused)))
+    return 0 if not refused else 1
+
+
 def transcript_turns(path):
     """A host session transcript (Claude Code's JSONL) as the turns a person would recognize: what the person typed, what the
     agent answered in text (blocks of one message joined), each multiple-choice question it asked and the answer it got —
@@ -1354,7 +1430,7 @@ def cmd_concept(args):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="mangsang", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("register", "confirm", "observe", "impact", "cq", "check", "retire", "reconfirm", "judge", "lookup", "concept", "source", "report"):
+    for name in ("register", "confirm", "observe", "impact", "cq", "check", "retire", "reconfirm", "judge", "lookup", "move", "concept", "source", "report"):
         p = sub.add_parser(name)
         p.add_argument("--target", default=".")
         if name == "register":
@@ -1401,6 +1477,12 @@ def main(argv=None):
             p.add_argument("--evidence", default=None, help="the sentence that holds now, when the old quote is gone from the text (one id at a time)")
         if name == "lookup":
             p.add_argument("path", help="a file (as registered): print the confirmed relations standing on it before you touch it")
+        if name == "move":
+            p.add_argument("ids", nargs="*", default=None, help="broken relations to move (default: every broken one)")
+            p.add_argument("--by", default=None)
+            p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
+            p.add_argument("--delegated", default=None)
+            p.add_argument("--dry-run", action="store_true", help="report what would move and what is ambiguous; change nothing")
         if name == "source":
             p.add_argument("mode", nargs="?", default="list", choices=["add", "list"])
             p.add_argument("id", nargs="?", default=None)
@@ -1445,7 +1527,7 @@ def main(argv=None):
             APPROVAL_OF = "source:" + asked["id"] if asked and any(str(asked.get("speaker", "")).startswith(a) for a in roster.get("agents", [])) else None
     return {"register": cmd_register, "confirm": cmd_confirm, "observe": cmd_observe, "impact": cmd_impact,
             "cq": cmd_cq, "check": cmd_check, "retire": cmd_retire, "reconfirm": cmd_reconfirm, "judge": cmd_judge,
-            "lookup": cmd_lookup, "concept": cmd_concept, "source": cmd_source, "report": cmd_report}[args.cmd](args)
+            "lookup": cmd_lookup, "move": cmd_move, "concept": cmd_concept, "source": cmd_source, "report": cmd_report}[args.cmd](args)
 
 
 if __name__ == "__main__":
