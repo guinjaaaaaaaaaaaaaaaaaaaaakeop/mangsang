@@ -1372,7 +1372,10 @@ def cmd_report(args):
         # record renders now, or behind it — a mechanical answer, so a stale page is caught before anyone reads it as current
         path = args.check if os.path.isabs(args.check) else os.path.join(args.target, args.check)
         have = io.open(path, encoding="utf-8").read() if os.path.exists(path) else None
-        if have == text:
+        # the page names the mangsang that rendered it; a new mangsang rendering the same record is not a newer page,
+        # so that one clause is left out of the comparison — a page kept in git went "behind" at every release otherwise
+        same = lambda t: re.sub(r"^(Rendered from `mangsang/` by )mangsang \S+;", r"\1mangsang;", t, count=1, flags=re.M)
+        if have is not None and same(have) == same(text):
             print("%s is current" % args.check)
             return 0
         print("%s is behind the record — regenerate it (`report --out %s`)" % (args.check, args.check) if have is not None else "%s does not exist" % args.check)
