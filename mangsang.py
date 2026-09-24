@@ -55,16 +55,21 @@ DELEGATION_REF = re.compile(r"^D-[0-9a-f]+$")
 
 
 APPROVED_IN = None   # set by main when an agent signs in a person's name: the source where that person approved
+APPROVAL_OF = None   # and, when that approval answers an agent's own words (a proposal), the source it answers
 AGENT_ENV = ("CLAUDECODE", "CODEX_THREAD_ID", "AGENT_WORKER")
+RECORD_KINDS = ("relations", "retired", "concepts", "cq", "sources")   # the folders whose files are record objects: each says which mangsang wrote it
 
 
 def signature(by, delegated):
     """The judgment's author line. A --delegated value matching a delegation id (D-xxxx, chongdae's `delegate`)
     is stored as a structured reference — machine-readable, so no reason string is pasted N times — but mangsang
     never resolves it: whose delegation it is and whether it exists is the record-reader's audit (dwitbuk), not
-    this engine's coupling. Any other value stays a free-form why-string, as before."""
+    this engine's coupling. Any other value stays a free-form why-string, as before. A person's name put there by an
+    agent cites where the person approved (`approved-in`) and, when that approval is a reply to the agent's own
+    proposal, the proposal (`approval-of`): a one-word yes to an agent's list is a weaker ground than the person's own
+    words, and the record says which it was."""
     if by:
-        return {"by": by, **({"approved-in": APPROVED_IN} if APPROVED_IN else {})}
+        return {"by": by, **({"approved-in": APPROVED_IN} if APPROVED_IN else {}), **({"approval-of": APPROVAL_OF} if APPROVED_IN and APPROVAL_OF else {})}
     if delegated and DELEGATION_REF.match(delegated.strip()):
         return {"delegated": {"ref": delegated.strip()}}
     return {"delegated": delegated}
@@ -85,10 +90,39 @@ def load(path, default=None):
 
 
 def save(path, data):
+    if isinstance(data, dict) and os.path.basename(os.path.dirname(path)) in RECORD_KINDS and os.path.basename(os.path.dirname(os.path.dirname(path))) == DECL:
+        # every record object says which mangsang wrote it — a JSON field, read as one (chongdae's rule for its records):
+        # a later version knows the shape it is reading, and a reviewer can see a record written by a build that is no release
+        data = {**{k: v for k, v in data.items() if k != "written_by"}, "written_by": engine()}
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
+
+
+_ENGINE = None
+
+
+def engine():
+    """`mangsang <version>` — with `+g<sha>[-dirty]` when this is a working source, not an installed release, so a record
+    never passes an unreleased build off as the release."""
+    global _ENGINE
+    if _ENGINE is None:
+        import subprocess
+        root = os.path.dirname(os.path.abspath(__file__))
+        v = next((load(os.path.join(root, mf)).get("version") for mf in (os.path.join(".claude-plugin", "plugin.json"), "plugin.json")
+                  if load(os.path.join(root, mf)).get("version")), "unknown")
+        rev = ""
+        try:
+            top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=root, capture_output=True, text=True)
+            if top.returncode == 0 and os.path.realpath(top.stdout.strip()) == os.path.realpath(root):
+                sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
+                dirty = subprocess.run(["git", "status", "--porcelain"], cwd=root, capture_output=True, text=True).stdout.strip()
+                rev = "+g%s%s" % (sha, "-dirty" if dirty else "") if sha else ""
+        except OSError:
+            pass
+        _ENGINE = "mangsang %s%s" % (v, rev)
+    return _ENGINE
 
 
 def decl(target):
@@ -116,7 +150,8 @@ def save_decl(target, d):
     root = os.path.join(target, DECL)
     save(os.path.join(root, "registry.json"), d["registry"])
     save(os.path.join(root, "vocabulary.json"), d["vocabulary"])
-    save(os.path.join(root, "cq.json"), d["cq"])
+    if d["cq"] or os.path.exists(os.path.join(root, "cq.json")):
+        save(os.path.join(root, "cq.json"), d["cq"])   # the legacy list, kept where it exists; a new project gets one file per question and no empty list
     for kind in ("relations", "retired"):
         folder = os.path.join(root, kind)
         have = {n[:-5] for n in os.listdir(folder)} if os.path.isdir(folder) else set()
@@ -180,7 +215,10 @@ def anchor_texts(path, text=None):
     if path.endswith(".md"):
         heads = [(m.start(), len(m.group(1)), m.group(2).strip()) for m in re.finditer(r"^(#{1,6}) +(.+?)\s*$", text, re.M)]
         for i, (start, level, title) in enumerate(heads):
-            end = next((s for s, l, _ in heads[i + 1:] if l <= level), len(text))
+            # a section runs to the next heading of its level or higher — except the title (level 1), which runs only to
+            # the next heading of any level: as a section it would be the whole file, a duplicate of the file anchor "",
+            # and every relation on it went stale on every edit anywhere in the file
+            end = next((s for s, l, _ in heads[i + 1:] if l <= level or level == 1), len(text))
             out["#" + title] = text[start:end]
     elif path.endswith(".py"):
         try:
@@ -417,8 +455,12 @@ def compute_impact(target, d, only=None, persist=True):
             broken.append({"id": r["id"], "dead": dead})
             continue
         prop = d["vocabulary"].get(r["predicate"], {}).get("propagates", "none")
-        if (prop in ("dst->src", "both") and touched(r["dst"], r)) or (prop in ("src->dst", "both") and touched(r["src"], r)):
-            stale.append({"id": r["id"], "stale": r["src"] if prop != "src->dst" else r["dst"], "because": r["dst"] if prop != "src->dst" else r["src"]})
+        changed = [a for a, ok in ((r["dst"], prop in ("dst->src", "both")), (r["src"], prop in ("src->dst", "both"))) if ok and touched(a, r)]
+        if changed:
+            # `because` is the end that actually changed — for `both` it used to name dst whatever had moved, so a section
+            # edit read as "<- concept:x" and `--show` went looking for a change in the concept
+            other = r["src"] if changed[0] == r["dst"] else r["dst"]
+            stale.append({"id": r["id"], "stale": other if len(changed) == 1 else r["src"], "because": changed[0] if len(changed) == 1 else "%s and %s" % (r["src"], r["dst"])})
     return stale, broken, sorted(set(unjudged)), files
 
 
@@ -436,13 +478,16 @@ def what_changed(target, r, anchor):
     else:
         return None
     f, key = split_anchor(anchor)
+    # `REV:path` in git is the repository root's path; `REV:./path` is this directory's — and a target is often a
+    # directory inside a repository (a playground of several models, a project in a monorepo): the first form never
+    # found anything there and the message blamed a missing commit
     if f == "concept":
-        old = git("show", "%s:%s/concepts/%s.json" % (c, DECL, key.lstrip(":")))
+        old = git("show", "%s:./%s/concepts/%s.json" % (c, DECL, key.lstrip(":")))
         old_text = json.loads(old.stdout).get("means") if old.returncode == 0 and old.stdout.strip() else None
     elif f == "source":
         return None   # what was said does not change
     else:
-        old = git("show", "%s:%s" % (c, f))
+        old = git("show", "%s:./%s" % (c, f))
         old_text = (anchor_texts(f, old.stdout.replace("\r\n", "\n")) or {}).get(key) if old.returncode == 0 else None
     new_text = (texts_of(target, f) or {}).get(key)
     if old_text is None or new_text is None or old_text == new_text:
@@ -467,7 +512,7 @@ def cmd_impact(args):
         if getattr(args, "show", False):
             rel = next((r for r in d["relations"] if r["id"] == x["id"]), None)
             diff = what_changed(args.target, rel, x["because"]) if rel else None
-            print("\n".join("      " + l for l in (diff or "(no committed text to compare: the change is known by its fingerprint only)").rstrip().split("\n")))
+            print("\n".join("      " + l for l in (diff or "(no earlier text in git to compare against — the relation was not committed when it was confirmed, or the anchor is a source, which never changes; the change is known by its fingerprint)").rstrip().split("\n")))
     for b in broken:
         print("  broken  %s  dead anchors %s" % (b["id"], b["dead"]))
     if unjudged:
@@ -658,12 +703,12 @@ def cmd_check(args):
             say("  %-12s %s  %s" % ("UNASKABLE", q["id"], q["text"]))
             for m in presup:
                 say("      %s" % m)
-            findings.append({"kind": "invariant-unaskable", "where": q["id"], "source": "mangsang", "note": "; ".join(presup)})
+            findings.append({"kind": "invariant-unaskable", "where": q["id"], "source": "mangsang", "text": "; ".join(presup)})
             continue
         ok, detail = eval_invariant(d, files, all_anchors, q)
         failed += not ok
         if not ok:
-            findings.append({"kind": "invariant-failed", "where": q["id"], "source": "mangsang", "note": detail})
+            findings.append({"kind": "invariant-failed", "where": q["id"], "source": "mangsang", "text": detail})
         say("  %-12s %s  %s — %s" % ("holds" if ok else "FAILED", q["id"], q["text"], detail))
     # the audit: parts of the net no invariant watches (was cq's predicate-level `unquestioned` — it belongs here:
     # 'no lint covers this predicate' is a health gap, not a domain question nobody asked)
@@ -681,7 +726,25 @@ def cmd_check(args):
     for u in unwatched:
         say("  %-12s %s — the net holds this and no invariant watches it; declare one or say why not" % ("UNWATCHED", u))
         findings.append({"kind": "invariant-unwatched", "where": u, "source": "mangsang",
-                         "note": "in use by confirmed relations (or declared concepts) but watched by no declared invariant"})
+                         "text": "in use by confirmed relations (or declared concepts) but watched by no declared invariant"})
+    # facts of the record, for the reviewer — not health, so they never fail `check`: records a build that is no release
+    # wrote (committed, so others read them), and declarations that stand on a person's yes to the agent's own proposal
+    import subprocess
+    root = os.path.join(args.target, DECL)
+    for kind in RECORD_KINDS:
+        folder = os.path.join(root, kind)
+        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+            w = str(load(os.path.join(folder, name)).get("written_by", "")) if name.endswith(".json") else ""
+            rel = "%s/%s/%s" % (DECL, kind, name)
+            if "+g" in w and subprocess.run(["git", "ls-files", "--error-unmatch", rel], cwd=args.target, capture_output=True).returncode == 0:
+                findings.append({"kind": "unreleased-writer", "where": rel, "source": "mangsang",
+                                 "text": "committed as written by %s — a build that is not a release; nobody can install what wrote it" % w})
+    proposed = [("concept:" + c["name"]) for c in d["concepts"] if (c.get("declared") or {}).get("approval-of")] + \
+               [("cq:" + q["id"]) for q in d["cq_declared"] if (q.get("declared") or {}).get("approval-of")]
+    if proposed:
+        say("  %-12s %d declaration(s) signed in a person's name on their yes to the agent's proposal: %s" % ("proposed", len(proposed), ", ".join(proposed)))
+        findings.append({"kind": "agent-proposed", "layer": "observation", "where": ", ".join(proposed), "source": "mangsang",
+                         "text": "%d declaration(s) stand on a person's approval of the agent's own proposal (approval-of), not on the person's words" % len(proposed)})
     if getattr(args, "findings", False):
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "findings": findings}, ensure_ascii=False, indent=1))
     say("invariants %d · holds %d · failed %d · unaskable %d · unwatched %d"
@@ -729,7 +792,7 @@ def cmd_cq(args):
     for q in opened:
         say("  %-12s %s  %s" % ("OPEN", q["id"], q["text"]))
         findings.append({"kind": "cq-open", "layer": "observation", "where": q["id"], "source": "mangsang",
-                         "note": "asked and not yet answered — a declared gap, not a failure"})
+                         "text": "asked and not yet answered — a declared gap, not a failure"})
     active = [q for q in active if q not in opened]
     for q in active:
         presup = cq_presuppositions(d, files, q)
@@ -739,7 +802,7 @@ def cmd_cq(args):
             for m in presup:
                 say("      %s" % m)
             findings.append({"kind": "cq-unanswerable", "where": q["id"], "source": "mangsang",
-                             "note": "; ".join(presup)})
+                             "text": "; ".join(presup)})
             continue
         names = q["verify"].get("concepts", [])
         problems = []
@@ -752,7 +815,7 @@ def cmd_cq(args):
         ok = not problems
         failed += not ok
         if not ok:
-            findings.append({"kind": "cq-failed", "where": q["id"], "source": "mangsang", "note": "; ".join(problems)})
+            findings.append({"kind": "cq-failed", "where": q["id"], "source": "mangsang", "text": "; ".join(problems)})
         answer = "; ".join("%s: %s" % (n, byname[n]["means"]) for n in names if n in byname)
         say("  %-12s %s  %s" % ("answered" if ok else "FAILED", q["id"], q["text"]))
         say("      %s %s" % ("=" if ok else "?", answer[:240]))
@@ -764,7 +827,7 @@ def cmd_cq(args):
     for u in unquestioned:
         say("  %-12s concept:%s — the model holds this meaning and no question asks for it; write the CQ or say why not" % ("UNQUESTIONED", u))
         findings.append({"kind": "cq-unquestioned", "where": "concept:" + u, "source": "mangsang",
-                         "note": "declared and realized, but named by no competency question"})
+                         "text": "declared and realized, but named by no competency question"})
     if getattr(args, "findings", False):
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "findings": findings}, ensure_ascii=False, indent=1))
     tail = " · %d structural declaration(s) now answer to `check`" % structural if structural else ""
@@ -791,6 +854,8 @@ def cq_declare(args):
         if args.mode == "revise" and args.id not in byid:
             raise SystemExit("no declared CQ %s%s" % (args.id, " (it is in legacy cq.json — move it here by `cq add` under a new id)" if args.id in legacy else ""))
         q = dict(byid.get(args.id) or {"id": args.id})
+        if args.mode == "revise":
+            q.setdefault("history", []).append({k: q[k] for k in ("text", "verify", "declared") if k in q})   # what was asked before, and by whom
         if args.text:
             q["text"] = args.text
         if args.verify:
@@ -852,10 +917,14 @@ def cmd_reconfirm(args):
             diff = what_changed(args.target, r, a)
             if diff:
                 print("  %s changed since %s was confirmed:\n%s" % (a, rid, "\n".join("      " + l for l in diff.rstrip().split("\n"))))
+        was = {"confirmed": r["confirmed"], "seen": r.get("seen"), "evidence": r["evidence"]}
         if args.evidence:
             r["evidence"] = args.evidence
         if not quoted(args.target, r["evidence"], r["src"], r["dst"]):
             raise SystemExit("%s: its evidence is no longer in the text (%r) — re-read and give the sentence that holds now: --evidence \"...\", or retire" % (rid, r["evidence"][:80]))
+        # a re-confirmation is a judgment on top of the earlier one, not instead of it: who confirmed first, on what text,
+        # and how many times this relation has been re-read stay in the file (they used to be overwritten — a record with no history)
+        r.setdefault("history", []).append(was)
         r["seen"] = {a: files[split_anchor(a)[0]][split_anchor(a)[1]] for a in (r["src"], r["dst"])}
         r["confirmed"] = signature(args.by, args.delegated)
         save(os.path.join(root, rid + ".json"), r)   # save_decl never rewrites an existing relation; this is the one command that does
@@ -1027,17 +1096,31 @@ def cmd_report(args):
     esc = lambda t: " ".join(str(t).split()).replace("|", "\\|")
     node = lambda a: "n" + hashlib.sha1(a.encode("utf-8")).hexdigest()[:8]
     label = lambda a: a.replace("#", "#35;").replace('"', "#quot;")   # Mermaid reads `#...;` as an entity: a heading anchor's `#` must be one
+
+    def signed(sig):
+        """A judgment's author line, for a reader: by whom, on which approval — or delegated, and why."""
+        sig = sig or {}
+        if sig.get("by"):
+            where = sig.get("approved-in")
+            return "by %s" % sig["by"] + ((" (approved in `%s`%s)" % (where, ", answering the agent's `%s`" % sig["approval-of"] if sig.get("approval-of") else "")) if where else "")
+        dl = sig.get("delegated")
+        why = ("ref " + dl["ref"]) if isinstance(dl, dict) else esc(dl)
+        return "delegated: %s" % (why if len(why) <= 80 else why[:77] + "…")   # the whole reason is in the record; a page of twenty relations need not repeat it twenty times
+
     out = ["# %s — the net" % os.path.basename(os.path.abspath(args.target)), "",
-           "Rendered from `mangsang/` by `mangsang report`; the record is the source, this page is not. %d concept(s), %d relation(s), %d question(s), %d source(s)."
-           % (len(d["concepts"]), len(d["relations"]), len(cq_active(d)), len(d["sources"])), ""]
+           "Rendered from `mangsang/` by %s; the record is the source, this page is not. %d concept(s), %d relation(s), %d question(s), %d source(s)."
+           % (engine(), len(d["concepts"]), len(d["relations"]), len(cq_active(d)), len(d["sources"])), ""]
     domain = [q for q in cq_active(d) if q.get("verify", {}).get("kind") not in INVARIANT_KINDS]
     if d["relations"] or d["concepts"] or domain:
         out += ["```mermaid", "flowchart LR"]
-        ends = {a for r in d["relations"] for a in (r["src"], r["dst"])} | {"concept:" + c["name"] for c in d["concepts"]}
+        # sources are listed below, not drawn: a conversation of a dozen turns, each grounding several concepts, is more
+        # edges than the rest of the net and says nothing a reader can act on in a picture
+        drawn = [r for r in d["relations"] if not (r["src"].startswith("source:") or r["dst"].startswith("source:"))]
+        ends = {a for r in drawn for a in (r["src"], r["dst"])} | {"concept:" + c["name"] for c in d["concepts"]}
         for a in sorted(ends):
             shape = '(["%s"])' if a.startswith("concept:") else '["%s"]'
             out.append("  %s%s" % (node(a), shape % label(a)))
-        for r in d["relations"]:
+        for r in drawn:
             state = moved.get(r["id"])
             out.append('  %s %s|"%s"| %s' % (node(r["src"]), "-.->" if state else "-->", r["predicate"] + (" (%s)" % state if state else ""), node(r["dst"])))
         for q in domain:   # the questions are part of the model: what it must answer, and who answers it (or that nobody does yet)
@@ -1047,13 +1130,15 @@ def cmd_report(args):
             for n in q.get("verify", {}).get("concepts", []):
                 out.append('  %s ==>|"answered by"| %s' % (qn, node("concept:" + n)))
         out += ["```", "", "Rounded nodes are concepts, hexagons are questions (OPEN: nothing answers it yet); a dotted edge is a relation "
-                "whose end moved since it was confirmed.", ""]
+                "whose end moved since it was confirmed. Sources are not drawn; each concept lists the words that ground it below.", ""]
     out += ["## Concepts", ""]
     for c in sorted(d["concepts"], key=lambda c: c["name"]):
-        out += ["### %s" % c["name"], "", "> %s" % esc(c["means"]), ""]
+        out += ["### %s" % c["name"], "", "> %s" % esc(c["means"]), "",
+                "declared %s%s" % (signed(c.get("declared")), "; revised %d time(s)" % len(c["history"]) if c.get("history") else ""), ""]
         for r in (r for r in d["relations"] if "concept:" + c["name"] in (r["src"], r["dst"])):
             other = r["src"] if r["dst"] == "concept:" + c["name"] else r["dst"]
-            out.append("- `%s` %s — %s · “%s”" % (other, r["predicate"], moved.get(r["id"], "fresh"), esc(r["evidence"])))
+            out.append("- `%s` %s — %s · %s%s · “%s”" % (other, r["predicate"], moved.get(r["id"], "fresh"), signed(r.get("confirmed")),
+                                                       " · re-confirmed %d time(s)" % len(r["history"]) if r.get("history") else "", esc(r["evidence"])))
         if not any("concept:" + c["name"] in (r["src"], r["dst"]) for r in d["relations"]):
             out.append("- nothing realizes it yet")
         out.append("")
@@ -1071,14 +1156,45 @@ def cmd_report(args):
             shaky = [r["id"] for r in d["relations"] if r["predicate"] == "realizes" and r["dst"][len("concept:"):] in v.get("concepts", []) and r["id"] in moved]
             realized = all(any(r["predicate"] == "realizes" and r["dst"] == "concept:" + n for r in d["relations"]) for n in v.get("concepts", []))
             state = "answered" if realized and not shaky else "FAILED"
-        out.append("- **%s** %s — %s%s" % (q.get("id", "?"), esc(q.get("text", "")), state,
-                                           "; answered by " + ", ".join(n for n in v.get("concepts", []) if n in named) if v.get("concepts") else ""))
+        out.append("- **%s** %s — %s%s · %s" % (q.get("id", "?"), esc(q.get("text", "")), state,
+                                                "; answered by " + ", ".join(n for n in v.get("concepts", []) if n in named) if v.get("concepts") else "", signed(q.get("declared"))))
+    # what people said, in full, where it grounds something; a yes that only approves declarations is one line under
+    # Approvals — a reader saw "sounds good, go" set beside the words that carry the model and asked what it was doing there
+    cited = {a for r in d["relations"] for a in (r["src"], r["dst"]) if a.startswith("source:")}
+    approves = {}
+    for c in d["concepts"]:
+        approves.setdefault((c.get("declared") or {}).get("approved-in"), []).append("concept:" + c["name"])
+    for q in d["cq_declared"]:
+        approves.setdefault((q.get("declared") or {}).get("approved-in"), []).append("cq:" + q["id"])
+    # an approval is an answer (`replies-to`) that grounds nothing and is cited only by declarations; a person's standalone
+    # words that ground nothing yet stay under Sources, in full — they may be the ground of the next concept
+    approvals = [x for x in d["sources"] if x.get("replies-to") and "source:" + x["id"] not in cited and "source:" + x["id"] in approves]
     out += ["", "## Sources", ""]
     for x in d["sources"]:
-        out += ["### %s — %s%s%s" % (x["id"], x["speaker"], " (%s)" % x["locator"] if x.get("locator") else "",
-                                      ", replying to %s" % x["replies-to"] if x.get("replies-to") else ""), ""]
+        if x in approvals:
+            continue
+        out += ["### %s — %s%s%s%s" % (x["id"], x["speaker"], " (%s)" % x["locator"] if x.get("locator") else "",
+                                        ", replying to %s" % x["replies-to"] if x.get("replies-to") else "",
+                                        "" if "source:" + x["id"] in cited else " — grounds nothing yet"), ""]
         out += ["> " + line if line.strip() else ">" for line in x["text"].rstrip().split("\n")] + [""]
+    if approvals:
+        out += ["## Approvals", "", "Said to approve, not to describe: each grounds no relation and is cited only by declarations signed on it.", ""]
+        for x in approvals:
+            answered = next((y for y in d["sources"] if y["id"] == x.get("replies-to")), None)
+            out.append("- **%s** — %s%s: “%s” — approves %s" % (x["id"], x["speaker"], ", replying to %s (%s)" % (answered["id"], answered["speaker"]) if answered else "",
+                                                             esc(x["text"])[:120], ", ".join("`%s`" % a for a in approves["source:" + x["id"]])))
+        out.append("")
     text = "\n".join(out).rstrip() + "\n"
+    if getattr(args, "check", None):
+        # a committed rendering (a page kept on purpose, where the record itself is not what people open) is either what the
+        # record renders now, or behind it — a mechanical answer, so a stale page is caught before anyone reads it as current
+        path = args.check if os.path.isabs(args.check) else os.path.join(args.target, args.check)
+        have = io.open(path, encoding="utf-8").read() if os.path.exists(path) else None
+        if have == text:
+            print("%s is current" % args.check)
+            return 0
+        print("%s is behind the record — regenerate it (`report --out %s`)" % (args.check, args.check) if have is not None else "%s does not exist" % args.check)
+        return 1
     if not (args.out or args.html):
         print(text, end="")
         return 0
@@ -1092,7 +1208,7 @@ def cmd_report(args):
             raise SystemExit("%s is part of the record or a registered file — a rendering goes elsewhere" % given)
         with io.open(dest, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(body())
-        print("report -> %s (derived: regenerate, do not commit)" % given)
+        print("report -> %s (derived from the record: regenerate rather than edit; if you keep it in git, `report --check %s` says when it is behind)" % (given, given))
     return 0
 
 
@@ -1177,6 +1293,7 @@ def cmd_concept(args):
             raise SystemExit("--means \"the new sentence\"")
         if not (args.by or args.delegated):
             raise SystemExit("say who revised it (--by) or why the human delegated it (--delegated)")
+        c.setdefault("history", []).append({"means": c["means"], "declared": c["declared"]})   # what the word meant before, and on whose word
         c["means"] = args.means.strip()
         c["declared"] = signature(args.by, args.delegated)
         save_decl(args.target, d)
@@ -1297,6 +1414,7 @@ def main(argv=None):
         if name == "report":
             p.add_argument("--out", default=None, help="write the Markdown page here (never into mangsang/, .mangsang/ or a registered file); default stdout")
             p.add_argument("--html", default=None, help="write one self-contained HTML page here: the graph draws in any browser, offline")
+            p.add_argument("--check", default=None, help="a page written earlier with --out: exit 0 when it is what the record renders now, 1 when it is behind (for a page kept in git)")
         if name == "concept":
             p.add_argument("mode", nargs="?", default="list", choices=["add", "revise", "rename", "list"])
             p.add_argument("name", nargs="?", default=None)
@@ -1318,8 +1436,13 @@ def main(argv=None):
                                  "otherwise sign --delegated \"<why>\"" % (args.by, args.by))
             if src.get("speaker") != args.by:
                 raise SystemExit("--approved-in source:%s was said by %s, not %s" % (ref, src.get("speaker"), args.by))
-            global APPROVED_IN
+            global APPROVED_IN, APPROVAL_OF
             APPROVED_IN = "source:" + ref
+            # a yes that answers the agent's own words is an approval of a proposal: recorded as such (seen on a playground:
+            # ten declarations in the owner's name stood on "sounds good, go" said to the agent's list)
+            asked = next((x for x in decl(args.target)["sources"] if x["id"] == src.get("replies-to")), None) if src.get("replies-to") else None
+            roster = people(args.target) or {}
+            APPROVAL_OF = "source:" + asked["id"] if asked and any(str(asked.get("speaker", "")).startswith(a) for a in roster.get("agents", [])) else None
     return {"register": cmd_register, "confirm": cmd_confirm, "observe": cmd_observe, "impact": cmd_impact,
             "cq": cmd_cq, "check": cmd_check, "retire": cmd_retire, "reconfirm": cmd_reconfirm, "judge": cmd_judge,
             "lookup": cmd_lookup, "concept": cmd_concept, "source": cmd_source, "report": cmd_report}[args.cmd](args)
