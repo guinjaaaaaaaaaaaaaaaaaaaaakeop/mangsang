@@ -1160,54 +1160,62 @@ def cmd_source(args):
     return 0
 
 
-def cmd_report(args):
-    """The net for a person to read, on one page: each concept with its meaning and what realizes it (fresh, stale or
-    broken, with the quote it was confirmed on), each question with its state, the sources, and a Mermaid graph.
-    Nothing here is new judgment — it is a rendering of the record, regenerable any time and read-only (no baseline,
-    event or impact file is written), so it is not committed; the record is."""
-    d = decl(args.target)
-    stale, broken, _, files = compute_impact(args.target, d, persist=False)
-    moved = {x["id"]: "stale" for x in stale}
-    moved.update({x["id"]: "broken" for x in broken})
-    esc = lambda t: " ".join(str(t).split()).replace("|", "\\|")
-    node = lambda a: "n" + hashlib.sha1(a.encode("utf-8")).hexdigest()[:8]
-    label = lambda a: a.replace("#", "#35;").replace('"', "#quot;")   # Mermaid reads `#...;` as an entity: a heading anchor's `#` must be one
+def esc(t):
+    """Text as one line, safe in a Markdown table cell or list."""
+    return " ".join(str(t).split()).replace("|", "\\|")
 
-    def signed(sig):
-        """A judgment's author line, for a reader: by whom, on which approval — or delegated, and why."""
-        sig = sig or {}
-        if sig.get("by"):
-            where = sig.get("approved-in")
-            return "by %s" % sig["by"] + ((" (approved in `%s`%s)" % (where, ", answering the agent's `%s`" % sig["approval-of"] if sig.get("approval-of") else "")) if where else "")
-        dl = sig.get("delegated")
-        why = ("ref " + dl["ref"]) if isinstance(dl, dict) else esc(dl)
-        return "delegated: %s" % (why if len(why) <= 80 else why[:77] + "…")   # the whole reason is in the record; a page of twenty relations need not repeat it twenty times
 
-    out = ["# %s — the net" % os.path.basename(os.path.abspath(args.target)), "",
-           "Rendered from `mangsang/` by %s; the record is the source, this page is not. %d concept(s), %d relation(s), %d question(s), %d source(s)."
-           % (engine(), len(d["concepts"]), len(d["relations"]), len(cq_active(d)), len(d["sources"])), ""]
+def node(a):
+    """A Mermaid node id for an anchor."""
+    return "n" + hashlib.sha1(a.encode("utf-8")).hexdigest()[:8]
+
+
+def label(a):
+    return a.replace("#", "#35;").replace('"', "#quot;")   # Mermaid reads `#...;` as an entity: a heading anchor's `#` must be one
+
+
+def signed(sig):
+    """A judgment's author line, for a reader: by whom, on which approval — or delegated, and why."""
+    sig = sig or {}
+    if sig.get("by"):
+        where = sig.get("approved-in")
+        return "by %s" % sig["by"] + ((" (approved in `%s`%s)" % (where, ", answering the agent's `%s`" % sig["approval-of"] if sig.get("approval-of") else "")) if where else "")
+    dl = sig.get("delegated")
+    why = ("ref " + dl["ref"]) if isinstance(dl, dict) else esc(dl)
+    return "delegated: %s" % (why if len(why) <= 80 else why[:77] + "…")   # the whole reason is in the record; a page of twenty relations need not repeat it twenty times
+
+
+def render_graph(d, moved):
+    """The Mermaid graph: concepts, the projections that realize them, the questions and what answers them."""
+    out = []
     domain = [q for q in cq_active(d) if q.get("verify", {}).get("kind") not in INVARIANT_KINDS]
-    if d["relations"] or d["concepts"] or domain:
-        out += ["```mermaid", "flowchart LR"]
-        # sources are listed below, not drawn: a conversation of a dozen turns, each grounding several concepts, is more
-        # edges than the rest of the net and says nothing a reader can act on in a picture
-        drawn = [r for r in d["relations"] if not (r["src"].startswith("source:") or r["dst"].startswith("source:"))]
-        ends = {a for r in drawn for a in (r["src"], r["dst"])} | {"concept:" + c["name"] for c in d["concepts"]}
-        for a in sorted(ends):
-            shape = '(["%s"])' if a.startswith("concept:") else '["%s"]'
-            out.append("  %s%s" % (node(a), shape % label(a)))
-        for r in drawn:
-            state = moved.get(r["id"])
-            out.append('  %s %s|"%s"| %s' % (node(r["src"]), "-.->" if state else "-->", r["predicate"] + (" (%s)" % state if state else ""), node(r["dst"])))
-        for q in domain:   # the questions are part of the model: what it must answer, and who answers it (or that nobody does yet)
-            qn = node("cq:" + q.get("id", "?"))
-            kind = q.get("verify", {}).get("kind")
-            out.append('  %s{{"%s"}}' % (qn, label("%s%s: %s" % ("OPEN " if kind == "open" else "", q.get("id", "?"), " ".join(q.get("text", "").split())[:80]))))
-            for n in q.get("verify", {}).get("concepts", []):
-                out.append('  %s ==>|"answered by"| %s' % (qn, node("concept:" + n)))
-        out += ["```", "", "Rounded nodes are concepts, hexagons are questions (OPEN: nothing answers it yet); a dotted edge is a relation "
-                "whose end moved since it was confirmed. Sources are not drawn; each concept lists the words that ground it below.", ""]
-    out += ["## Concepts", ""]
+    if not (d["relations"] or d["concepts"] or domain):
+        return out
+    out += ["```mermaid", "flowchart LR"]
+    # sources are listed below, not drawn: a conversation of a dozen turns, each grounding several concepts, is more
+    # edges than the rest of the net and says nothing a reader can act on in a picture
+    drawn = [r for r in d["relations"] if not (r["src"].startswith("source:") or r["dst"].startswith("source:"))]
+    ends = {a for r in drawn for a in (r["src"], r["dst"])} | {"concept:" + c["name"] for c in d["concepts"]}
+    for a in sorted(ends):
+        shape = '(["%s"])' if a.startswith("concept:") else '["%s"]'
+        out.append("  %s%s" % (node(a), shape % label(a)))
+    for r in drawn:
+        state = moved.get(r["id"])
+        out.append('  %s %s|"%s"| %s' % (node(r["src"]), "-.->" if state else "-->", r["predicate"] + (" (%s)" % state if state else ""), node(r["dst"])))
+    for q in domain:   # the questions are part of the model: what it must answer, and who answers it (or that nobody does yet)
+        qn = node("cq:" + q.get("id", "?"))
+        kind = q.get("verify", {}).get("kind")
+        out.append('  %s{{"%s"}}' % (qn, label("%s%s: %s" % ("OPEN " if kind == "open" else "", q.get("id", "?"), " ".join(q.get("text", "").split())[:80]))))
+        for n in q.get("verify", {}).get("concepts", []):
+            out.append('  %s ==>|"answered by"| %s' % (qn, node("concept:" + n)))
+    out += ["```", "", "Rounded nodes are concepts, hexagons are questions (OPEN: nothing answers it yet); a dotted edge is a relation "
+            "whose end moved since it was confirmed. Sources are not drawn; each concept lists the words that ground it below.", ""]
+    return out
+
+
+def render_concepts(d, moved):
+    """Each concept: its meaning, who declared it, and every relation on it with its state, signature and quote."""
+    out = ["## Concepts", ""]
     for c in sorted(d["concepts"], key=lambda c: c["name"]):
         out += ["### %s" % c["name"], "", "> %s" % esc(c["means"]), "",
                 "declared %s%s" % (signed(c.get("declared")), "; revised %d time(s)" % len(c["history"]) if c.get("history") else ""), ""]
@@ -1218,7 +1226,12 @@ def cmd_report(args):
         if not any("concept:" + c["name"] in (r["src"], r["dst"]) for r in d["relations"]):
             out.append("- nothing realizes it yet")
         out.append("")
-    out += ["## Questions", ""]
+    return out
+
+
+def render_questions(d, files, moved):
+    """Each question with its state — OPEN, invariant, UNANSWERABLE, answered or FAILED — and who asked it."""
+    out = ["## Questions", ""]
     named = {c["name"] for c in d["concepts"]}
     for q in cq_active(d):
         v = q.get("verify", {})
@@ -1234,8 +1247,12 @@ def cmd_report(args):
             state = "answered" if realized and not shaky else "FAILED"
         out.append("- **%s** %s — %s%s · %s" % (q.get("id", "?"), esc(q.get("text", "")), state,
                                                 "; answered by " + ", ".join(n for n in v.get("concepts", []) if n in named) if v.get("concepts") else "", signed(q.get("declared"))))
-    # what people said, in full, where it grounds something; a yes that only approves declarations is one line under
-    # Approvals — a reader saw "sounds good, go" set beside the words that carry the model and asked what it was doing there
+    return out
+
+
+def render_sources(d):
+    """What people said, in full, where it grounds something; a yes that only approves declarations is one line under
+    Approvals — a reader saw "sounds good, go" set beside the words that carry the model and asked what it was doing there."""
     cited = {a for r in d["relations"] for a in (r["src"], r["dst"]) if a.startswith("source:")}
     approves = {}
     for c in d["concepts"]:
@@ -1245,7 +1262,7 @@ def cmd_report(args):
     # an approval is an answer (`replies-to`) that grounds nothing and is cited only by declarations; a person's standalone
     # words that ground nothing yet stay under Sources, in full — they may be the ground of the next concept
     approvals = [x for x in d["sources"] if x.get("replies-to") and "source:" + x["id"] not in cited and "source:" + x["id"] in approves]
-    out += ["", "## Sources", ""]
+    out = ["", "## Sources", ""]
     for x in d["sources"]:
         if x in approvals:
             continue
@@ -1260,7 +1277,31 @@ def cmd_report(args):
             out.append("- **%s** — %s%s: “%s” — approves %s" % (x["id"], x["speaker"], ", replying to %s (%s)" % (answered["id"], answered["speaker"]) if answered else "",
                                                              esc(x["text"])[:120], ", ".join("`%s`" % a for a in approves["source:" + x["id"]])))
         out.append("")
-    text = "\n".join(out).rstrip() + "\n"
+    return out
+
+
+def report_text(target):
+    """The page as Markdown, and its title. Read-only: the impact is computed without persisting an observation."""
+    d = decl(target)
+    stale, broken, _, files = compute_impact(target, d, persist=False)
+    moved = {x["id"]: "stale" for x in stale}
+    moved.update({x["id"]: "broken" for x in broken})
+    title = "%s — the net" % os.path.basename(os.path.abspath(target))
+    out = ["# " + title, "",
+           "Rendered from `mangsang/` by %s; the record is the source, this page is not. %d concept(s), %d relation(s), %d question(s), %d source(s)."
+           % (engine(), len(d["concepts"]), len(d["relations"]), len(cq_active(d)), len(d["sources"])), ""]
+    # the graph first, then each concept with its ground, the questions, and last what people said — in full where it grounds
+    # something, approvals apart
+    out += render_graph(d, moved) + render_concepts(d, moved) + render_questions(d, files, moved) + render_sources(d)
+    return "\n".join(out).rstrip() + "\n", title, d
+
+
+def cmd_report(args):
+    """The net for a person to read, on one page: each concept with its meaning and what realizes it (fresh, stale or
+    broken, with the quote it was confirmed on), each question with its state, the sources, and a Mermaid graph.
+    Nothing here is new judgment — it is a rendering of the record, regenerable any time and read-only (no baseline,
+    event or impact file is written), so it is not committed; the record is."""
+    text, title, d = report_text(args.target)
     if getattr(args, "check", None):
         # a committed rendering (a page kept on purpose, where the record itself is not what people open) is either what the
         # record renders now, or behind it — a mechanical answer, so a stale page is caught before anyone reads it as current
@@ -1276,7 +1317,7 @@ def cmd_report(args):
         return 0
     guarded = [os.path.abspath(os.path.join(args.target, x)) for x in (DECL, OBS)]
     registered = {os.path.abspath(os.path.join(args.target, e["path"])) for e in d["registry"]}
-    for given, body in ((args.out, lambda: text), (args.html, lambda: report_html(text, out[0][2:]))):
+    for given, body in ((args.out, lambda: text), (args.html, lambda: report_html(text, title))):
         if not given:
             continue
         dest = os.path.abspath(given if os.path.isabs(given) else os.path.join(args.target, given))
@@ -1427,6 +1468,36 @@ def cmd_concept(args):
     return 0
 
 
+def signing(p):
+    """The judgment's author: `--by NAME` (with `--approved-in` when an agent runs it) or `--delegated WHY`."""
+    p.add_argument("--by", default=None)
+    p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
+    p.add_argument("--delegated", default=None)
+
+
+def sign_as_agent(args):
+    """A person's name on a judgment, put there by an agent, needs the place that person said yes."""
+    check_person(args.target, args.by)   # a signature is a person's: with a roster, only a listed name signs
+    if not any(os.environ.get(k) for k in AGENT_ENV):
+        return
+    # an agent is running this: a person's name on a judgment needs the place that person said yes — a source they
+    # spoke — or it is the agent's judgment wearing their name (seen: a relation signed as the owner by mistake)
+    ref = (getattr(args, "approved_in", None) or "").replace("source:", "")
+    src = next((x for x in decl(args.target)["sources"] if x["id"] == ref), None) if ref else None
+    if not src:
+        raise SystemExit("an agent signs --by %s only with --approved-in source:ID — the source where %s approved this; "
+                         "otherwise sign --delegated \"<why>\"" % (args.by, args.by))
+    if src.get("speaker") != args.by:
+        raise SystemExit("--approved-in source:%s was said by %s, not %s" % (ref, src.get("speaker"), args.by))
+    global APPROVED_IN, APPROVAL_OF
+    APPROVED_IN = "source:" + ref
+    # a yes that answers the agent's own words is an approval of a proposal: recorded as such (seen on a playground:
+    # ten declarations in the owner's name stood on "sounds good, go" said to the agent's list)
+    asked = next((x for x in decl(args.target)["sources"] if x["id"] == src.get("replies-to")), None) if src.get("replies-to") else None
+    roster = people(args.target) or {}
+    APPROVAL_OF = "source:" + asked["id"] if asked and any(str(asked.get("speaker", "")).startswith(a) for a in roster.get("agents", [])) else None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="mangsang", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1437,18 +1508,14 @@ def main(argv=None):
             p.add_argument("paths", nargs="+")
         if name == "confirm":
             p.add_argument("proposals")
-            p.add_argument("--by", default=None)
-            p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
-            p.add_argument("--delegated", default=None)
+            signing(p)
         if name == "cq":
             p.add_argument("mode", nargs="?", default="run", choices=["run", "add", "revise", "retire"])
             p.add_argument("id", nargs="?", default=None)
             p.add_argument("--text", default=None, help="the question, for people")
             p.add_argument("--verify", default=None, help="JSON: domain questions are {\"kind\": \"answered-by\", \"concepts\": [...]} — the named concepts carry the answer; {\"kind\": \"open\"} is asked before anything answers it; structural kinds (coverage|projection|resolved) are declared here too but answer to `check`")
             p.add_argument("--why", default=None, help="retire: what made this question no longer worth asking")
-            p.add_argument("--by", default=None)
-            p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
-            p.add_argument("--delegated", default=None)
+            signing(p)
             p.add_argument("--findings", action="store_true", help="print failed/unanswerable/unquestioned as dwitbuk/findings@1 JSON")
         if name == "check":
             p.add_argument("--findings", action="store_true", help="print failed/unaskable/unwatched as dwitbuk/findings@1 JSON")
@@ -1471,17 +1538,13 @@ def main(argv=None):
             p.add_argument("--why", required=True)
         if name == "reconfirm":
             p.add_argument("ids", nargs="+")
-            p.add_argument("--by", default=None)
-            p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
-            p.add_argument("--delegated", default=None)
+            signing(p)
             p.add_argument("--evidence", default=None, help="the sentence that holds now, when the old quote is gone from the text (one id at a time)")
         if name == "lookup":
             p.add_argument("path", help="a file (as registered): print the confirmed relations standing on it before you touch it")
         if name == "move":
             p.add_argument("ids", nargs="*", default=None, help="broken relations to move (default: every broken one)")
-            p.add_argument("--by", default=None)
-            p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
-            p.add_argument("--delegated", default=None)
+            signing(p)
             p.add_argument("--dry-run", action="store_true", help="report what would move and what is ambiguous; change nothing")
         if name == "source":
             p.add_argument("mode", nargs="?", default="list", choices=["add", "list"])
@@ -1502,29 +1565,10 @@ def main(argv=None):
             p.add_argument("name", nargs="?", default=None)
             p.add_argument("new", nargs="?", default=None, help="rename: the new name")
             p.add_argument("--means", default=None, help="one sentence: what this name means in this project")
-            p.add_argument("--by", default=None)
-            p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
-            p.add_argument("--delegated", default=None)
+            signing(p)
     args = ap.parse_args(argv)
     if getattr(args, "by", None) and args.cmd != "judge":
-        check_person(args.target, args.by)   # a signature is a person's: with a roster, only a listed name signs
-        if any(os.environ.get(k) for k in AGENT_ENV):
-            # an agent is running this: a person's name on a judgment needs the place that person said yes — a source they
-            # spoke — or it is the agent's judgment wearing their name (seen: a relation signed as the owner by mistake)
-            ref = (getattr(args, "approved_in", None) or "").replace("source:", "")
-            src = next((x for x in decl(args.target)["sources"] if x["id"] == ref), None) if ref else None
-            if not src:
-                raise SystemExit("an agent signs --by %s only with --approved-in source:ID — the source where %s approved this; "
-                                 "otherwise sign --delegated \"<why>\"" % (args.by, args.by))
-            if src.get("speaker") != args.by:
-                raise SystemExit("--approved-in source:%s was said by %s, not %s" % (ref, src.get("speaker"), args.by))
-            global APPROVED_IN, APPROVAL_OF
-            APPROVED_IN = "source:" + ref
-            # a yes that answers the agent's own words is an approval of a proposal: recorded as such (seen on a playground:
-            # ten declarations in the owner's name stood on "sounds good, go" said to the agent's list)
-            asked = next((x for x in decl(args.target)["sources"] if x["id"] == src.get("replies-to")), None) if src.get("replies-to") else None
-            roster = people(args.target) or {}
-            APPROVAL_OF = "source:" + asked["id"] if asked and any(str(asked.get("speaker", "")).startswith(a) for a in roster.get("agents", [])) else None
+        sign_as_agent(args)
     return {"register": cmd_register, "confirm": cmd_confirm, "observe": cmd_observe, "impact": cmd_impact,
             "cq": cmd_cq, "check": cmd_check, "retire": cmd_retire, "reconfirm": cmd_reconfirm, "judge": cmd_judge,
             "lookup": cmd_lookup, "move": cmd_move, "concept": cmd_concept, "source": cmd_source, "report": cmd_report}[args.cmd](args)
