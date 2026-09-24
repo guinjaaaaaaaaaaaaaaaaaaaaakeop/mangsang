@@ -351,6 +351,13 @@ def test_a_playground_round_what_a_day_of_use_found():
         assert "### L2 — lee" in page and "### L1" not in page and "### A1 — Claude (m) — grounds nothing yet" in page, page   # a standalone source that grounds nothing stays under Sources, in full; only an answer that merely approves goes under Approvals
         assert "declared by lee (approved in `source:L1`, answering the agent's `source:A1`)" in page and "delegated: test" in page and "Rendered from `mangsang/` by mangsang " in page, page
         assert run("report", "--check", "MODEL.md", "--target", sub)[0] == 0
+        # the page rendered by another mangsang, the record unchanged: still current (only the renderer's version differs)
+        kept = os.path.join(sub, "MODEL.md")
+        older = io.open(kept, encoding="utf-8").read().replace("by %s;" % mangsang.engine(), "by mangsang 0.9.9;")
+        assert "by mangsang 0.9.9;" in older
+        io.open(kept, "w", encoding="utf-8", newline="\n").write(older)
+        code, out = run("report", "--check", "MODEL.md", "--target", sub)
+        assert code == 0 and "is current" in out, out
         # the last section changes: the title section stays fresh, the draw relation goes stale, and --show reads the old text from
         # git although the target is a subdirectory; reconfirm keeps what it replaces; revise keeps the old meaning
         write(os.path.join(sub, "README.md"), "# game\n\nintro line\n\n## hands\n\nthree hands.\n\n## draw\n\nsame hand draws. always.\n")
