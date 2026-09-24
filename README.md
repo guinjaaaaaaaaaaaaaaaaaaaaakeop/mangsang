@@ -37,7 +37,10 @@ Keep what was said or written, verbatim, as the anchor `source:ID` (`add ID --fi
 [--replies-to ID]`; `-` reads stdin — or `--from-transcript SESSION.jsonl --match "phrase" [--kind
 person|agent|question|answer]`, which takes the one turn containing the phrase from the host's own session record,
 verbatim, the agent's turn under its model's name, the locator filled in). Both sides of a conversation are sources,
-and an answer is kept with the turn it answers. The same id with other text is refused — a correction is a new source.
+and an answer is kept with the turn it answers. `--excerpt "sentence"` (repeatable) keeps only those sentences of the turn —
+whole sentences, verbatim, a cut mid-sentence refused — when a turn clearly splits into what the record needs and what
+it does not (an approval followed by a new request); the source says it is an excerpt, and its locator names the whole
+turn. The same id with other text is refused — a correction is a new source.
 `list` shows what each source grounds
 
 ### `/mangsang:concept`
