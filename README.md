@@ -244,6 +244,9 @@ record. Structural kinds declared there answer to `check`; `answered-by` answers
   version.
 - Not built yet: repair candidates after a rename, other languages' symbols.
 
+- `judge_worker.py` starts its host session through `hostcall.py` — one host call for every worker of this family (hunsu's judge, mangsang's judge, dwitbuk's eyes,
+  hacheong's members), vendored: the same file in each plugin, since a plugin imports no other plugin. The umbrella checkout's `tools/same-file.py` says when the copies drift.
+
 ## Versioning
 
 Semver, and a version names one content: every change to the source — code, skill or command text, hooks, this README
