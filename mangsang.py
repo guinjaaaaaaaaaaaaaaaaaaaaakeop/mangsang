@@ -1167,6 +1167,26 @@ def check_person(target, name, as_speaker=False):
                      "never derive one from an account, an email or session metadata" % name)
 
 
+def excerpt_of(text, parts):
+    """The given parts of a turn, each whole sentences of it and verbatim, in the turn's order, joined by a newline. A part
+    not in the turn, or one that starts or ends inside a sentence, is refused: an excerpt that could change what was said
+    is not an excerpt."""
+    found = []
+    for part in parts:
+        part = part.strip()
+        i = text.find(part)
+        if not part or i < 0:
+            raise SystemExit("--excerpt %r is not in the turn, verbatim — copy the sentence(s) exactly as they were said" % part[:60])
+        before, after = text[:i].rstrip(" \t"), text[i + len(part):]
+        starts_whole = not before or before[-1] in ".!?\n" or before.endswith(("다.", "요.")) or before[-1] in "…"
+        ends_whole = part[-1] in ".!?…" or not after.strip(" \t") or after.lstrip(" \t")[:1] in ("\n", "")
+        if not (starts_whole and ends_whole):
+            raise SystemExit("--excerpt %r cuts a sentence — an excerpt is whole sentences (from after a . ! ? or a line break, to one); "
+                             "when the turn does not split cleanly, keep it whole" % part[:60])
+        found.append((i, part))
+    return "\n".join(p for _, p in sorted(found))
+
+
 def cmd_source(args):
     """What a person said or wrote, kept verbatim as the anchor `source:ID`. A model built from a conversation needs its
     ground on record the way a model built from a plan has the plan: the concept's `means` is the project's reading, the
@@ -1203,6 +1223,11 @@ def cmd_source(args):
         args.locator = args.locator or "session %s, %s %s at %s" % (session, turn["kind"], turn["uuid"], turn["at"])
         args.file = None
         text = turn["text"].replace("\r\n", "\n")
+        if args.excerpt:
+            # a turn that clearly splits into sentences keeps only the ones that ground or approve something: "yes, that
+            # one. And can you also draw it?" is an approval and a new request, and only the first belongs to the record
+            # that cites it. Each excerpt is whole sentences of the turn, verbatim; a cut mid-sentence is refused.
+            text = excerpt_of(text, args.excerpt)
     else:
         if not (args.file and args.speaker):
             raise SystemExit("--file (the words, verbatim; `-` reads stdin) or --from-transcript, and --speaker (who said them) — a source without both is hearsay")
@@ -1223,6 +1248,8 @@ def cmd_source(args):
         raise SystemExit("source %s exists with other text — what was said does not change; keep the correction as a new source" % args.id)
     if args.from_transcript:
         x["verbatim-from"] = "host transcript"
+        if args.excerpt:
+            x["excerpt"] = "whole sentences of the turn, the rest left out"   # the locator names the whole turn
     save(os.path.join(folder, args.id + ".json"), x)
     if args.file and args.file != "-":
         print("(the input %s is not the record — %s is; remove it or keep it, it is not read again)" % (args.file, os.path.join(DECL, "sources", args.id + ".json")))
@@ -1629,6 +1656,7 @@ def main(argv=None):
             p.add_argument("--from-transcript", default=None, help="a host session transcript (Claude Code JSONL): take the turn from it, verbatim, instead of --file")
             p.add_argument("--match", default=None, help="with --from-transcript: a phrase only the wanted turn contains")
             p.add_argument("--kind", default=None, choices=["person", "agent", "question", "answer"], help="with --from-transcript: only turns of this kind")
+            p.add_argument("--excerpt", action="append", default=None, help="with --from-transcript: keep only these sentences of the turn (repeatable), verbatim and whole — when the turn clearly splits into what the record needs and what it does not")
         if name == "report":
             p.add_argument("--out", default=None, help="write the Markdown page here (never into mangsang/, .mangsang/ or a registered file); default stdout")
             p.add_argument("--html", default=None, help="write one self-contained HTML page here: the graph draws in any browser, offline")

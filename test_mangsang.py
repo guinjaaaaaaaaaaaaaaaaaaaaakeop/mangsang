@@ -875,3 +875,19 @@ def test_show_prints_every_end_that_moved():
         assert code == 1 and "and concept:adding" in out, out
         assert "+`add` appends and prints, then saves" in out and "+appending one memo and saving it" in out, out
         assert "\n      -appending one memo\n      +appending one memo and saving it" in out, "a one-line meaning's - and + are two lines"
+
+
+def test_a_turn_can_be_kept_as_the_sentences_that_matter():
+    """An approval followed by a new request ("That will do. Could you also draw it?") was kept whole, so the record that cites
+    the approval carried the request too. `--excerpt` keeps whole sentences of the turn, verbatim; a cut mid-sentence is refused."""
+    with Project() as pj:
+        tr = os.path.join(pj.dir, "s.jsonl")
+        write(tr, json.dumps({"type": "user", "uuid": "u1", "timestamp": "2026-09-25T00:00:00Z", "message": {"role": "user", "content": "그걸로 됐어. 혹시 지금의 개념들로 그림을 그릴 수 있어?"}}) + "\n")
+        code, out = run("source", "add", "A1", "--from-transcript", tr, "--match", "그걸로", "--speaker", "lee", "--excerpt", "그걸로 됐어.", "--target", pj.dir)
+        assert code == 0, out
+        src = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "A1.json"))
+        assert src["text"] == "그걸로 됐어." and src["excerpt"] and "u1" in src["locator"], src
+        code, out = run("source", "add", "A2", "--from-transcript", tr, "--match", "그걸로", "--speaker", "lee", "--excerpt", "그걸로 됐", "--target", pj.dir)
+        assert code != 0 and "cuts a sentence" in out, out
+        code, out = run("source", "add", "A3", "--from-transcript", tr, "--match", "그걸로", "--speaker", "lee", "--excerpt", "좋아.", "--target", pj.dir)
+        assert code != 0 and "not in the turn" in out, out
