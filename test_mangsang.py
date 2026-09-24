@@ -874,3 +874,4 @@ def test_show_prints_every_end_that_moved():
         code, out = run("impact", "--show", "--target", pj.dir)
         assert code == 1 and "and concept:adding" in out, out
         assert "+`add` appends and prints, then saves" in out and "+appending one memo and saving it" in out, out
+        assert "\n      -appending one memo\n      +appending one memo and saving it" in out, "a one-line meaning's - and + are two lines"

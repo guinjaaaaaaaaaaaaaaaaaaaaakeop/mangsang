@@ -499,7 +499,8 @@ def what_changed(target, r, anchor):
         # the words are the same and the fingerprint is not: the rule that cuts the anchor changed under it (a title heading's
         # section, a token-fingerprint format) — nothing to re-read; a reconfirm records the new fingerprint
         return "(the text of %s is exactly what it was at %s — only its fingerprint's rule changed; nothing to re-read)" % (anchor, c[:8])
-    return "".join(difflib.unified_diff(old_text.splitlines(True), new_text.splitlines(True), "%s @ %s" % (anchor, c[:8]), "%s @ now" % anchor, n=1))
+    nl = lambda t: t if t.endswith("\n") else t + "\n"   # a concept's meaning is one line with no newline: without one, the - and + lines ran together
+    return "".join(difflib.unified_diff(nl(old_text).splitlines(True), nl(new_text).splitlines(True), "%s @ %s" % (anchor, c[:8]), "%s @ now" % anchor, n=1))
 
 
 def cmd_impact(args):
