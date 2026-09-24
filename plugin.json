@@ -1,9 +1,13 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mangsang",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "engines": {
     "python": ">=3.9"
   },
+  "records": [
+    "mangsang/",
+    ".mangsang/"
+  ],
   "description": "The coherence manager for every artifact in a project — plan, code, tests."
 }
