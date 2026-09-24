@@ -779,3 +779,33 @@ if __name__ == "__main__":
                 print("FAIL", name, "--", "%s: %s" % (type(err).__name__, err))
     print("all passed" if not failed else "%d failed" % failed)
     sys.exit(1 if failed else 0)
+
+
+def test_move_carries_broken_relations_to_the_symbols_new_home_and_leaves_the_ambiguous():
+    """A refactoring split memo.py: `add` moved to core.py, `list_` to both core.py and extra.py (ambiguous), `X` went nowhere.
+    `move` retires the relation on the dead anchor and re-confirms it where the symbol is now, with the same quote; what it
+    cannot decide it names and leaves."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"), rel("test_memo.py:test_Q1_add", "verifies", "memo.py:add", ev="assert True"),
+                          rel("plan/PLAN.md#Q2 list", "documents", "memo.py:list_", ev="lists."), rel("plan/PLAN.md#Q1 add", "references", "memo.py:X"))[0] == 0
+        write(os.path.join(pj.dir, "core.py"), "def add(store, text):\n    return 1\n\n\ndef list_(store):\n    return []\n")
+        write(os.path.join(pj.dir, "extra.py"), "def list_(store):\n    return [1]\n")
+        os.remove(os.path.join(pj.dir, "memo.py"))
+        assert run("register", "core.py", "extra.py", "--target", pj.dir)[0] == 0
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and out.count("broken") == 4, out
+        code, out = run("move", "--dry-run", "--target", pj.dir)
+        assert "would move" in out and "core.py:add" in out and "is in core.py, extra.py" in out and "no registered file has :X" in out, out
+        assert not any(r.get("moved-from") for r in mangsang.decl(pj.dir)["relations"]), "a dry run changes nothing"
+        code, out = run("move", "--by", "kim", "--target", pj.dir)
+        assert code == 1 and "2 relation(s) moved" in out and "2 left" in out, out
+        d = mangsang.decl(pj.dir)
+        moved = [r for r in d["relations"] if r.get("moved-from")]
+        assert {(r["src"], r["dst"]) for r in moved} == {("plan/PLAN.md#Q1 add", "core.py:add"), ("test_memo.py:test_Q1_add", "core.py:add")}, moved
+        assert all(r["confirmed"] == {"by": "kim"} and r["evidence"] for r in moved)
+        assert sum(1 for r in d["retired"] if r["retired"]["why"].startswith("moved:")) == 2
+        left = {r["dst"] for r in d["relations"] if not r.get("moved-from")}
+        assert left == {"memo.py:list_", "memo.py:X"}, left   # ambiguous and homeless: a person's call
+        code, out = run("impact", "--target", pj.dir)
+        assert out.count("broken") == 2, out
