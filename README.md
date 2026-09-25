@@ -36,9 +36,10 @@ Watch these files (anchors: file, file#heading for Markdown, file:symbol for Pyt
 Keep what was said or written, verbatim, as the anchor `source:ID` (`add ID --file F|- --speaker WHO [--locator WHERE]
 [--replies-to ID]`; `-` reads stdin — or `--from-transcript SESSION.jsonl --match "phrase" [--kind
 person|agent|question|answer]`, which takes the one turn containing the phrase from the host's own session record,
-verbatim, the agent's turn under its model's name, the locator filled in). Both sides of a conversation are sources,
+verbatim, the agent's turn under its model's name, the locator filled in; `--turn ID` names the turn by the host's id when
+a phrase cannot — a short approval recurs — and the ids are listed, latest last, when `--match` finds several). Both sides of a conversation are sources,
 and an answer is kept with the turn it answers. `--excerpt "sentence"` (repeatable) keeps only those sentences of the turn —
-whole sentences, verbatim, a cut mid-sentence refused — when a turn clearly splits into what the record needs and what
+whole sentences, verbatim, a cut mid-sentence refused, parts that sat side by side keeping their spacing — when a turn clearly splits into what the record needs and what
 it does not (an approval followed by a new request); the source says it is an excerpt, and its locator names the whole
 turn. The same id with other text is refused — a correction is a new source.
 `list` shows what each source grounds
@@ -140,7 +141,10 @@ meaning a `revise` replaced
 Committed: yes.
 
 `written_by: mangsang <version>` — a field, read as one: which mangsang wrote this object (`+g<sha>[-dirty]` when a
-working source did; `check --findings` names a committed record so written as `unreleased-writer`)
+working source did; `check --findings` names a committed record so written as `unreleased-writer`). It names who wrote
+the content: a newer build re-saving a record it did not change leaves the file, stamp and all, as it was. The three
+`--findings` documents (`impact`, `check`, `cq`) say `"standing": true` — they read the model as it is now, so a finding
+they stop reporting is gone.
 
 ### `mangsang/relations/<id>.json`, `mangsang/retired/<id>.json`
 
@@ -225,9 +229,11 @@ confirm); it audits that the answer is *alive*. Three reds: **FAILED** (the answ
 its projections moved since confirmation — the promise's reality shifted; re-read before trusting the sentence),
 **UNANSWERABLE** (the concept a question names is gone: the model cannot answer this of the domain), **UNQUESTIONED**
 (a concept no question names — the model holds a meaning nobody asks for; write the question or say why not).
-A question may also be asked before anything answers it — `{"kind": "open"}`, naming no concept: `cq` lists it
-**OPEN**, and `--findings` reports it as an observation, not a red. When a concept carries the answer, `cq revise` to
-`answered-by`.
+A question may also be asked before anything answers it — `{"kind": "open"}`, naming no answer: `cq` lists it
+**OPEN**, and `--findings` reports it as an observation, not a red. It may say what it asks about — `{"kind": "open",
+"about": ["venue"]}` — and those concepts are questioned, not answered: a planning model starts with most of its
+questions open, and without `about` every concept it holds read as UNQUESTIONED. When a concept carries the answer,
+`cq revise` to `answered-by`.
 
 Both layers' declarations live in `mangsang/cq/` and are judgments alike: `cq add ID --text "..." --verify '{...}'
 --by WHO` records the author, is refused when the current model cannot support it, and `cq retire --why` keeps the

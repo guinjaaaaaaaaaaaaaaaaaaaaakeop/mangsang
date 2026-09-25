@@ -95,7 +95,14 @@ def save(path, data):
     if isinstance(data, dict) and os.path.basename(os.path.dirname(path)) in RECORD_KINDS and os.path.basename(os.path.dirname(os.path.dirname(path))) == DECL:
         # every record object says which mangsang wrote it — a JSON field, read as one (chongdae's rule for its records):
         # a later version knows the shape it is reading, and a reviewer can see a record written by a build that is no release
-        data = {**{k: v for k, v in data.items() if k != "written_by"}, "written_by": engine()}
+        bare = {k: v for k, v in data.items() if k != "written_by"}
+        if os.path.exists(path):
+            try:
+                if {k: v for k, v in load(path).items() if k != "written_by"} == bare:
+                    return   # the content is what is on disk: `written_by` names who wrote that content — a newer build re-saving it wrote nothing (every concept file of a project rewritten for a version string)
+            except (ValueError, AttributeError):
+                pass
+        data = {**bare, "written_by": engine()}
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
@@ -513,7 +520,7 @@ def cmd_impact(args):
         findings += [{"kind": "broken", "where": "%s %s" % (x["id"], ", ".join(x["dead"])), "text": "dead anchor(s): the relation points at nothing"} for x in broken]
         findings += [{"kind": "delegated", "where": "%s %s %s %s" % (r["id"], r["src"], r["predicate"], r["dst"]), "text": "re-confirmed by delegation: %s" % (("ref " + r["confirmed"]["delegated"]["ref"]) if isinstance(r["confirmed"]["delegated"], dict) else r["confirmed"]["delegated"])}
                      for r in d["relations"] if isinstance(r.get("confirmed"), dict) and r["confirmed"].get("delegated")]
-        print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "findings": findings}, ensure_ascii=False, indent=1))
+        print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "standing": True, "findings": findings}, ensure_ascii=False, indent=1))
         return 1 if stale or broken else 0
     for x in stale:
         print("  stale   %s  %s  <- %s" % (x["id"], x["stale"], x["because"]))
@@ -655,9 +662,14 @@ def cq_presuppositions(d, files, q):
         pass   # asks only about the relations themselves; always askable
     elif v.get("kind") == "open":
         # asked before anything answers it: a model built from conversation starts with what nobody has answered yet.
-        # It presupposes nothing — and names no answer, so a later `revise` to answered-by is where the answer is signed
-        if set(v) != {"kind"}:
-            missing.append("an open question names no answer — `{\"kind\": \"open\"}` alone; `cq revise` to answered-by when one exists")
+        # It names no answer — a later `revise` to answered-by is where the answer is signed — but it may say what it asks
+        # about (`about`): a planning model starts with most of its questions open, and those are what its concepts are for
+        if set(v) - {"kind", "about"}:
+            missing.append("an open question names no answer — `{\"kind\": \"open\"}`, with `about` for the concepts it asks about; `cq revise` to answered-by when one exists")
+        have = {c["name"] for c in d["concepts"]}
+        for n in v.get("about") or []:
+            if n not in have:
+                missing.append("asks about concept %r — not declared" % n)
     elif v.get("kind") == "answered-by":
         # a domain question presupposes its answer's home: the named concepts. The machine cannot judge whether a
         # means-sentence really answers the text (that is the declarer's signature); it checks that the answer exists.
@@ -828,7 +840,7 @@ def cmd_check(args):
         findings.append({"kind": "agent-proposed", "layer": "observation", "where": ", ".join(proposed), "source": "mangsang",
                          "text": "%d declaration(s) stand on a person's approval of the agent's own proposal (approval-of), not on the person's words" % len(proposed)})
     if getattr(args, "findings", False):
-        print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "findings": findings}, ensure_ascii=False, indent=1))
+        print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "standing": True, "findings": findings}, ensure_ascii=False, indent=1))
     say("invariants %d · holds %d · failed %d · unaskable %d · unwatched %d"
           % (len(active), len(active) - failed - unaskable, failed, unaskable, len(unwatched)))
     return 1 if failed or unaskable or unwatched else 0
@@ -865,7 +877,7 @@ def cmd_cq(args):
     findings = []
     opened = [q for q in active if q.get("verify", {}).get("kind") == "open"]
     for q in opened:
-        say("  %-12s %s  %s" % ("OPEN", q["id"], q["text"]))
+        say("  %-12s %s  %s%s" % ("OPEN", q["id"], q["text"], "  (about %s)" % ", ".join(q["verify"]["about"]) if q.get("verify", {}).get("about") else ""))
         findings.append({"kind": "cq-open", "layer": "observation", "where": q["id"], "source": "mangsang",
                          "text": "asked and not yet answered — a declared gap, not a failure"})
     active = [q for q in active if q not in opened]
@@ -900,13 +912,14 @@ def cmd_cq(args):
     # the reverse audit: which concepts does no question name? (G&F: content the questions do not justify)
     # a concept is asked for when a question names it or stands on it (`reach`)
     named = {n for q in active for n in q.get("verify", {}).get("concepts", [])} | {n for q in active for n in q.pop("_reached", {})}
+    named |= {n for q in opened for n in q.get("verify", {}).get("about") or []}   # asked about, not yet answered: still asked
     unquestioned = sorted(c["name"] for c in d["concepts"] if c["name"] not in named)
     for u in unquestioned:
         say("  %-12s concept:%s — the model holds this meaning and no question asks for it; write the CQ or say why not" % ("UNQUESTIONED", u))
         findings.append({"kind": "cq-unquestioned", "where": "concept:" + u, "source": "mangsang",
                          "text": "declared and realized, but named by no competency question"})
     if getattr(args, "findings", False):
-        print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "findings": findings}, ensure_ascii=False, indent=1))
+        print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "standing": True, "findings": findings}, ensure_ascii=False, indent=1))
     tail = " · %d structural declaration(s) now answer to `check`" % structural if structural else ""
     say("cq %d · answered %d · failed %d · unanswerable %d · unquestioned %d · open %d%s"
           % (len(active) + len(opened), len(active) - failed - unanswerable, failed, unanswerable, len(unquestioned), len(opened), tail))
@@ -1168,7 +1181,9 @@ def check_person(target, name, as_speaker=False):
 
 
 def excerpt_of(text, parts):
-    """The given parts of a turn, each whole sentences of it and verbatim, in the turn's order, joined by a newline. A part
+    """The given parts of a turn, each whole sentences of it and verbatim, in the turn's order. Two parts the turn holds side
+    by side (only spaces between them) keep the turn's own spacing; parts with anything left out between them are joined
+    by a newline. A part
     not in the turn, or one that starts or ends inside a sentence, is refused: an excerpt that could change what was said
     is not an excerpt."""
     found = []
@@ -1184,7 +1199,12 @@ def excerpt_of(text, parts):
             raise SystemExit("--excerpt %r cuts a sentence — an excerpt is whole sentences (from after a . ! ? or a line break, to one); "
                              "when the turn does not split cleanly, keep it whole" % part[:60])
         found.append((i, part))
-    return "\n".join(p for _, p in sorted(found))
+    out, end = "", None
+    for i, part in sorted(found):
+        gap = text[end:i] if end is not None else ""
+        out += (gap if end is not None and gap.strip(" \t") == "" and "\n" not in gap else ("\n" if end is not None else "")) + part
+        end = i + len(part)
+    return out
 
 
 def cmd_source(args):
@@ -1207,13 +1227,17 @@ def cmd_source(args):
     if not re.fullmatch(r"[\w-]+", args.id or ""):
         raise SystemExit("a source id is a word: letters, digits, _ or -")
     if args.from_transcript:
-        # the words taken from the host's own record of the session, not retyped: exactly one turn must contain --match
-        if not args.match:
-            raise SystemExit("--from-transcript needs --match \"a phrase from the turn\" — the one turn that contains it is kept, whole")
-        hits = [t for t in transcript_turns(args.from_transcript) if args.match in t["text"] and (not args.kind or t["kind"] == args.kind)]
+        # the words taken from the host's own record of the session, not retyped: exactly one turn — the one --turn names
+        # (the host's id for it), or the one that contains --match. A short approval ("ok", "go") recurs; a phrase cannot
+        # tell those apart, the host's id can
+        if not (args.match or args.turn):
+            raise SystemExit("--from-transcript needs --match \"a phrase from the turn\" (or --turn ID) — the one turn that contains it is kept, whole")
+        hits = [t for t in transcript_turns(args.from_transcript) if (not args.match or args.match in t["text"])
+                and (not args.turn or t["uuid"] == args.turn) and (not args.kind or t["kind"] == args.kind)]
         if len(hits) != 1:
-            raise SystemExit("--match found %d turn(s) in the transcript%s — give a phrase that only the turn you mean contains"
-                             % (len(hits), "".join("\n  %s %s: %s" % (t["kind"], t["uuid"], " ".join(t["text"].split())[:80]) for t in hits[:5])))
+            raise SystemExit("%s found %d turn(s) in the transcript%s — give a phrase that only the turn you mean contains, or --turn ID "
+                             "(the latest are listed last)" % ("--turn" if args.turn and not args.match else "--match", len(hits),
+                             "".join("\n  %s %s at %s: %s" % (t["kind"], t["uuid"], t["at"], " ".join(t["text"].split())[:80]) for t in hits[-5:])))
         turn = hits[0]
         if turn["kind"] in ("agent", "question"):
             args.speaker = args.speaker or "Claude (%s)" % (turn.get("model") or "unknown model")
@@ -1306,7 +1330,9 @@ def render_graph(d, moved):
         out.append('  %s{{"%s"}}' % (qn, label("%s%s: %s" % ("OPEN " if kind == "open" else "", q.get("id", "?"), " ".join(q.get("text", "").split())[:80]))))
         for n in q.get("verify", {}).get("concepts", []):
             out.append('  %s ==>|"answered by"| %s' % (qn, node("concept:" + n)))
-    out += ["```", "", "Rounded nodes are concepts, hexagons are questions (OPEN: nothing answers it yet); a dotted edge is a relation "
+        for n in q.get("verify", {}).get("about") or []:
+            out.append('  %s -.-|"asks about"| %s' % (qn, node("concept:" + n)))
+    out += ["```", "", "Rounded nodes are concepts, hexagons are questions (OPEN: nothing answers it yet — `asks about` names what it is about); a dotted edge is a relation "
             "whose end moved since it was confirmed. Sources are not drawn; each concept lists the words that ground it below.", ""]
     return out
 
@@ -1655,6 +1681,7 @@ def main(argv=None):
             p.add_argument("--locator", default=None, help="where they were said: a meeting, a transcript, a URL")
             p.add_argument("--from-transcript", default=None, help="a host session transcript (Claude Code JSONL): take the turn from it, verbatim, instead of --file")
             p.add_argument("--match", default=None, help="with --from-transcript: a phrase only the wanted turn contains")
+            p.add_argument("--turn", default=None, help="with --from-transcript: the host's id for the turn (listed when --match finds several)")
             p.add_argument("--kind", default=None, choices=["person", "agent", "question", "answer"], help="with --from-transcript: only turns of this kind")
             p.add_argument("--excerpt", action="append", default=None, help="with --from-transcript: keep only these sentences of the turn (repeatable), verbatim and whole — when the turn clearly splits into what the record needs and what it does not")
         if name == "report":
