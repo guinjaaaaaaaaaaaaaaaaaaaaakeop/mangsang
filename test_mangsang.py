@@ -146,6 +146,44 @@ def test_concepts_are_the_nets_own_nodes_and_survive_what_kills_anchors():
         assert code == 0 and "note-capture" in out and "realizes" in out, out
 
 
+def test_a_newer_build_resaving_an_unchanged_record_writes_nothing():
+    """`written_by` names the build that wrote a record's content. Every command re-saves every concept; with the stamp
+    refreshed each time, a version bump rewrote a whole project's concept files for a version string."""
+    with Project() as pj:
+        assert run("concept", "add", "hand", "--means", "one of three shapes", "--by", "lee", "--target", pj.dir)[0] == 0
+        path = os.path.join(pj.dir, "mangsang", "concepts", "hand.json")
+        rec = dict(mangsang.load(path), written_by="mangsang 0.0.1")
+        write(path, json.dumps(rec, ensure_ascii=False, indent=2) + "\n")   # the same content, an old build's stamp
+        old, mangsang._ENGINE = mangsang._ENGINE, "mangsang 99.0.0"
+        try:
+            assert run("concept", "add", "tie", "--means", "a round with no winner", "--by", "lee", "--target", pj.dir)[0] == 0   # re-saves every concept
+            assert mangsang.load(path)["written_by"] == "mangsang 0.0.1", "an unchanged concept was rewritten for the version string"
+            assert mangsang.load(os.path.join(pj.dir, "mangsang", "concepts", "tie.json"))["written_by"] == "mangsang 99.0.0"
+            assert run("concept", "revise", "hand", "--means", "one of the three shapes", "--by", "lee", "--target", pj.dir)[0] == 0
+            assert mangsang.load(path)["written_by"] == "mangsang 99.0.0", "changed content carries the build that changed it"
+        finally:
+            mangsang._ENGINE = old
+
+
+def test_a_planning_model_whose_questions_are_all_open_asks_about_its_concepts():
+    """Planning starts with every question open: an open question may name what it asks about (`about`) — never its
+    answer — and those concepts are questioned, not answered. Without `about`, every concept read as UNQUESTIONED."""
+    with Project() as pj:
+        assert run("concept", "add", "venue", "--means", "where papers are called for", "--by", "lee", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "call", "--means", "one call for papers", "--by", "lee", "--target", pj.dir)[0] == 0
+        assert run("cq", "add", "Q-which", "--text", "Which venues?", "--verify", '{"kind": "open"}', "--by", "lee", "--target", pj.dir)[0] == 0
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 1 and "unquestioned 2" in out, out
+        assert run("cq", "add", "Q-fields", "--text", "What fields?", "--verify", '{"kind": "open", "about": ["nope"]}', "--by", "lee", "--target", pj.dir)[0] == 1
+        assert run("cq", "add", "Q-fields", "--text", "What fields?", "--verify", '{"kind": "open", "about": ["call"], "concepts": ["call"]}', "--by", "lee", "--target", pj.dir)[0] == 1   # still names no answer
+        assert run("cq", "add", "Q-fields", "--text", "What fields?", "--verify", '{"kind": "open", "about": ["call"]}', "--by", "lee", "--target", pj.dir)[0] == 0
+        assert run("cq", "revise", "Q-which", "--verify", '{"kind": "open", "about": ["venue"]}', "--by", "lee", "--target", pj.dir)[0] == 0
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 0 and "unquestioned 0" in out and "open 2" in out and "answered 0" in out and "(about venue)" in out, out
+        code, out = run("report", "--target", pj.dir)
+        assert '"asks about"' in out, out
+
+
 def test_a_model_grounded_in_what_people_said_open_questions_and_the_report():
     """A model built from a conversation: the words kept verbatim as `source:ID`, a concept grounded in them by a quote,
     a question asked before anything answers it, the answer signed when it exists, a rename that carries the question,
@@ -183,6 +221,7 @@ def test_a_model_grounded_in_what_people_said_open_questions_and_the_report():
         code, out = run("cq", "--findings", "--target", pj.dir)
         doc = json.loads(out)
         assert [(f["kind"], f["layer"]) for f in doc["findings"]] == [("cq-open", "observation")], doc   # the reviewer lists it, nobody disposes of it
+        assert doc["standing"] is True, "cq reads the model as it is now: a finding it stops reporting is gone"
         # the reading, grounded: the evidence quotes the source; a paraphrase of it is refused like any other
         assert run("concept", "add", "replay", "--means", "a drawn round is played again; three draws in a row end the game undecided", "--by", "lee", "--target", pj.dir)[0] == 0
         code, out = pj.propose(rel("source:U1", "realizes", "concept:replay", ev="a draw gets played once more"))
@@ -891,3 +930,14 @@ def test_a_turn_can_be_kept_as_the_sentences_that_matter():
         assert code != 0 and "cuts a sentence" in out, out
         code, out = run("source", "add", "A3", "--from-transcript", tr, "--match", "그걸로", "--speaker", "lee", "--excerpt", "좋아.", "--target", pj.dir)
         assert code != 0 and "not in the turn" in out, out
+        # parts the turn holds side by side keep its spacing; a part after something left out starts a new line
+        assert mangsang.excerpt_of("가. 나. 다.\n라. 마.", ["가.", "나.", "마."]) == "가. 나.\n마."
+        # a short approval recurs: --turn names the one meant, by the host's id (listed, latest last)
+        with io.open(tr, "a", encoding="utf-8") as fh:
+            for uid, when in (("u2", "2026-09-25T01:00:00Z"), ("u3", "2026-09-25T02:00:00Z")):
+                fh.write(json.dumps({"type": "user", "uuid": uid, "timestamp": when, "message": {"role": "user", "content": "ㄱㄱ"}}) + "\n")
+        code, out = run("source", "add", "G", "--from-transcript", tr, "--match", "ㄱㄱ", "--speaker", "lee", "--target", pj.dir)
+        assert code != 0 and "--turn ID" in out and out.index("u2") < out.index("u3"), out
+        assert run("source", "add", "G", "--from-transcript", tr, "--turn", "u3", "--speaker", "lee", "--target", pj.dir)[0] == 0
+        src = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "G.json"))
+        assert src["text"] == "ㄱㄱ" and "u3" in src["locator"] and src["verbatim-from"] == "host transcript", src
