@@ -34,7 +34,11 @@ import os
 import re
 
 JS_EXT = (".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts")
-LINE_CONFIG_EXT = (".yaml", ".yml", ".toml", ".ini", ".cfg")
+CSS_EXT = (".css", ".scss", ".sass", ".less")
+HTML_EXT = (".html", ".htm", ".xhtml")
+COMPONENT_EXT = (".astro", ".vue", ".svelte")
+BLOCK_EXT = (".prisma", ".graphql", ".gql", ".proto")
+NESTED_KEY_DEPTH = 3   # `openapi.yaml:paths./users/{id}`, `compose.yaml:services.web`, `tokens.json:color.primary.500`
 
 
 class Scan:
@@ -50,8 +54,20 @@ def kind_of(path):
         return "python"
     if ext in JS_EXT:
         return "js"
-    if ext in (".md", ".markdown"):
+    if ext in (".md", ".markdown", ".mdx"):
         return "markdown"
+    if ext in CSS_EXT:
+        return "css"
+    if ext in HTML_EXT:
+        return "html"
+    if ext in COMPONENT_EXT:
+        return "component"
+    if ext == ".sql":
+        return "sql"
+    if ext in BLOCK_EXT:
+        return "block"
+    if base == "dockerfile" or base.startswith("dockerfile.") or base.endswith(".dockerfile"):
+        return "dockerfile"
     if ext == ".json":
         return "json"
     if ext in (".yaml", ".yml"):
@@ -70,7 +86,8 @@ def scan(path, text):
     text = text.replace("\r\n", "\n")
     kind = kind_of(path)
     fn = {"python": scan_python, "js": scan_js, "markdown": scan_markdown, "json": scan_json, "yaml": scan_yaml,
-          "toml": scan_toml, "ini": scan_ini, "env": scan_env}.get(kind)
+          "toml": scan_toml, "ini": scan_ini, "env": scan_env, "css": scan_css, "html": scan_html, "component": scan_component,
+          "sql": scan_sql, "block": scan_block, "dockerfile": scan_dockerfile}.get(kind)
     return fn(text) if fn else Scan({"": text})
 
 
@@ -113,9 +130,17 @@ def normalize(path, text):
             except ValueError:
                 pass
         return text
-    if kind in ("yaml", "toml", "ini", "env"):
+    if kind in ("yaml", "toml", "ini", "env", "dockerfile"):
         comment = ("#", ";") if kind == "ini" else ("#",)
         return "\n".join(l.rstrip() for l in text.split("\n") if l.strip() and not l.lstrip().startswith(comment))
+    if kind == "css":
+        return _css_normalize(text)
+    if kind == "sql":
+        return " ".join(_sql_strip_comments(text).split())
+    if kind == "block":
+        return " ".join(re.sub(r"//[^\n]*|#[^\n]*|/\*.*?\*/", " ", text, flags=re.S).split())
+    if kind in ("html", "component"):
+        return " ".join(re.sub(r"<!--.*?-->", " ", text, flags=re.S).split())
     return text
 
 
@@ -193,6 +218,15 @@ def scan_python(text):
             continue
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names = [node.name]
+        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and node.value.args \
+                and isinstance(node.value.args[0], ast.Constant) and isinstance(node.value.args[0].value, str):
+            # a registration: `app.add_url_rule("/users", …)`, `urlpatterns.append(path("x", …))` — a top-level call whose first
+            # argument is a string names what it registers; the string is the name (`app.add_url_rule("/users")`)
+            chain, f = [], node.value.func
+            while isinstance(f, ast.Attribute):
+                chain.insert(0, f.attr)
+                f = f.value
+            names = ['%s("%s")' % (".".join([f.id] + chain), node.value.args[0].value)] if isinstance(f, ast.Name) and f.id not in ("print",) else []
         elif isinstance(node, ast.Assign):
             names = [n for t in node.targets for n in _py_targets(t)]
         elif isinstance(node, ast.AnnAssign):
@@ -525,6 +559,28 @@ def _js_import_bindings(toks, j, end):
     return names
 
 
+_NOT_REGISTRATION = {"console", "require", "import", "alert", "print", "throw", "return", "new", "typeof", "await", "void", "delete", "if", "for", "while", "switch", "case"}
+
+
+def _js_registration(toks, j, end):
+    """`app.get("/users", handler)`, `describe("login", () => …)`, `it("rejects a bad password", …)`, `router.post("/x")`:
+    a statement that is a call whose first argument is a string — it registers something, and the string names it.
+    Returns the anchor name `callee("string")` or None."""
+    k, chain = j, []
+    while k < end and toks[k].type == "id":
+        chain.append(toks[k].value)
+        if k + 1 < end and toks[k + 1].value == ".":
+            k += 2
+        else:
+            k += 1
+            break
+    if not chain or chain[0] in _NOT_REGISTRATION or chain[0] in JS_KEYWORDS or k >= end or toks[k].value != "(":
+        return None
+    if k + 1 < end and toks[k + 1].type == "str":
+        return '%s("%s")' % (".".join(chain), toks[k + 1].value[1:-1])
+    return None
+
+
 def scan_js(text):
     toks = js_tokens(text)
     texts, deps, hidden = {}, {}, {}
@@ -610,6 +666,18 @@ def scan_js(text):
             names = ["default"]
         else:
             end = _js_statement_end(toks, j)
+            reg = _js_registration(toks, j, end)
+            if reg:
+                names = [reg]
+                # what the registration's callbacks register in turn: `describe("auth", () => { it("rejects …", …) })`,
+                # `router.route("/x").get(…)` — each is an anchor of its own, named by its own string; the outer holds them all
+                for k in range(j + 1, end):
+                    prev = toks[k - 1]
+                    if toks[k].type == "id" and prev.type == "punct" and prev.value in ("{", "}", ";", ")"):
+                        inner_end = _js_statement_end(toks, k)
+                        inner = _js_registration(toks, k, min(inner_end, end))
+                        if inner:
+                            top.append(([inner], k, min(inner_end, end)))
         end = max(end if end is not None else j + 1, j + 1)
         if names:
             top.append((names, i, end))
@@ -649,53 +717,75 @@ def _json_string_end(text, i):
     raise ValueError("unterminated string")
 
 
+def _json_members(text, i, path, out, depth):
+    """i at `{`: records `"key": value` spans as anchors `path.key`, recursing into object values to NESTED_KEY_DEPTH.
+    Returns the index after the closing `}`."""
+    n = len(text)
+    i += 1
+    while i < n:
+        while i < n and text[i] in " \t\r\n,":
+            i += 1
+        if i >= n:
+            raise ValueError("unterminated object")
+        if text[i] == "}":
+            return i + 1
+        if text[i] != '"':
+            raise ValueError("not a key")
+        key_start = i
+        i = _json_string_end(text, i)
+        key = ".".join(path + [json.loads(text[key_start:i])])
+        while i < n and text[i].isspace():
+            i += 1
+        if i >= n or text[i] != ":":
+            raise ValueError("no colon")
+        i += 1
+        while i < n and text[i].isspace():
+            i += 1
+        if i < n and text[i] == "{" and depth < NESTED_KEY_DEPTH:
+            i = _json_members(text, i, path + [json.loads(text[key_start:_json_string_end(text, key_start)])], out, depth + 1)
+        else:
+            i = _json_value_end(text, i)
+        k = ":" + key
+        span = text[key_start:i].rstrip()
+        out[k] = (out[k] + "\n" + span) if k in out else span
+    raise ValueError("unterminated object")
+
+
+def _json_value_end(text, i):
+    """i at a value: the index after it (before the `,` or closing bracket that follows)."""
+    n, depth = len(text), 0
+    while i < n:
+        c = text[i]
+        if c == '"':
+            i = _json_string_end(text, i)
+            continue
+        if c in "{[":
+            depth += 1
+        elif c in "}]":
+            if depth == 0:
+                return i
+            depth -= 1
+        elif c == "," and depth == 0:
+            return i
+        i += 1
+    return i
+
+
 def scan_json(text):
-    """Top-level keys of a JSON object (`package.json:scripts`, `tsconfig.json:compilerOptions`), each with its raw
-    `"key": value` text so a quote is what a reader sees. A root array, or a file that will not scan, is one anchor."""
-    out = {"": text}
+    """Keys of a JSON object, nested to NESTED_KEY_DEPTH as dotted paths (`package.json:scripts`, `package.json:scripts.test`,
+    `tokens.json:color.primary.500`), each with its raw `"key": value` text so a quote is what a reader sees. A root
+    array, or a file that will not scan, is one anchor."""
+    out = {}
     try:
         i, n = 0, len(text)
         while i < n and text[i].isspace():
             i += 1
         if i >= n or text[i] != "{":
-            return Scan(out)
-        i += 1
-        while i < n:
-            while i < n and text[i] in " \t\r\n,":
-                i += 1
-            if i >= n or text[i] == "}":
-                break
-            if text[i] != '"':
-                return Scan({"": text})
-            key_start = i
-            i = _json_string_end(text, i)
-            key = json.loads(text[key_start:i])
-            while i < n and text[i].isspace():
-                i += 1
-            if text[i] != ":":
-                return Scan({"": text})
-            i += 1
-            depth = 0
-            while i < n:
-                c = text[i]
-                if c == '"':
-                    i = _json_string_end(text, i)
-                    continue
-                if c in "{[":
-                    depth += 1
-                elif c in "}]":
-                    if depth == 0:
-                        break
-                    depth -= 1
-                elif c == "," and depth == 0:
-                    break
-                i += 1
-            k = ":" + key
-            s = text[key_start:i].rstrip()
-            out[k] = (out[k] + "\n" + s) if k in out else s
+            return Scan({"": text})
+        _json_members(text, i, [], out, 1)
     except (ValueError, IndexError):
         return Scan({"": text})
-    return Scan(out)
+    return Scan({"": text, **out})
 
 
 def _line_blocks(text, is_key, is_break=lambda l: False, attach_comments=False):
@@ -722,17 +812,61 @@ def _line_blocks(text, is_key, is_break=lambda l: False, attach_comments=False):
     return out
 
 
-_YAML_KEY = re.compile(r'''^(?:"([^"]*)"|'([^']*)'|([A-Za-z0-9_.\-/$]+))\s*:(?:\s|$)''')
+_YAML_KEY = re.compile(r'''^(\s*)(?:"([^"]*)"|'([^']*)'|([A-Za-z0-9_.\-/$<>{}*@]+))\s*:(?:\s+(.*))?$''')
 _YAML_BREAK = re.compile(r"^(---|\.\.\.)(\s|$)")
 
 
 def scan_yaml(text):
-    """Top-level keys (column 0). YAML needs no parser for that much: a key at column 0 opens a block that runs to the
-    next column-0 key or document marker. Nested keys are inside their top-level key's block."""
-    def key(line):
+    """Mapping keys, nested to NESTED_KEY_DEPTH as dotted paths (`compose.yaml:services`, `compose.yaml:services.web`,
+    `openapi.yaml:paths./users/{id}`), by indentation — YAML needs no parser for that much. A key's block runs to the
+    next line indented no deeper than the key (a list item, a document marker, a shallower key end it too). Keys inside
+    list items (`- name: x`) and inside block scalars (`|`, `>`) are content, not anchors."""
+    lines, out = text.split("\n"), {}
+    stack = []   # [(indent, key)] of the open mapping keys
+    opened = []  # [(indent, dotted, start_line)] anchors not yet closed
+    skip_deeper_than = None   # inside a block scalar: skip lines indented deeper than this
+
+    def close(upto_indent, idx):
+        while opened and opened[-1][0] >= upto_indent:
+            ind, dotted, start = opened.pop()
+            span = "\n".join(lines[start:idx]).rstrip("\n")
+            k = ":" + dotted
+            out[k] = (out[k] + "\n" + span) if k in out else span
+        while stack and stack[-1][0] >= upto_indent:
+            stack.pop()
+
+    for idx, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if skip_deeper_than is not None:
+            if indent > skip_deeper_than:
+                continue
+            skip_deeper_than = None
+        if _YAML_BREAK.match(line):
+            close(0, idx)
+            continue
         m = _YAML_KEY.match(line)
-        return (m.group(1) or m.group(2) or m.group(3)) if m else None
-    return Scan({"": text, **{":" + k: v for k, v in _line_blocks(text, key, lambda l: bool(_YAML_BREAK.match(l))).items()}})
+        if line.lstrip().startswith("- ") or line.strip() == "-":
+            close(indent + 1, idx)
+            skip_deeper_than = indent   # the item's own mapping is content of the list, not keys of the document
+            continue
+        if not m:
+            close(indent + 1, idx)
+            continue
+        close(indent, idx)
+        key = m.group(2) or m.group(3) or m.group(4)
+        value = (m.group(5) or "").strip()
+        dotted = ".".join([k for _, k in stack] + [key])
+        if len(stack) < NESTED_KEY_DEPTH:
+            opened.append((indent, dotted, idx))
+        stack.append((indent, key))
+        if value.split("#")[0].strip() in ("|", ">", "|-", ">-", "|+", ">+"):
+            skip_deeper_than = indent
+    close(0, len(lines))
+    while out and "" in out:
+        del out[""]
+    return Scan({"": text, **out})
 
 
 _TOML_TABLE = re.compile(r"^\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$")
@@ -740,19 +874,24 @@ _TOML_KEY = re.compile(r'''^((?:[A-Za-z0-9_\-]+|"[^"]*"|'[^']*')(?:\.(?:[A-Za-z0
 
 
 def scan_toml(text):
-    """Tables (`pyproject.toml:project`, `pyproject.toml:tool.pytest.ini_options`) and the bare keys before the first table."""
-    seen_table = [False]
-
-    def key(line):
+    """Tables (`pyproject.toml:project`, `pyproject.toml:tool.pytest.ini_options`), the bare keys before the first table, and
+    the keys inside a table as `table.key` (`pyproject.toml:project.dependencies`) — a table's anchor holds the whole table;
+    a key's block is its line and the continuation lines (a multi-line array) until the next key or table."""
+    tables = _line_blocks(text, lambda l: _TOML_TABLE.match(l).group(1) if _TOML_TABLE.match(l) else None)
+    blocks, current, open_key = {}, None, None
+    for line in text.split("\n"):
         m = _TOML_TABLE.match(line)
         if m:
-            seen_table[0] = True
-            return m.group(1)
-        if not seen_table[0]:
-            m = _TOML_KEY.match(line)
-            return m.group(1).replace('"', "").replace("'", "") if m else None
-        return None
-    return Scan({"": text, **{":" + k: v for k, v in _line_blocks(text, key).items()}})
+            current, open_key = m.group(1), None
+            continue
+        m = _TOML_KEY.match(line)
+        if m:
+            k = m.group(1).replace('"', "").replace("'", "")
+            open_key = "%s.%s" % (current, k) if current else k
+            blocks[open_key] = (blocks[open_key] + "\n" + line) if open_key in blocks else line
+        elif open_key and line.strip() and not line.lstrip().startswith("#"):
+            blocks[open_key] += "\n" + line
+    return Scan({"": text, **{":" + k: v for k, v in tables.items()}, **{":" + k: v for k, v in blocks.items()}})
 
 
 _INI_SECTION = re.compile(r"^\[([^\]]+)\]\s*([#;].*)?$")
@@ -784,3 +923,365 @@ def scan_env(text):
         m = _ENV_KEY.match(line)
         return m.group(1) if m else None
     return Scan({"": text, **{":" + k: v for k, v in _line_blocks(text, key, lambda l: not l.strip(), attach_comments=True).items()}})
+
+
+# ---------------------------------------------------------------- CSS / SCSS
+
+_CSS_GROUP_AT = ("@media", "@supports", "@layer", "@container", "@scope", "@document")
+_CSS_VAR_DECL = re.compile(r"^\s*(--[\w-]+|\$[\w-]+)\s*:")
+_CSS_READS = re.compile(r"var\(\s*(--[\w-]+)|(\$[\w-]+)|@include\s+([\w-]+)|@extend\s+(%[\w-]+|\.[\w-]+)|animation(?:-name)?\s*:\s*([^;{}]+)")
+
+
+def _css_strip_comments(text):
+    text = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), text, flags=re.S)   # same length: offsets stay valid
+    return re.sub(r"(?m)//[^\n]*", lambda m: " " * len(m.group(0)), text) if "//" in text else text
+
+
+def _css_normalize(text):
+    t = " ".join(_css_strip_comments(text).split())
+    return re.sub(r"\s*([{}:;,()>+~])\s*", r"\1", t).replace(";}", "}")
+
+
+def _css_selectors(prelude):
+    """`a, b:is(c, d)` -> ["a", "b:is(c, d)"]: one anchor per selector, so `.btn` is `.btn` wherever it is listed."""
+    out, depth, cur = [], 0, ""
+    for c in prelude:
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        if c == "," and depth == 0:
+            out.append(cur.strip())
+            cur = ""
+        else:
+            cur += c
+    out.append(cur.strip())
+    return [x for x in out if x]
+
+
+def _css_statements(text, start, end):
+    """(stmt_start, brace_or_None, stmt_end) for the statements of one block level: `prelude { … }` or `declaration;`."""
+    i = start
+    while i < end:
+        while i < end and text[i] in " \t\r\n;":
+            i += 1
+        if i >= end:
+            return
+        s0, depth, j = i, 0, i
+        while j < end:
+            c = text[j]
+            if c in "\"'":
+                k = j + 1
+                while k < end and text[k] != c and text[k] != "\n":
+                    k += 2 if text[k] == "\\" else 1
+                j = k + 1
+                continue
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+            elif depth == 0 and c == "{":
+                d, k = 1, j + 1
+                while k < end and d:
+                    ch = text[k]
+                    if ch in "\"'":
+                        m = k + 1
+                        while m < end and text[m] != ch and text[m] != "\n":
+                            m += 2 if text[m] == "\\" else 1
+                        k = m + 1
+                        continue
+                    d += (ch == "{") - (ch == "}")
+                    k += 1
+                yield s0, j, k
+                i = k
+                break
+            elif depth == 0 and c == ";":
+                yield s0, None, j + 1
+                i = j + 1
+                break
+            j += 1
+        else:
+            yield s0, None, end
+            return
+
+
+def scan_css(text):
+    """Rules by selector (`styles.css:.btn`, `styles.css:.nav a`), at-rules by prelude (`@media (max-width: 600px)`,
+    `@keyframes fade`, `@font-face`, `@mixin card`), custom properties and SCSS variables one anchor each
+    (`styles.css:--color-primary`, `styles.css:$gutter`). A rule inside a group at-rule (`@media … { .nav { … } }`) is
+    also `.nav` — the same selector twice is one anchor holding both texts, so `.nav` covers its mobile branch. A rule
+    reads what its declarations use: `var(--x)`, `$x`, `@include m`, `@extend %p`, `animation: fade` -> `@keyframes fade`.
+    The cascade (order, specificity) is not a read the fingerprint sees; the file anchor does."""
+    clean = _css_strip_comments(text)
+    texts, deps = {}, {}
+
+    def add(key, span, free):
+        k = ":" + key
+        texts[k] = (texts[k] + "\n" + span) if k in texts else span
+        deps[k] = deps.get(k, set()) | free
+
+    def reads_of(body):
+        free = set()
+        for m in _CSS_READS.finditer(body):
+            if m.group(1):
+                free.add(m.group(1))
+            elif m.group(2):
+                free.add(m.group(2))
+            elif m.group(3):
+                free.add("@mixin " + m.group(3))
+            elif m.group(4):
+                free.add(m.group(4))
+            elif m.group(5):
+                for word in re.findall(r"(?<![\w.-])[A-Za-z_][\w-]*", m.group(5)):
+                    free.add("@keyframes " + word)
+        return free
+
+    def walk(start, end, nested_in_rule):
+        for s0, brace, e in _css_statements(clean, start, end):
+            raw = text[s0:e].rstrip()
+            if brace is None:
+                m = _CSS_VAR_DECL.match(clean[s0:e])
+                if m:
+                    add(m.group(1), raw.rstrip(";"), reads_of(clean[s0:e]) - {m.group(1)})
+                elif not nested_in_rule:
+                    prelude = " ".join(clean[s0:e].rstrip(";").split())
+                    if prelude.startswith("@") and not prelude.startswith(("@import", "@use", "@forward", "@charset")):
+                        add(prelude, raw.rstrip(";"), reads_of(clean[s0:e]))
+                continue
+            prelude = " ".join(clean[s0:brace].split())
+            if not prelude:
+                continue
+            body = clean[brace + 1:e - 1]
+            if prelude.startswith(_CSS_GROUP_AT):
+                add(prelude, raw, reads_of(body))
+                walk(brace + 1, e - 1, False)   # the rules inside are anchors of their own too
+            elif prelude.startswith(("@keyframes", "@font-face", "@mixin", "@function", "@page", "@property", "@counter-style", "@font-feature-values")):
+                if not nested_in_rule:
+                    add(re.sub(r"\(.*$", "", prelude).strip() if prelude.startswith(("@mixin", "@function")) else prelude, raw, reads_of(body) - {prelude})
+                walk(brace + 1, e - 1, True)   # custom properties declared inside still count
+            elif prelude.startswith("@"):
+                if not nested_in_rule:
+                    add(prelude, raw, reads_of(body))
+            else:
+                if not nested_in_rule:
+                    for sel in _css_selectors(prelude):
+                        add(sel, raw, reads_of(body))
+                walk(brace + 1, e - 1, True)   # SCSS nesting and `:root { --x: … }`: nested rules belong to their holder; variables are anchors
+
+    walk(0, len(clean), False)
+    return Scan({"": text, **texts}, deps)
+
+
+# ---------------------------------------------------------------- HTML and single-file components (Astro, Vue, Svelte)
+
+_VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+
+
+def _merge(into, other, prefix=""):
+    for k, v in other.texts.items():
+        if k == "":
+            continue
+        into.texts[k] = (into.texts[k] + "\n" + v) if k in into.texts else v
+        into.deps[k] = into.deps.get(k, set()) | other.deps.get(k, set())
+    for k, v in other.hidden.items():
+        into.hidden[k] = (into.hidden[k] + "\n" + v) if k in into.hidden else v
+
+
+def scan_html(text, base=None):
+    """Elements with an `id` (`index.html:#hero`, the element's whole text), `<title>`, and what the inline `<style>` and
+    `<script>` blocks declare, by their own scanners — a component's scoped `.card` rule and its `const title` are anchors
+    beside its `#hero` section. An element reads the classes and ids its style block declares (`class="card"` -> `.card`)."""
+    from html.parser import HTMLParser
+    out = base or Scan({"": text})
+    line_starts = [0] + [m.end() for m in re.finditer("\n", text)]
+    offset = lambda pos: line_starts[pos[0] - 1] + pos[1]
+    stack, blocks = [], []   # (tag, start offset, id, classes) ; (kind, start, end) of style/script contents
+
+    class P(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            at = dict(attrs)
+            start = offset(self.getpos())
+            if tag in _VOID:
+                return
+            stack.append((tag, start, at.get("id"), (at.get("class") or "").split(), at.get("type")))
+
+        def handle_endtag(self, tag):
+            if not any(t == tag for t, *_ in stack):
+                return
+            close = text.find(">", offset(self.getpos())) + 1
+            while stack:
+                t, start, id_, classes, type_ = stack.pop()
+                if t == tag:
+                    inner_start = text.find(">", start) + 1
+                    inner_end = offset(self.getpos())
+                    if t == "style":
+                        blocks.append(("css", inner_start, inner_end))
+                    elif t == "script" and (type_ or "module").split(";")[0].strip() in ("module", "text/javascript", "application/javascript", "text/typescript", "ts", "text/babel"):
+                        blocks.append(("js", inner_start, inner_end))
+                    elif t == "title":
+                        k = ":title"
+                        out.texts[k] = (out.texts[k] + "\n" + text[start:close]) if k in out.texts else text[start:close]
+                    if id_:
+                        k = ":#" + id_
+                        span = text[start:close]
+                        out.texts[k] = (out.texts[k] + "\n" + span) if k in out.texts else span
+                        out.deps[k] = out.deps.get(k, set()) | {"." + c for c in classes}
+                    break
+
+    p = P(convert_charrefs=False)
+    try:
+        p.feed(text)
+        p.close()
+    except Exception:
+        pass
+    for kind, a, b in blocks:
+        _merge(out, scan_css(text[a:b]) if kind == "css" else scan_js(text[a:b]))
+    return out
+
+
+def scan_component(text):
+    """`.astro`: the frontmatter (between `---` fences) is TypeScript, the rest is HTML with `<style>`/`<script>` blocks.
+    `.vue`/`.svelte`: `<script>` and `<style>` blocks and the template's ids — the same HTML scanner."""
+    out = Scan({"": text})
+    m = re.match(r"^---[ \t]*\n(.*?)\n---[ \t]*\n", text, re.S)
+    rest_from = 0
+    if m:
+        _merge(out, scan_js(m.group(1)))
+        rest_from = m.end()
+    return scan_html(text[rest_from:], out) if rest_from else scan_html(text, out)
+
+
+# ---------------------------------------------------------------- SQL, schema/IDL blocks (Prisma, GraphQL, protobuf), Dockerfile
+
+_SQL_HEAD = re.compile(r"^\s*(?:CREATE|ALTER|DROP)\s+(?:OR\s+REPLACE\s+)?(?:UNIQUE\s+)?(?:TEMP(?:ORARY)?\s+)?(?:MATERIALIZED\s+)?"
+                       r"(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|TYPE|TRIGGER|SEQUENCE|SCHEMA|EXTENSION|POLICY|DOMAIN|ROLE)\s+"
+                       r"(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:CONCURRENTLY\s+)?(?:ONLY\s+)?(\"[^\"]+\"|`[^`]+`|\[[^\]]+\]|[\w.]+)", re.I)
+_SQL_READS = re.compile(r"\bREFERENCES\s+(\"[^\"]+\"|[\w.]+)|\bON\s+(?:ONLY\s+)?(\"[^\"]+\"|[\w.]+)\s*(?:\(|USING|$)", re.I | re.M)
+
+
+def _sql_strip_comments(text):
+    text = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), text, flags=re.S)
+    return re.sub(r"(?m)--[^\n]*", lambda m: " " * len(m.group(0)), text)
+
+
+def _sql_statements(text):
+    """(start, end) of each `;`-terminated statement, quotes and `$$ … $$` bodies respected."""
+    clean, i, n = _sql_strip_comments(text), 0, len(text)
+    while i < n:
+        while i < n and clean[i] in " \t\r\n;":
+            i += 1
+        if i >= n:
+            return
+        s0, j = i, i
+        while j < n:
+            c = clean[j]
+            if c == "'":
+                j = clean.find("'", j + 1)
+                j = n if j < 0 else j + 1
+                continue
+            if clean.startswith("$$", j):
+                j = clean.find("$$", j + 2)
+                j = n if j < 0 else j + 2
+                continue
+            if c == ";":
+                break
+            j += 1
+        yield s0, min(j + 1, n)
+        i = j + 1
+
+
+def scan_sql(text):
+    """`CREATE TABLE users`, `ALTER TABLE users …`, `CREATE INDEX users_email_idx` — statements by the object they define,
+    the same object's statements one anchor (`schema.sql:users` is the table and every ALTER on it). A table reads the tables
+    it REFERENCES; an index reads the table it is ON."""
+    texts, deps = {}, {}
+    clean = _sql_strip_comments(text)
+    for a, b in _sql_statements(text):
+        m = _SQL_HEAD.match(clean[a:b])
+        if not m:
+            continue
+        name = m.group(2).strip('"`[]')
+        k = ":" + name
+        span = text[a:b].rstrip()
+        texts[k] = (texts[k] + "\n" + span) if k in texts else span
+        free = {(r.group(1) or r.group(2)).strip('"') for r in _SQL_READS.finditer(clean[a:b])}
+        deps[k] = deps.get(k, set()) | (free - {name})
+    return Scan({"": text, **texts}, deps)
+
+
+_BLOCK_HEAD = re.compile(r"^[ \t]*(?:extend\s+)?(model|type|enum|input|interface|union|scalar|directive|datasource|generator|message|service|schema|view)\b[ \t]*(@?[\w.]+)?", re.M)
+
+
+def scan_block(text):
+    """Prisma, GraphQL and protobuf: `model User { … }`, `type Query { … }`, `enum Role { … }`, `message Ping { … }` — one anchor
+    per named block (`schema.prisma:User`, `schema.graphql:Query`), nameless blocks by keyword (`datasource`). A block reads
+    the other blocks its fields name (`author User` -> `User`)."""
+    texts, deps, names = {}, {}, []
+    clean = re.sub(r"//[^\n]*|#[^\n]*", lambda m: " " * len(m.group(0)), text)
+    clean = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), clean, flags=re.S)
+    found = []
+    for m in _BLOCK_HEAD.finditer(clean):
+        s0 = m.start()
+        while s0 > 0 and clean[s0 - 1] in " \t":
+            s0 -= 1
+        brace = clean.find("{", m.end())
+        nl = clean.find("\n", m.end())
+        if brace < 0 or (0 <= nl < brace):
+            # `scalar DateTime`, `union U = A | B`: a line, not a block
+            e = nl if nl >= 0 else len(clean)
+        else:
+            d, e = 0, brace
+            while e < len(clean):
+                d += (clean[e] == "{") - (clean[e] == "}")
+                e += 1
+                if d == 0:
+                    break
+        if found and s0 < found[-1][1]:
+            continue   # nested (an rpc inside a service): part of its holder
+        name = m.group(2) or m.group(1)
+        found.append((s0, e, name))
+    names = {n for _, _, n in found}
+    for s0, e, name in found:
+        k = ":" + name
+        span = text[s0:e].rstrip()
+        texts[k] = (texts[k] + "\n" + span) if k in texts else span
+        words = set(re.findall(r"[A-Za-z_][\w.]*", clean[s0:e]))
+        deps[k] = deps.get(k, set()) | ((words & names) - {name})
+    return Scan({"": text, **texts}, deps)
+
+
+_DOCKER_INSTR = re.compile(r"^\s*([A-Za-z]+)\b")
+
+
+def scan_dockerfile(text):
+    """Instructions by kind — `Dockerfile:FROM`, `Dockerfile:EXPOSE`, `Dockerfile:CMD`, `Dockerfile:ENV` — each anchor holding
+    every line of that instruction (continuations joined); `ARG`/`ENV` names read by `$NAME` are the anchor's reads."""
+    texts, deps = {}, {}
+    lines, joined, cur = text.split("\n"), [], None
+    for line in lines:
+        if cur is not None:
+            cur += "\n" + line
+        elif not line.strip() or line.lstrip().startswith("#"):
+            continue
+        else:
+            cur = line
+        if not line.rstrip().endswith("\\"):
+            joined.append(cur)
+            cur = None
+    if cur is not None:
+        joined.append(cur)
+    declared = {}   # variable name -> the instruction kind that declares it (ARG or ENV)
+    for stmt in joined:
+        m = _DOCKER_INSTR.match(stmt)
+        if m and m.group(1).upper() in ("ARG", "ENV"):
+            for v in re.findall(r"(?m)^\s*(?:ARG|ENV)\s+([A-Za-z_]\w*)|\s([A-Za-z_]\w*)=", stmt):
+                declared[v[0] or v[1]] = m.group(1).upper()
+    for stmt in joined:
+        m = _DOCKER_INSTR.match(stmt)
+        if not m:
+            continue
+        kind = m.group(1).upper()
+        k = ":" + kind
+        texts[k] = (texts[k] + "\n" + stmt) if k in texts else stmt
+        deps[k] = deps.get(k, set()) | {declared[w] for w in re.findall(r"\$\{?([A-Za-z_]\w*)", stmt) if w in declared and declared[w] != kind}
+    return Scan({"": text, **texts}, deps)
