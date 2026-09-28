@@ -69,8 +69,9 @@ commit that last wrote the relation) against now; `reconfirm` prints the same be
 
 ### `/mangsang:judge`
 
-The judge round for stale relations: `request` packs, per relation, the text that may be stale, the text that changed
-and the quote confirmed; `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
+The judge round for stale relations: `request` packs, per relation, the text that may be stale, the text that changed,
+the change itself (the diff since the confirming commit, when git has it) with the declarations the changed side reads
+now — a function stale because its constant moved shows the constant, not two unchanged texts — and the quote confirmed; `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
 quote the stale text verbatim) and applies only still-true — as a delegation, recorded on the relation and reported to
 the reviewer. Drifted and cannot-tell wait for a person
 
@@ -267,7 +268,8 @@ bytes are not stale) and never written; such a record cannot see what its anchor
 Two layers, two commands — they used to share one name, and the name lied: a lint is not a question.
 
 **`check` asks the net's invariants** — its health, `git fsck` not code review. Verify kinds: `coverage` (anchors
-matching a pattern each carry a relation), `projection` (every concept realized in each named medium — doc, code,
+matching a pattern each carry a relation — `*` matches across `.` too, so `compose.yaml:*` counts every nested key to
+depth 3; name the level you mean, `compose.yaml:services.*`, or the keys themselves), `projection` (every concept realized in each named medium — doc, code,
 test), `resolved` (no relation on a dead anchor). Three reds: **FAILED** (the invariant does not hold — propose the
 missing relations), **UNASKABLE** (the net moved out from under it — its predicate or anchors are gone; revise it),
 **UNWATCHED** (the net holds something no invariant watches — a used predicate, concepts without a projection

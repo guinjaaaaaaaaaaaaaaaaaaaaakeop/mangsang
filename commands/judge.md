@@ -1,5 +1,5 @@
 ---
-description: The judge round for stale relations — request packs both texts and the quote; consume applies still-true as a delegation and prints drifted/cannot-tell for a human
+description: The judge round for stale relations — request packs both texts, the change itself and what the changed side reads, and the quote; consume applies still-true as a delegation and prints drifted/cannot-tell for a human
 argument-hint: request --out DIR [--ids ID..] | consume --response FILE --by WHO
 ---
 !`python3 "${CLAUDE_PLUGIN_ROOT}/mangsang.py" judge $ARGUMENTS --target .`
