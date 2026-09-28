@@ -159,18 +159,19 @@ def test_config_files_anchor_their_top_level_keys():
     documentation, quotable), which the fingerprint ignores like every comment."""
     pkg = '{\n  "name": "x",\n  "scripts": {\n    "test": "jest, {"\n  },\n  "deps": ["a", "b"], "n": 1\n}\n'
     t = mangsang.anchor_texts("package.json", pkg)
-    assert set(t) == {"", ":name", ":scripts", ":deps", ":n"}, set(t)
-    assert t[":scripts"] == '"scripts": {\n    "test": "jest, {"\n  }', t[":scripts"]
+    assert set(t) == {"", ":name", ":scripts", ":scripts.test", ":deps", ":n"}, set(t)   # nested keys to depth 3, dotted
+    assert t[":scripts"] == '"scripts": {\n    "test": "jest, {"\n  }' and t[":scripts.test"] == '"test": "jest, {"', t
     assert mangsang.fp('"scripts": {"a": 1, "b": 2}', "p.json") == mangsang.fp('"scripts":{"b":2,"a":1}', "p.json")
     assert mangsang.fp('"scripts": {"a": 1}', "p.json") != mangsang.fp('"scripts": {"a": 2}', "p.json")
     assert set(mangsang.anchor_texts("list.json", "[1, 2]\n")) == {""}   # a root array: the file only
     y = 'version: "3"\nservices:\n  web:\n    image: x\n"quoted key": 1\nlist:\n- a\n---\nother: 1\n'
     t = mangsang.anchor_texts("compose.yaml", y)
-    assert set(t) == {"", ":version", ":services", ":quoted key", ":list", ":other"}, set(t)
+    assert set(t) == {"", ":version", ":services", ":services.web", ":services.web.image", ":quoted key", ":list", ":other"}, set(t)
     assert t[":services"] == "services:\n  web:\n    image: x", t[":services"]
     assert mangsang.fp("a: 1\n\n# c\nb: 2\n", "x.yml") == mangsang.fp("a: 1\nb: 2   \n", "x.yml")
     t = mangsang.anchor_texts("pyproject.toml", 'name = "x"\n[project]\nname = "y"\ndeps = [\n "a",\n]\n[[tool.x.y]]\nz = 1\n')
-    assert set(t) == {"", ":name", ":project", ":tool.x.y"} and t[":project"] == '[project]\nname = "y"\ndeps = [\n "a",\n]', t
+    assert set(t) == {"", ":name", ":project", ":project.name", ":project.deps", ":tool.x.y", ":tool.x.y.z"}, set(t)
+    assert t[":project"] == '[project]\nname = "y"\ndeps = [\n "a",\n]' and t[":project.deps"] == 'deps = [\n "a",\n]', t
     t = mangsang.anchor_texts("setup.cfg", "top = 1\n[metadata]\nname = x\n[options]\nzip_safe = false\n")
     assert set(t) == {"", ":top", ":metadata", ":options"}, set(t)
     env = "# Database\n# postgres://user:pw@host/db\nDATABASE_URL=\n\nexport SECRET=\nPORT=3000\n"
@@ -187,6 +188,91 @@ def test_config_files_anchor_their_top_level_keys():
         write(os.path.join(pj.dir, "package.json"), pkg.replace('"jest, {"', '"vitest"'))
         stale, broken, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
         assert len(stale) == 1 and stale[0]["because"] == "package.json:scripts" and not broken, (stale, broken)
+
+
+def test_a_web_page_and_an_api_server_have_anchors_where_their_intent_lives():
+    """Design intent hangs on CSS rules and tokens; an API's shape on routes, an OpenAPI path, a table, a schema block; a
+    deployment's on a Dockerfile line; a JS test suite's names are strings in `describe`/`it` calls. Each is a declaration
+    under the one rule — a scanner per kind, the same closure, the same staleness."""
+    css = ("@import url(\"x.css\");\n:root { --color-primary: #06f; }\n$gutter: 16px;\n/* the button */\n"
+           ".btn, .btn:hover { color: var(--color-primary); padding: $gutter; animation: fade 1s ease-in; }\n"
+           ".nav a { color: red }\n@media (max-width: 600px) {\n  .nav a { display: none }\n  .btn { padding: 0 }\n}\n"
+           "@keyframes fade { from { opacity: 0 } to { opacity: 1 } }\n@mixin card($r) { border-radius: $r; }\n"
+           ".card { @include card(4px); &:hover { color: blue } }\n")
+    t = mangsang.anchor_texts("styles.scss", css)
+    assert set(t) == {"", ":--color-primary", ":$gutter", ":.btn", ":.btn:hover", ":.nav a", "::root", ":@media (max-width: 600px)",
+                      ":@keyframes fade", ":@mixin card", ":.card"}, set(t)   # no anchor for @import; `:root` is the key `::root`
+    assert t[":.nav a"] == ".nav a { color: red }\n.nav a { display: none }", t[":.nav a"]   # the mobile branch is the same rule
+    assert t[":--color-primary"] == "--color-primary: #06f"
+    assert [l for l, _ in mangsang.anchor_parts("styles.scss", css)[":.btn"]] == [":.btn", ":$gutter", ":--color-primary", ":@keyframes fade"]
+    base = mangsang.anchors_of("styles.scss", css)
+    assert mangsang.anchors_of("styles.scss", css.replace("#06f", "#f60"))[":.btn"] != base[":.btn"], "the token the button reads changed"
+    assert mangsang.anchors_of("styles.scss", css.replace("#06f", "#f60"))[":.nav a"] == base[":.nav a"]
+    assert mangsang.anchors_of("styles.scss", css.replace("/* the button */\n", ""))[":.btn"] == base[":.btn"]
+    assert mangsang.fp(".a { color : red; }", "a.css") == mangsang.fp(".a{color:red}", "a.css")
+    assert mangsang.split_anchor("styles.css:#hero") == ("styles.css", ":#hero") and mangsang.split_anchor("o.yaml:paths./users/{id}") == ("o.yaml", ":paths./users/{id}")
+    # HTML and a component: ids, the title, and what the inline style/script and the frontmatter declare
+    html = ("<!doctype html>\n<html><head><title>My site</title>\n<style>.hero { color: var(--c) } :root { --c: red }</style>\n"
+            "<script type=\"application/ld+json\">{\"a\": 1}</script>\n<script>const LIMIT = 3; function go() { return LIMIT }</script>\n"
+            "</head>\n<body>\n<section id=\"hero\" class=\"hero wide\"><h1>Hi</h1><img src=\"x\"><p>Don't</section>\n<div id=\"footer\">f</div>\n</body></html>\n")
+    t = mangsang.anchor_texts("index.html", html)
+    assert set(t) == {"", ":title", ":#hero", ":#footer", ":.hero", "::root", ":--c", ":LIMIT", ":go"}, set(t)
+    assert t[":#hero"] == "<section id=\"hero\" class=\"hero wide\"><h1>Hi</h1><img src=\"x\"><p>Don't</section>", t[":#hero"]
+    assert [l for l, _ in mangsang.anchor_parts("index.html", html)[":#hero"]] == [":#hero", ":.hero", ":--c"]   # an element reads its classes' rules
+    astro = "---\nimport Card from \"./Card.astro\";\nconst title = \"Hello\";\n---\n<section id=\"hero\" class=\"hero\">{title}</section>\n<style>.hero { color: red }</style>\n"
+    t = mangsang.anchor_texts("Page.astro", astro)
+    assert set(t) == {"", ":title", ":#hero", ":.hero"} and t[":title"] == 'const title = "Hello";', t
+    # registrations: a statement that is a call with a string first argument declares what the string names
+    js = ("import express from \"express\";\nconst app = express();\napp.use(express.json());\n"
+          "app.get(\"/users\", async (req, res) => { res.json(await list(LIMIT)) });\nrouter.post(\"/login\", auth, login);\n"
+          "describe(\"auth\", () => {\n  it(\"rejects a bad password\", async () => { expect(await login(\"x\")).toBe(401) });\n  it(\"accepts\", () => {});\n});\n"
+          "console.log(\"started\");\napp.listen(3000);\n")
+    t = mangsang.anchor_texts("server.test.ts", js)
+    assert set(t) == {"", ":app", ':app.get("/users")', ':router.post("/login")', ':describe("auth")', ':it("rejects a bad password")', ':it("accepts")'}, set(t)
+    assert t[':it("accepts")'] == 'it("accepts", () => {});' and t[':describe("auth")'].endswith("});"), t
+    assert [l for l, _ in mangsang.anchor_parts("server.test.ts", js)[':app.get("/users")']] == [':app.get("/users")', ":app", "import express"]
+    py = "from flask import Flask\napp = Flask(__name__)\napp.add_url_rule(\"/users\", view_func=users)\nprint(\"x\")\n@app.get(\"/health\")\ndef health(): return \"ok\"\n"
+    assert set(mangsang.anchor_texts("api.py", py)) == {"", ":app", ':app.add_url_rule("/users")', ":health"}
+    # OpenAPI: a path is an anchor; keys inside list items and block scalars are content
+    spec = ("openapi: 3.0.0\ninfo:\n  title: X\n  description: |\n    key: not a key\npaths:\n  /users/{id}:\n    get:\n      summary: one\n"
+            "  /users:\n    post: {summary: create}\nservers:\n- url: http://x\n  description: y\n")
+    t = mangsang.anchor_texts("openapi.yaml", spec)
+    assert set(t) == {"", ":openapi", ":info", ":info.title", ":info.description", ":paths", ":paths./users/{id}", ":paths./users/{id}.get",
+                      ":paths./users", ":paths./users.post", ":servers"}, set(t)
+    assert t[":paths./users/{id}"] == "  /users/{id}:\n    get:\n      summary: one", t[":paths./users/{id}"]
+    # SQL, Prisma, GraphQL, protobuf, Dockerfile
+    sql = ("CREATE TABLE users (id serial PRIMARY KEY);\nCREATE TABLE posts (\n  author_id int REFERENCES users(id)\n);\n"
+           "ALTER TABLE users ADD COLUMN name text;\nCREATE UNIQUE INDEX users_email_idx ON users (email);\n"
+           "CREATE OR REPLACE FUNCTION f() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql;\nINSERT INTO users VALUES (1);\n")
+    t = mangsang.anchor_texts("schema.sql", sql)
+    assert set(t) == {"", ":users", ":posts", ":users_email_idx", ":f"} and t[":users"] == "CREATE TABLE users (id serial PRIMARY KEY);\nALTER TABLE users ADD COLUMN name text;", t
+    assert [l for l, _ in mangsang.anchor_parts("schema.sql", sql)[":posts"]] == [":posts", ":users"]
+    prisma = "datasource db { provider = \"postgresql\" }\nmodel User {\n  id Int @id\n  posts Post[]\n}\nmodel Post { author User @relation(fields: [authorId], references: [id]) }\nenum Role { ADMIN }\n"
+    assert set(mangsang.anchor_texts("schema.prisma", prisma)) == {"", ":db", ":User", ":Post", ":Role"}
+    assert [l for l, _ in mangsang.anchor_parts("schema.prisma", prisma)[":Post"]] == [":Post", ":User"]
+    gql = "type Query {\n  users: [User!]!\n}\ntype User { id: ID! }\nscalar DateTime\nextend type Query { me: User }\n"
+    t = mangsang.anchor_texts("schema.graphql", gql)
+    assert set(t) == {"", ":Query", ":User", ":DateTime"} and t[":Query"].count("Query") == 2, t
+    assert set(mangsang.anchor_texts("api.proto", "message Ping { int32 n = 1; }\nservice Echo {\n  rpc Do(Ping) returns (Ping);\n}\n")) == {"", ":Ping", ":Echo"}
+    docker = "FROM node:20 AS build\nARG PORT=3000\nENV NODE_ENV=production \\\n    APP_PORT=$PORT\nRUN npm ci\nEXPOSE $APP_PORT\nCMD [\"node\", \"dist/index.js\"]\n"
+    t = mangsang.anchor_texts("Dockerfile", docker)
+    assert set(t) == {"", ":FROM", ":ARG", ":ENV", ":RUN", ":EXPOSE", ":CMD"} and t[":ENV"] == "ENV NODE_ENV=production \\\n    APP_PORT=$PORT", t
+    assert [l for l, _ in mangsang.anchor_parts("Dockerfile", docker)[":EXPOSE"]] == [":EXPOSE", ":ENV", ":ARG"]
+    # end to end: a design token moves, the rule that reads it is stale; a route's handler moves, the route is stale; renamed, broken
+    with Project() as pj:
+        write(os.path.join(pj.dir, "styles.css"), css)
+        write(os.path.join(pj.dir, "server.ts"), js)
+        assert run("register", "styles.css", "server.ts", "plan/PLAN.md", "--target", pj.dir)[0] == 0
+        code, out = pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "styles.css:.btn", ev="var(--color-primary)"),
+                               rel("plan/PLAN.md#Q2 list", "documents", 'server.ts:app.get("/users")', ev="list(LIMIT)"))
+        assert code == 0, out
+        write(os.path.join(pj.dir, "styles.css"), css.replace("#06f", "#f60"))
+        write(os.path.join(pj.dir, "server.ts"), js.replace("list(LIMIT)", "list(LIMIT, req.query)"))
+        stale, broken, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
+        assert sorted(x["because"] for x in stale) == ['server.ts:app.get("/users")', "styles.css:.btn"] and not broken, (stale, broken)
+        write(os.path.join(pj.dir, "server.ts"), js.replace('"/users"', '"/api/users"'))
+        _, broken, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
+        assert broken and broken[0]["dead"] == ['server.ts:app.get("/users")'], broken
 
 
 def test_javascript_and_typescript_symbols_follow_the_same_rule():

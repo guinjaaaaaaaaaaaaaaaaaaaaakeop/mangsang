@@ -29,7 +29,7 @@ Each runs the engine and shows its output. `mangsang.py --help` for arguments.
 
 ### `/mangsang:register`
 
-Watch these files (anchors: file; file#heading for Markdown; file:symbol for Python and JS/TS; file:key for JSON, YAML, TOML, INI and .env files)
+Watch these files (anchors: file; file#heading for Markdown; file:symbol for code, styles, markup, schemas and Dockerfiles; file:key for JSON, YAML, TOML, INI and .env files — the table under Anchors)
 
 ### `/mangsang:source`
 
@@ -186,23 +186,36 @@ this machine's baseline (for `observe` events, and for judging relations from be
 
 `file`, `file#Heading text` (Markdown; a section runs to the next heading of its level or higher — the title heading
 only to the next heading of any level, since as a section it would be the whole file, a duplicate of `file`),
-`file:symbol` (a top-level declaration of a Python or JS/TS file), `file:key` (a top-level key of a JSON, YAML, TOML,
-INI or `.env` file), `concept:NAME` and `source:ID` — concepts and sources pass through the same machinery as files, a
-concept's `means` sentence or a source's words as the anchor's text.
+`file:symbol` (a declaration of a code, style, markup or schema file), `file:key` (a key of a JSON, YAML, TOML, INI or
+`.env` file), `concept:NAME` and `source:ID` — concepts and sources pass through the same machinery as files, a
+concept's `means` sentence or a source's words as the anchor's text. The separator is the leftmost `#` or `:`, so a
+key may hold both (`styles.css:#hero`, `plan.md#Q1: add`).
 
 One rule cuts every kind of file (`anchors.py` holds it, one scanner per kind):
 
-- **A declaration is an anchor**: something named at the file's top level. Python: `def`, `async def`, `class`, an
-  assignment or annotated assignment (`LIMIT: int = 10`, `a, b = …`), also under a top-level `if`/`try` (`if
-  TYPE_CHECKING:`, `try: import`). JS/TS: `function`, `class`, `const`/`let`/`var` (destructured names too),
-  `interface`, `type`, `enum`, `namespace`, `export default` (as `default`), CommonJS `module.exports` and
-  `exports.x`. Config: a top-level key — `package.json:scripts`, `compose.yaml:services`,
-  `pyproject.toml:tool.pytest.ini_options`, `setup.cfg:metadata`, `.env.example:DATABASE_URL`. Methods, nested
-  functions, nested keys are inside the declaration that holds them, not anchors of their own. A name declared
-  twice (an `if`/`else` pair) is one anchor holding both texts.
+- **A declaration is an anchor**: something named at the file's top level. What that is, per kind:
+
+  | kind | anchors (`file:…`) | reads (what the fingerprint follows in the same file) |
+  |---|---|---|
+  | Python | `def`/`async def`/`class`; an assignment or annotated assignment (`LIMIT: int = 10`, `a, b = …`), also under a top-level `if`/`try`; a registration — a call statement whose first argument is a string, named `callee("string")` (`app.add_url_rule("/users")`) | `ast.Name` loads: other declarations, import bindings |
+  | JS/TS (`.js .mjs .cjs .jsx .ts .tsx .mts .cts`) | `function`, `class`, `const`/`let`/`var` (destructured names too), `interface`, `type`, `enum`, `namespace`, `export default` (as `default`), `module.exports`/`exports.x`; a registration — `app.get("/users")`, `router.post("/login")`, `describe("auth")`, `it("rejects a bad password")` (inside a registration's callbacks too, each by its own string) | identifiers not after `.`, not before `:`: declarations, import bindings |
+  | CSS/SCSS (`.css .scss .sass .less`) | a rule per selector (`.btn`, `.nav a`; `a, b` is two anchors with the same text; a rule inside `@media` is the same selector's anchor — `.nav a` holds its mobile branch); at-rules by prelude (`@media (max-width: 600px)`, `@keyframes fade`, `@font-face`, `@mixin card`); custom properties and SCSS variables (`--color-primary`, `$gutter`) | `var(--x)`, `$x`, `@include m` → `@mixin m`, `@extend`, `animation: fade` → `@keyframes fade` |
+  | HTML (`.html .htm`) and components (`.astro .vue .svelte`) | elements with an `id` (`#hero`, the element's text), `title`; whatever inline `<style>`/`<script>` and an Astro frontmatter declare, by their own scanners | an element reads its classes' rules (`class="card"` → `.card`) |
+  | JSON, YAML, TOML | keys, nested to depth 3 as dotted paths — `package.json:scripts.test`, `compose.yaml:services.web`, `openapi.yaml:paths./users/{id}`, `pyproject.toml:project.dependencies`; a YAML list item's keys and a block scalar's lines are content, not keys | — |
+  | INI/cfg, `.env*` | sections; `KEY=` lines (with the comment lines above the key — its documentation, quotable) | — |
+  | SQL | `CREATE`/`ALTER`/`DROP` statements by object (`schema.sql:users` is the table and every ALTER on it; an index, a function) | `REFERENCES t`, `ON t` |
+  | Prisma, GraphQL, protobuf (`.prisma .graphql .gql .proto`) | named blocks (`model User`, `type Query`, `enum Role`, `message Ping`, `service Echo`), `extend type` merged; nameless by keyword (`datasource`) | the blocks its fields name |
+  | Dockerfile (`Dockerfile*`, `*.dockerfile`) | instructions by kind (`FROM`, `ENV`, `EXPOSE`, `CMD`…), continuations joined | `$VAR` → the `ARG`/`ENV` that declares it |
+  | Markdown (`.md .mdx`) | `file#Heading` sections | — |
+
+  Methods, nested functions, an `rpc` inside a `service`, keys below depth 3 are inside the declaration that holds
+  them, not anchors of their own. A name declared twice (an `if`/`else` pair, a table and its ALTERs, a selector and
+  its `@media` branch) is one anchor holding both texts. `@import`/`@use`, `export { a as b }`, an `INSERT`,
+  `console.log("…")` declare nothing and fall to the file anchor.
 - **Its extent starts at its first attachment**: a decorator, `export`/`async`/`declare`, the comment lines above an
   env key. `@require_admin` is what the function does before its body does anything; a fingerprint of the `def` lines
-  alone read its removal as nothing.
+  alone read its removal as nothing. A registration's extent is the statement — the route and its handler, the `it`
+  and its body.
 - **Its fingerprint covers what it reads in its file**: the free names of the declaration that resolve, in the same
   file, to another declaration or to an import binding — transitively. Raise `LIMIT = 10` to `999`, change the helper
   a function calls, swap `from auth import guard` for `from noauth import guard`: every function that reads them is
@@ -212,7 +225,8 @@ One rule cuts every kind of file (`anchors.py` holds it, one scanner per kind):
   under-includes. An anchor that reads nothing has the fingerprint of its own text, as before. A `main` that calls
   everything reads everything: relate to the narrowest declaration that carries the meaning, not to the dispatcher.
 - **What stops at the file.** A declaration that reads another *file* — an import's target, a value in a config file,
-  a subclass in another module, the call sites that make a function dead code — is not followed: `seen` must be
+  a subclass in another module, the call sites that make a function dead code, the CSS cascade (which rule wins is
+  order and specificity across the sheet, not a read) — is not followed: `seen` must be
   reproducible from what the confirmer had open, and a fingerprint reaching across files would tie a relation to
   text nobody read. Across files the net is the mechanism: register the other file and relate the anchor that is
   read — `config.yaml:limits realizes concept:rate-limit` beside `api.py:handle realizes concept:rate-limit`; or add
@@ -238,9 +252,10 @@ A relation is stale when an anchor it propagates from differs from what its conf
 on every machine and across a merge. Broken when an anchor is gone.
 Fingerprints are per anchor, LF-normalized, of *content*: Python and JS/TS anchors hash the token stream (comments and
 formatting out; strings, regexes and template literals in — Python by token *name*, the same across 3.9–3.12, whose
-numeric token types were renumbered), JSON anchors the canonical value (key order and spacing are not content),
-YAML/TOML/INI/env anchors their comment-free stripped lines, Markdown and unknown files their text: in prose, wording
-*is* the content. An anchor that reads other declarations hashes its parts' fingerprints together. Older `seen`
+numeric token types were renumbered), CSS and SQL and schema blocks their comment-free whitespace-collapsed text, HTML
+its comment-free collapsed text, JSON anchors the canonical value (key order and spacing are not content),
+YAML/TOML/INI/env/Dockerfile anchors their comment-free stripped lines, Markdown and unknown files their text: in prose,
+wording *is* the content. An anchor that reads other declarations hashes its parts' fingerprints together. Older `seen`
 shapes — a text hash, a numeric-token hash, an own-tokens-only hash — are still answered for compatibility (unchanged
 bytes are not stale) and never written; such a record cannot see what its anchor reads until a `reconfirm` upgrades it.
 
@@ -303,9 +318,13 @@ what they mean; it reads their `propagates`, the same rule `impact` judges stale
 - The JS/TS scanner is a tokenizer and a statement walker, not a parser: it names top-level declarations and their extents
   by brackets and the ASI line rule; a regex is read where one can stand. Odd code (a statement ending in `)` continued
   on the next line by `(`) can mis-cut an extent — never lose a declaration, since the file anchor holds it all.
-- Not built yet: repair candidates after a rename; methods and nested keys as anchors of their own; languages beyond
-  Python and JS/TS (a scanner returning `Scan(texts, deps, hidden)` in `anchors.py` is the whole of adding one); reads
-  across files (see above — a relation, today).
+- The CSS, HTML, SQL, schema and Dockerfile scanners are regular expressions over comment-stripped text with bracket
+  matching — enough to name declarations and their extents in files written by people and formatters; a minified sheet
+  or a `$$` body with a `;` inside a string may be cut wrong, never lost (the file anchor holds it all). Tailwind classes
+  and CSS-in-JS live inside the component's tokens: the component anchor moves, no rule anchor exists for them.
+- Not built yet: repair candidates after a rename; methods, keys below depth 3 and object members (`tailwind.config.js`'s
+  `theme.colors`) as anchors of their own; languages beyond these (a scanner returning `Scan(texts, deps, hidden)` in
+  `anchors.py` is the whole of adding one); reads across files (see above — a relation, today).
 
 - `judge_worker.py` starts its host session through `hostcall.py` — one host call for every worker of this family (hunsu's judge, mangsang's judge, dwitbuk's eyes,
   hacheong's members), vendored: the same file in each plugin, since a plugin imports no other plugin. The umbrella checkout's `tools/same-file.py` says when the copies drift.

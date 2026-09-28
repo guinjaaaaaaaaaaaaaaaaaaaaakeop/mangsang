@@ -5,8 +5,9 @@ The net is primary; prose documents are one projection of it, not the source of 
 sections that realize it. Relations tie projections to concepts (`realizes`) and artifacts to each other
 (`documents`, `verifies`); staleness is judged against what a confirmer saw, per anchor fingerprint.
 
-  register <path>...            watch these files (anchors: `file`; `file#heading` for Markdown; `file:symbol` for Python and JS/TS;
-                                `file:key` for JSON, YAML, TOML, INI and .env files — see anchors.py for the one rule behind them)
+  register <path>...            watch these files (anchors: `file`; `file#heading` for Markdown; `file:symbol` for Python, JS/TS, CSS/SCSS,
+                                HTML and Astro/Vue/Svelte, SQL, Prisma/GraphQL/proto, Dockerfile; `file:key` for JSON, YAML, TOML, INI and
+                                .env files, nested keys dotted — see anchors.py for the one rule behind them)
   source add ID --file F|- --speaker WHO [--locator L] [--replies-to ID]
                                 keep what was said or written, verbatim and unchangeable, as the anchor `source:ID` — a concept
                                 grounded in a conversation relates to it like to any projection, with a quote as evidence. Both
@@ -265,13 +266,13 @@ def quoted(target, evidence, *anchors):
 
 
 def split_anchor(anchor):
-    """'file', 'file#heading', 'file:symbol' -> (file, key)."""
-    for sep in ("#", ":"):
-        if sep in anchor:
-            # Windows drive letters: only treat ':' as a separator after the first two characters
-            i = anchor.find(sep, 2 if sep == ":" else 0)
-            if i > 0:
-                return anchor[:i], anchor[i:]
+    """'file', 'file#heading', 'file:symbol' -> (file, key). The separator is the leftmost `#` or `:` — a path holds
+    neither, a key may hold both (`styles.css:#hero`, `plan.md#Q1: add`, `openapi.yaml:paths./users/{id}`)."""
+    # Windows drive letters: only treat ':' as a separator after the first two characters
+    cuts = [i for i in (anchor.find("#"), anchor.find(":", 2)) if i > 0]
+    if cuts:
+        i = min(cuts)
+        return anchor[:i], anchor[i:]
     return anchor, ""
 
 
