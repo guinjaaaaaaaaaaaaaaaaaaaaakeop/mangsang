@@ -15,7 +15,7 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
   concept [add|revise|rename|list] declare/change the net's own nodes; `concept:NAME` anchors relations; revising `means` stales every projection
   confirm <proposals.json> --by NAME | --delegated WHY
                                 store relations after checking: anchors exist, predicate is in the vocabulary, no duplicates
-  observe [--reset [--at REV]]  fingerprint every anchor; --reset takes a new baseline (from git at REV if given), otherwise diff against it -> events
+  observe [--reset [--at REV]]  this machine's change list: --reset takes a baseline (from git at REV if given), otherwise prints what moved since it
   impact [--findings] [--only ANCHOR-PREFIX...]
                                 observe, then events x relations -> stale / broken. exit 1 when anything is unresolved (usable as a check);
                                 --only judges only relations touching those anchors (a slice's check); --findings prints `dwitbuk/findings@1`
@@ -39,7 +39,8 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 a human re-read a stale relation and it still holds: `seen` becomes what the tree has now; the evidence must still be in the text
 
 Two places. `mangsang/` is the project's knowledge (registry, vocabulary, cq, one file per relation) — committed, changed only when a human
-confirms. `.mangsang/` is this machine's observation (baseline, events, impact) — not committed.
+confirms. `.mangsang/` holds this machine's baseline for `observe` — not committed, and nothing a judgment depends on: staleness is judged
+against `seen` in each relation, so a fresh clone answers the same as the machine that confirmed.
 mangsang never proposes a relation and never judges meaning; it checks, stores, fingerprints and diffs.
 `source add` keeps what people said as anchors (`mangsang/sources/<id>.json`); a model can be grounded in a conversation as
 well as in a plan, and the same quote rule holds.
@@ -384,22 +385,21 @@ def cmd_observe(args):
     ignore_obs(args.target)
     d = decl(args.target)
     files, unreadable = snapshot(args.target, d["registry"])
-    base_path, ev_path = os.path.join(args.target, OBS, "baseline.json"), os.path.join(args.target, OBS, "events.json")
+    base_path = os.path.join(args.target, OBS, "baseline.json")
     if args.at and not args.reset:
         raise SystemExit("--at goes with --reset: a baseline is taken at a revision, a diff is against the tree")
     if args.reset or not os.path.exists(base_path):
         if args.at:
             files, unreadable = snapshot(args.target, d["registry"], at=args.at)   # the merging machine has no past; git does
         save(base_path, {"files": files, "at": args.at})
-        save(ev_path, {"events": {}, "unreadable": unreadable})
         print("baseline%s: %d files, %d anchors%s" % (" at %s" % args.at if args.at else "", len(files), sum(len(a) for a in files.values()),
                                                        " · unreadable %s" % unreadable if unreadable else ""))
         return 0
     events = diff_events(load(base_path)["files"], files)
     for path, ev in events.items():
         print("  %-28s changed=%s added=%s removed=%s" % (path, ev["changed"], ev["added"], ev["removed"]))
-    save(ev_path, {"events": events, "unreadable": unreadable})
-    print("changed files %d / registered %d" % (len(events), len(d["registry"])))
+    # what is printed is the record: an events file was written here and read by nothing (the baseline is the one file a later command needs)
+    print("changed files %d / registered %d%s" % (len(events), len(d["registry"]), " · unreadable %s" % unreadable if unreadable else ""))
     return 0
 
 
@@ -414,14 +414,13 @@ def diff_events(base, files):
     return events
 
 
-def compute_impact(target, d, only=None, persist=True):
+def compute_impact(target, d, only=None, persist=False):
     """(stale, broken, unjudged, files). Stale = an anchor the relation propagates from differs from what its confirmer saw (`seen`);
-    relations without `seen` are judged against this machine's baseline, or listed as unjudged when there is none."""
+    relations without `seen` are judged against this machine's baseline, or listed as unjudged when there is none. Reads the tree
+    and the record, writes nothing (`persist` is kept for callers; the events and impact files it once wrote were read by nothing)."""
     base_path = os.path.join(target, OBS, "baseline.json")
     files, _ = snapshot(target, d["registry"])
     ev = diff_events(load(base_path)["files"], files) if os.path.exists(base_path) else None
-    if ev is not None and persist:
-        save(os.path.join(target, OBS, "events.json"), {"events": ev})
     unjudged = []
 
     def alive(anchor):
@@ -521,9 +520,7 @@ def what_changed(target, r, anchor):
 
 def cmd_impact(args):
     d = decl(args.target)
-    stale, broken, unjudged, files = compute_impact(args.target, d, args.only)
-    if not args.findings:   # as a reporter (--findings) impact answers and leaves nothing behind: a review must not write the project's state
-        save(os.path.join(args.target, OBS, "impact.json"), {"stale": stale, "broken": broken, "unjudged": unjudged, "only": args.only, "unresolved_total": len(stale) + len(broken)})
+    stale, broken, unjudged, files = compute_impact(args.target, d, args.only)   # answers and leaves nothing behind: the verdict is what it prints
     if args.findings:
         findings = [{"kind": "stale", "where": "%s %s" % (x["id"], x["stale"]), "text": "stale because %s changed since it was confirmed" % x["because"]} for x in stale]
         findings += [{"kind": "broken", "where": "%s %s" % (x["id"], ", ".join(x["dead"])), "text": "dead anchor(s): the relation points at nothing"} for x in broken]

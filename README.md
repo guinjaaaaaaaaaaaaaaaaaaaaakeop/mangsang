@@ -178,9 +178,12 @@ every record: in a public repository, their words are public
 
 ### `.mangsang/`
 
-Committed: no.
-
-this machine's baseline (for `observe` events, and for judging relations from before `seen`), events, impact
+Committed: no. One file, `baseline.json`: the anchors as this machine last saw them, for `observe` to print what moved
+since — a working aid, not a judgment. Staleness is judged against `seen` in each relation, so a fresh clone with no
+`.mangsang/` answers `impact`, `check` and `cq` exactly as the machine that confirmed did. The one thing the baseline
+decides: a relation from before `seen` existed has nothing else to be judged by, and is `unjudged` until
+`observe --reset --at REV` takes a baseline from the revision it was confirmed at. (`events.json` and `impact.json` were
+written here until 1.12.1 and read by nothing — what a command prints is its record.)
 
 ## Anchors, predicates, quotes
 

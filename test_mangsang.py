@@ -478,14 +478,15 @@ def test_a_model_grounded_in_what_people_said_open_questions_and_the_report():
         # revising the reading stales its grounding: someone must re-read the words against the new sentence
         assert run("observe", "--reset", "--target", pj.dir)[0] == 0
         assert run("concept", "revise", "draw-replay", "--means", "a drawn round is played again until someone wins", "--by", "lee", "--target", pj.dir)[0] == 0
-        events = os.path.join(pj.dir, ".mangsang", "events.json")
-        before = io.open(events, encoding="utf-8").read()
+        obs = os.path.join(pj.dir, ".mangsang")
+        state = lambda: {n: io.open(os.path.join(obs, n), encoding="utf-8").read() for n in sorted(os.listdir(obs))}
+        before = state()
         # the page: concepts with their quotes and state, questions with their state (the grounding just went stale), the words; it writes nothing
         code, out = run("report", "--target", pj.dir)
         assert code == 0 and "```mermaid" in out and "stale" in out and "“A draw is replayed.”" in out, out
         assert '{{"CQ-tie: What happens after a draw?"}}' in out and '==>|"answered by"|' in out, out   # the questions are in the graph
         assert "What happens after a draw? — FAILED" in out and "> A draw is replayed." in out, out
-        assert io.open(events, encoding="utf-8").read() == before, "report must not write observation state"
+        assert state() == before, "report must not write observation state"
         assert run("report", "--out", "mangsang/view.md", "--target", pj.dir)[0] == 1   # never into the record
         assert run("report", "--out", "NET.md", "--target", pj.dir)[0] == 0 and os.path.exists(os.path.join(pj.dir, "NET.md"))
         # --html: one file that draws offline — mermaid inlined, nothing fetched — and every text of the record escaped
@@ -913,7 +914,10 @@ def test_impact_stale_by_direction_broken_by_removal_and_observes_for_itself():
         write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2").replace("return []", "return [1]"))
         code, out = run("impact", "--target", pj.dir)
         assert code == 1 and out.count("stale") == 2 and "references" not in out and "unresolved_total = 2" in out, out
-        before = json.load(open(os.path.join(pj.dir, ".mangsang", "impact.json")))
+        obs = os.path.join(pj.dir, ".mangsang")
+        state = lambda: {n: io.open(os.path.join(obs, n), encoding="utf-8").read() for n in sorted(os.listdir(obs))} if os.path.isdir(obs) else {}
+        before = state()
+        assert set(before) <= {"baseline.json"}, before   # the folder holds the baseline and nothing else: a verdict is printed, not filed
         # as reporters, check and cq answer with the JSON alone — green or red — so a reviewer can parse stdout (dwitbuk marked both
         # "reporter-failed" on a clean project because the human table came first)
         for cmd in ("check", "cq"):
@@ -923,9 +927,10 @@ def test_impact_stale_by_direction_broken_by_removal_and_observes_for_itself():
         code, out = run("impact", "--findings", "--target", pj.dir)
         doc = json.loads(out)
         assert code == 1 and doc["artifact-type"] == "dwitbuk/findings@1" and doc["source"] == "mangsang" and [f["kind"] for f in doc["findings"]] == ["stale", "stale"]
-        assert json.load(open(os.path.join(pj.dir, ".mangsang", "impact.json"))) == before, "as a reporter, impact leaves the project's state alone"
-        # impact observes for itself: no `observe` call between edits, and it still sees the change
-        assert json.load(open(os.path.join(pj.dir, ".mangsang", "events.json")))["events"]["memo.py"]["changed"] == ["", ":add", ":list_"]
+        assert state() == before, "impact leaves the project's state alone"
+        # impact observes for itself (no `observe` call between edits, and it saw the change above); `observe` prints the same movement
+        code, out = run("observe", "--target", pj.dir)
+        assert "memo.py" in out and "changed=['', ':add', ':list_']" in out, out
         # a human re-reads: reconfirm updates `seen`, and impact is clean again without touching the baseline
         ids = [x["id"] for x in mangsang.decl(pj.dir)["relations"] if x["dst"] == "memo.py:add"]
         assert run("reconfirm", *ids, "--target", pj.dir)[0] != 0, "needs --by or --delegated"
@@ -982,8 +987,8 @@ def test_merge_a_relation_is_judged_against_what_its_confirmer_saw_and_a_baselin
         shutil.rmtree(os.path.join(pj.dir, ".mangsang"))   # a fresh clone: no baseline -> the seen-less relation is unjudged, not silently fresh
         code, out = run("impact", "--target", pj.dir)
         assert code == 0 and "unjudged 1 relation" in out and "unresolved_total = 0" in out, out
-        assert run("observe", "--reset", "--at", "nope", "--target", pj.dir)[0] == 0   # unknown revision: nothing readable, said so
-        assert json.load(open(os.path.join(pj.dir, ".mangsang", "events.json")))["unreadable"] == ["plan/PLAN.md", "memo.py"]
+        code, out = run("observe", "--reset", "--at", "nope", "--target", pj.dir)   # unknown revision: nothing readable, said so
+        assert code == 0 and "unreadable ['plan/PLAN.md', 'memo.py']" in out, out
 
 
 def test_impact_only_and_the_judge_round():
