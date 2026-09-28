@@ -150,6 +150,18 @@ def test_show_names_the_declaration_an_anchor_reads_when_that_is_what_moved():
         code, out = run("impact", "--show", "--target", pj.dir)
         assert code == 1 and "p.py:LIMIT, read by p.py:handle @ now" in out and "-LIMIT = 10" in out and "+LIMIT = 999" in out, out
         assert "only its fingerprint's rule changed" not in out, out
+        # the judge gets the same: the diff of what moved and the declarations the changed side reads — two unchanged texts said nothing
+        jd = os.path.join(pj.dir, "judge")
+        assert run("judge", "request", "--out", jd, "--target", pj.dir)[0] == 0
+        item = json.load(open(os.path.join(jd, "judge-request.json"), encoding="utf-8"))["items"][0]
+        assert item["because"] == "p.py:handle" and "+LIMIT = 999" in item["because_changed"] and item["because_reads"] == {"p.py:LIMIT": "LIMIT = 999"}, item
+        # a moved symbol's home is a file of its own kind: the same key in a config file is no candidate
+        write(os.path.join(pj.dir, "package.json"), '{"handle": 1}')
+        write(os.path.join(pj.dir, "q.py"), src.replace("LIMIT = 10", "LIMIT = 999"))
+        write(os.path.join(pj.dir, "p.py"), "LIMIT = 999\n")
+        assert run("register", "package.json", "q.py", "--target", pj.dir)[0] == 0
+        code, out = run("move", "--dry-run", "--target", pj.dir)
+        assert "would move" in out and "q.py:handle" in out and "package.json" not in out, out
 
 
 def test_config_files_anchor_their_top_level_keys():

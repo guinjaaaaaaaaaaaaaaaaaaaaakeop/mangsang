@@ -564,9 +564,21 @@ def cmd_judge(args):
             if wanted and r["id"] not in wanted:
                 continue
             texts = {a: (texts_of(args.target, split_anchor(a)[0]) or {}).get(split_anchor(a)[1], "") for a in (x["stale"], x["because"])}
+            # since 1.11 an anchor is stale when what it *reads* moved, its own text unchanged: a judge given the two texts alone saw
+            # nothing to judge and said still-true — applied as a delegation. The packet carries the change itself (the diff since the
+            # confirming commit, when git has it) and the declarations the changed side reads now, so the judge reads what a person would.
+            ends = x.get("changed") or [x["because"]]
+            diffs = [what_changed(args.target, r, end) for end in ends]
+            reads = {}
+            for end in ends:
+                f, key = split_anchor(end)
+                for label, text in ((anchor_parts(os.path.join(args.target, f)) if f not in ("concept", "source") else None) or {}).get(key, [])[1:]:
+                    reads["%s%s" % (f, label) if not label.startswith("import ") else "%s: %s" % (f, label)] = text[:args.limit]
             items.append({"relation": r["id"], "predicate": r["predicate"], "means": d["vocabulary"].get(r["predicate"], {}).get("means"),
                           "stale": x["stale"], "stale_text": texts[x["stale"]][:args.limit],
                           "because": x["because"], "because_text": texts[x["because"]][:args.limit],
+                          "because_changed": "\n".join(dd for dd in diffs if dd)[:args.limit * 2] or None,
+                          "because_reads": reads or None,
                           "quote_at_confirm": r.get("evidence")})
         if not items:
             print("nothing stale to judge")
@@ -574,6 +586,9 @@ def cmd_judge(args):
         packet = {"artifact-type": JUDGE_REQUEST, "target": os.path.abspath(args.target).replace(os.sep, "/"), "items": items, "verdicts": list(VERDICTS),
                   "instructions": ("For each item, read stale_text (the side that may be stale) against because_text (the side that changed since the relation "
                                    "was confirmed) and decide whether the sentence in stale_text — the one quote_at_confirm quotes — still holds. "
+                                   "because_changed is the change itself, as a diff since the confirmation, when git has it; because_reads are the "
+                                   "declarations because_text reads now (a constant, a helper, an import) — when because_text itself did not change, "
+                                   "the change is there. "
                                    "still-true: it does; say why in evidence. drifted: it does not; put the sentence that no longer holds in `quote`, "
                                    "verbatim from stale_text, and why in evidence from because_text. cannot-tell: say what the texts do not settle. "
                                    "Judge only the relations in the request. Similar names are not evidence. Read files under target if you must. Change no files.")}
@@ -1087,7 +1102,9 @@ def cmd_move(args):
             if not key or f in ("concept", "source"):
                 why = "%s is not a moved symbol or section" % r[end]
                 break
-            cands = sorted(set(homes.get(key, [])) - {f})
+            # a home is a file of the same kind: a Python symbol moves to a Python file, a YAML key to a YAML file — `:name` in
+            # package.json is no home for a `def name` (config keys as anchors made every common key ambiguous)
+            cands = sorted(c for c in set(homes.get(key, [])) - {f} if anchors.kind_of(c) == anchors.kind_of(f))
             if len(cands) != 1:
                 why = "%s: %s" % (r[end], "no registered file has %s now" % key if not cands else "%s is in %s — say which" % (key, ", ".join(cands)))
                 break
