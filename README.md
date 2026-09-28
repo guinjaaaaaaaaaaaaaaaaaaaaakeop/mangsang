@@ -29,7 +29,7 @@ Each runs the engine and shows its output. `mangsang.py --help` for arguments.
 
 ### `/mangsang:register`
 
-Watch these files (anchors: file, file#heading for Markdown, file:symbol for Python)
+Watch these files (anchors: file; file#heading for Markdown; file:symbol for Python and JS/TS; file:key for JSON, YAML, TOML, INI and .env files)
 
 ### `/mangsang:source`
 
@@ -186,10 +186,40 @@ this machine's baseline (for `observe` events, and for judging relations from be
 
 `file`, `file#Heading text` (Markdown; a section runs to the next heading of its level or higher — the title heading
 only to the next heading of any level, since as a section it would be the whole file, a duplicate of `file`),
-`file:symbol` (Python top-level def/class/constant), `concept:NAME` and
-`source:ID` — concepts and sources pass through the same machinery as files, a concept's `means` sentence or a
-source's
-words as the anchor's text. A source never changes, so a relation on it goes stale only from its other end: revise the
+`file:symbol` (a top-level declaration of a Python or JS/TS file), `file:key` (a top-level key of a JSON, YAML, TOML,
+INI or `.env` file), `concept:NAME` and `source:ID` — concepts and sources pass through the same machinery as files, a
+concept's `means` sentence or a source's words as the anchor's text.
+
+One rule cuts every kind of file (`anchors.py` holds it, one scanner per kind):
+
+- **A declaration is an anchor**: something named at the file's top level. Python: `def`, `async def`, `class`, an
+  assignment or annotated assignment (`LIMIT: int = 10`, `a, b = …`), also under a top-level `if`/`try` (`if
+  TYPE_CHECKING:`, `try: import`). JS/TS: `function`, `class`, `const`/`let`/`var` (destructured names too),
+  `interface`, `type`, `enum`, `namespace`, `export default` (as `default`), CommonJS `module.exports` and
+  `exports.x`. Config: a top-level key — `package.json:scripts`, `compose.yaml:services`,
+  `pyproject.toml:tool.pytest.ini_options`, `setup.cfg:metadata`, `.env.example:DATABASE_URL`. Methods, nested
+  functions, nested keys are inside the declaration that holds them, not anchors of their own. A name declared
+  twice (an `if`/`else` pair) is one anchor holding both texts.
+- **Its extent starts at its first attachment**: a decorator, `export`/`async`/`declare`, the comment lines above an
+  env key. `@require_admin` is what the function does before its body does anything; a fingerprint of the `def` lines
+  alone read its removal as nothing.
+- **Its fingerprint covers what it reads in its file**: the free names of the declaration that resolve, in the same
+  file, to another declaration or to an import binding — transitively. Raise `LIMIT = 10` to `999`, change the helper
+  a function calls, swap `from auth import guard` for `from noauth import guard`: every function that reads them is
+  stale, though its own lines did not move; `impact --show` names and diffs the part that did (`p.py:LIMIT, read by
+  p.py:handle`). The reading is lexical — a name that appears, `ast.Name` loads in Python, identifier tokens not after
+  `.` and not before `:` in JS/TS — so it over-includes (a parameter that shadows a module name) and never
+  under-includes. An anchor that reads nothing has the fingerprint of its own text, as before. A `main` that calls
+  everything reads everything: relate to the narrowest declaration that carries the meaning, not to the dispatcher.
+- **What stops at the file.** A declaration that reads another *file* — an import's target, a value in a config file,
+  a subclass in another module, the call sites that make a function dead code — is not followed: `seen` must be
+  reproducible from what the confirmer had open, and a fingerprint reaching across files would tie a relation to
+  text nobody read. Across files the net is the mechanism: register the other file and relate the anchor that is
+  read — `config.yaml:limits realizes concept:rate-limit` beside `api.py:handle realizes concept:rate-limit`; or add
+  a predicate that says it (`depends-on`, `propagates: dst->src`) to `vocabulary.json`. Tests (`verifies`) remain the
+  last line: a behavior change no fingerprint can see is one a test fails on.
+- **The file is an anchor too** (`""`): side effects, unnamed statements, `export { a as b }`, whatever a scanner
+  cannot name — noisy to relate to, never blind. A source never changes, so a relation on it goes stale only from its other end: revise the
 concept a conversation grounded, and someone must re-read the words against the new sentence. In a `projection`
 invariant `source:` is a medium like any prefix — `{"said": ["source:"]}` asks that every concept be grounded in
 something someone said.
@@ -206,10 +236,13 @@ A relation's `evidence` is a **quote**: the machine checks that it appears in on
 it quotes its `means` — not that it is true; truth is the confirmer's.
 A relation is stale when an anchor it propagates from differs from what its confirmer saw (`seen`) — the same verdict
 on every machine and across a merge. Broken when an anchor is gone.
-Fingerprints are per anchor, LF-normalized. Python anchors hash the token stream by token *name*, so a comment, blank
-line or reformatting never cries stale, and the hash is the same across 3.9–3.12 (numeric token types renumbered in
-3.12; older numeric-token `seen` values are still answered for compatibility, never written). Markdown and unknown
-files hash their text: in prose, wording *is* the content.
+Fingerprints are per anchor, LF-normalized, of *content*: Python and JS/TS anchors hash the token stream (comments and
+formatting out; strings, regexes and template literals in — Python by token *name*, the same across 3.9–3.12, whose
+numeric token types were renumbered), JSON anchors the canonical value (key order and spacing are not content),
+YAML/TOML/INI/env anchors their comment-free stripped lines, Markdown and unknown files their text: in prose, wording
+*is* the content. An anchor that reads other declarations hashes its parts' fingerprints together. Older `seen`
+shapes — a text hash, a numeric-token hash, an own-tokens-only hash — are still answered for compatibility (unchanged
+bytes are not stale) and never written; such a record cannot see what its anchor reads until a `reconfirm` upgrades it.
 
 ## Invariants and competency questions
 
@@ -267,7 +300,12 @@ what they mean; it reads their `propagates`, the same rule `impact` judges stale
 - `report --html` inlines mermaid 11.17.2, vendored unmodified under `vendor/mermaid/` (MIT; provenance and hash in
   `SOURCE.md`) — the one piece of code here not written for mangsang, pinned so that it changes only with a mangsang
   version.
-- Not built yet: repair candidates after a rename, other languages' symbols.
+- The JS/TS scanner is a tokenizer and a statement walker, not a parser: it names top-level declarations and their extents
+  by brackets and the ASI line rule; a regex is read where one can stand. Odd code (a statement ending in `)` continued
+  on the next line by `(`) can mis-cut an extent — never lose a declaration, since the file anchor holds it all.
+- Not built yet: repair candidates after a rename; methods and nested keys as anchors of their own; languages beyond
+  Python and JS/TS (a scanner returning `Scan(texts, deps, hidden)` in `anchors.py` is the whole of adding one); reads
+  across files (see above — a relation, today).
 
 - `judge_worker.py` starts its host session through `hostcall.py` — one host call for every worker of this family (hunsu's judge, mangsang's judge, dwitbuk's eyes,
   hacheong's members), vendored: the same file in each plugin, since a plugin imports no other plugin. The umbrella checkout's `tools/same-file.py` says when the copies drift.
