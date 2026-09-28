@@ -5,7 +5,8 @@ The net is primary; prose documents are one projection of it, not the source of 
 sections that realize it. Relations tie projections to concepts (`realizes`) and artifacts to each other
 (`documents`, `verifies`); staleness is judged against what a confirmer saw, per anchor fingerprint.
 
-  register <path>...            watch these files (anchors: `file`, `file#heading` for Markdown, `file:symbol` for Python)
+  register <path>...            watch these files (anchors: `file`; `file#heading` for Markdown; `file:symbol` for Python and JS/TS;
+                                `file:key` for JSON, YAML, TOML, INI and .env files — see anchors.py for the one rule behind them)
   source add ID --file F|- --speaker WHO [--locator L] [--replies-to ID]
                                 keep what was said or written, verbatim and unchangeable, as the anchor `source:ID` — a concept
                                 grounded in a conversation relates to it like to any projection, with a quote as evidence. Both
@@ -43,13 +44,14 @@ mangsang never proposes a relation and never judges meaning; it checks, stores, 
 well as in a plan, and the same quote rule holds.
 """
 import argparse
-import ast
 import hashlib
 import io
 import json
 import os
 import re
 import sys
+
+import anchors   # what in a file can be named, how far it reaches, what it reads — one module per rule, one scanner per language
 
 DECL = "mangsang"
 OBS = ".mangsang"
@@ -180,22 +182,21 @@ def save_decl(target, d):
 
 
 def fp(text, path=None):
-    """Fingerprint of an anchor's content. For Python anchors the token stream is hashed instead of the raw text, so a
-    comment, blank line or reformatting does not change the fingerprint — only code does. (Every doc-drift tool that ran
-    in anger converged on normalized fingerprints; raw hashes cried stale at formatters.) Token *names* (tok_name), not
-    numbers: 3.12 renumbered the token table (OP 54->55) and every numeric fingerprint changed with it — a machine on
-    3.12 disagreed with the same tree on 3.11. Names are the stable interface; numbers are an implementation detail.
-    Markdown and unknown files hash their text: in prose, wording *is* the content."""
-    text = text.replace("\r\n", "\n")
-    if path and path.endswith(".py"):
-        import tokenize, token as tok
-        try:
-            toks = ["%s\x00%s" % (tok.tok_name[t.type], t.string) for t in tokenize.generate_tokens(io.StringIO(text).readline)
-                    if t.type not in (tokenize.COMMENT, tokenize.NL, tok.NEWLINE, tokenize.ENCODING, tok.ENDMARKER)]
-            return hashlib.sha256("\x01".join(toks).encode("utf-8")).hexdigest()[:12]
-        except (tokenize.TokenError, IndentationError, SyntaxError):
-            pass   # a fragment that will not tokenize is fingerprinted as text — never silently unfingerprinted
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    """Fingerprint of an anchor's content — of what `anchors.normalize` leaves of it: for Python and JS/TS the token stream,
+    so a comment, blank line or reformatting does not change the fingerprint — only code does (every doc-drift tool that
+    ran in anger converged on normalized fingerprints; raw hashes cried stale at formatters); for JSON the canonical value;
+    for YAML/TOML/INI/env the comment-free lines; for Markdown and unknown files the text: in prose, wording *is* the
+    content. Python token *names* (tok_name), not numbers: 3.12 renumbered the token table and every numeric fingerprint
+    changed with it. A fragment that will not tokenize is fingerprinted as text — never silently unfingerprinted."""
+    return hashlib.sha256(anchors.normalize(path or "", text).encode("utf-8")).hexdigest()[:12]
+
+
+def fp_parts(path, parts):
+    """The fingerprint of an anchor with what it reads: one part -> its own fingerprint (a constant, a heading, a file: the
+    same value as before parts existed, so nothing goes stale for the rule changing); several -> a hash over the parts'
+    fingerprints, so a change in any same-file declaration or import the anchor reads changes the anchor's fingerprint."""
+    fps = [fp(text, path) for _, text in parts]
+    return fps[0] if len(fps) == 1 else hashlib.sha256("\x01".join(fps).encode("utf-8")).hexdigest()[:12]
 
 
 def fp_legacy_numeric(text, path):
@@ -215,38 +216,29 @@ def fp_legacy_numeric(text, path):
 # ---------------------------------------------------------------- anchors
 
 def anchor_texts(path, text=None):
-    """{anchor: text} for one file (or for `text` as if it were that file). The whole file is always an anchor ("")."""
+    """{anchor: own text} for one file (or for `text` as if it were that file). The whole file is always an anchor ("").
+    Which declarations become anchors, and how far each one's text reaches, is `anchors.scan` — one rule, a scanner per kind."""
     if text is None:
         text = io.open(path, encoding="utf-8", newline=None).read() if os.path.exists(path) else None
     if text is None:
         return None
-    out = {"": text}
-    if path.endswith(".md"):
-        heads = [(m.start(), len(m.group(1)), m.group(2).strip()) for m in re.finditer(r"^(#{1,6}) +(.+?)\s*$", text, re.M)]
-        for i, (start, level, title) in enumerate(heads):
-            # a section runs to the next heading of its level or higher — except the title (level 1), which runs only to
-            # the next heading of any level: as a section it would be the whole file, a duplicate of the file anchor "",
-            # and every relation on it went stale on every edit anywhere in the file
-            end = next((s for s, l, _ in heads[i + 1:] if l <= level or level == 1), len(text))
-            out["#" + title] = text[start:end]
-    elif path.endswith(".py"):
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            return out
-        lines = text.split("\n")
-        for node in tree.body:
-            names = [node.name] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else \
-                    [t.id for t in getattr(node, "targets", []) if isinstance(t, ast.Name)] if isinstance(node, ast.Assign) else []
-            for name in names:
-                out[":" + name] = "\n".join(lines[node.lineno - 1:node.end_lineno])
-    return out
+    return anchors.scan(path, text).texts
+
+
+def anchor_parts(path, text=None):
+    """{anchor: [(label, text), ...]} — each anchor's own text and, after it, what it reads in the same file (`:name` for
+    another declaration, `import name` for an import binding). What a fingerprint covers, and what `--show` diffs."""
+    if text is None:
+        text = io.open(path, encoding="utf-8", newline=None).read() if os.path.exists(path) else None
+    if text is None:
+        return None
+    return anchors.parts(path, text)
 
 
 def anchors_of(path, text=None):
     """{anchor: fingerprint} for one file."""
-    texts = anchor_texts(path, text)
-    return None if texts is None else {k: fp(v, path) for k, v in texts.items()}
+    parts = anchor_parts(path, text)
+    return None if parts is None else {k: fp_parts(path, v) for k, v in parts.items()}
 
 
 def texts_of(target, f):
@@ -441,14 +433,16 @@ def compute_impact(target, d, only=None, persist=True):
             if files[f][key] == r["seen"][anchor]:
                 return False
             # fingerprint-format compatibility: `seen` written before the current format holds an older shape — a raw
-            # text hash (pre-token era) or a numeric-token hash (pre-tok_name era). If either recomputation over the
-            # current bytes equals the stored value, the bytes have not changed since the confirmer read them — only
-            # the fingerprint format did. Not stale; the record upgrades itself on the next confirm/reconfirm.
+            # text hash (pre-token era), a numeric-token hash (pre-tok_name era), or the anchor's own tokens alone (before
+            # a fingerprint covered what the anchor reads). If any recomputation over the current bytes equals the stored
+            # value, the bytes the confirmer read have not changed — only the fingerprint format did. Not stale; the record
+            # upgrades itself on the next confirm/reconfirm. (What the anchor reads may have moved meanwhile; an old
+            # `seen` cannot tell, and says so only by being upgraded.)
             texts = texts_of(target, f)
             if not (texts and key in texts):
                 return True
             old = r["seen"][anchor]
-            return not (fp(texts[key]) == old or fp_legacy_numeric(texts[key], f) == old)
+            return not (fp(texts[key]) == old or fp(texts[key], f) == old or fp_legacy_numeric(texts[key], f) == old)
         if ev is None:
             unjudged.append(r["id"])
             return False
@@ -478,7 +472,9 @@ def what_changed(target, r, anchor):
     """The anchor's text as its confirmer saw it and as it reads now, as a unified diff — so a person re-reading a stale
     relation reads the change, not just the fact of one. `seen` keeps fingerprints, not text; git keeps the text: the commit
     that last wrote the relation's file is when it was confirmed, and the anchor is read from the tree at that commit
-    (a concept's `means` from its file then). None when there is no such commit (the relation was never committed)."""
+    (a concept's `means` from its file then). When the anchor's own text is what it was and something it reads moved — a
+    constant, a helper, an import — that part is diffed, named. None when there is no such commit (the relation was never
+    committed)."""
     import difflib, subprocess
     git = lambda *a: subprocess.run(["git", *a], cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace")
     for folder in ("relations", "retired"):
@@ -494,20 +490,32 @@ def what_changed(target, r, anchor):
     if f == "concept":
         old = git("show", "%s:./%s/concepts/%s.json" % (c, DECL, key.lstrip(":")))
         old_text = json.loads(old.stdout).get("means") if old.returncode == 0 and old.stdout.strip() else None
+        new_text = (texts_of(target, f) or {}).get(key)
+        old_parts = [(key, old_text)] if old_text is not None else None
+        new_parts = [(key, new_text)] if new_text is not None else None
     elif f == "source":
         return None   # what was said does not change
     else:
         old = git("show", "%s:./%s" % (c, f))
-        old_text = (anchor_texts(f, old.stdout.replace("\r\n", "\n")) or {}).get(key) if old.returncode == 0 else None
-    new_text = (texts_of(target, f) or {}).get(key)
-    if old_text is None or new_text is None:
+        old_parts = (anchor_parts(f, old.stdout.replace("\r\n", "\n")) or {}).get(key) if old.returncode == 0 else None
+        new_parts = (anchor_parts(os.path.join(target, f)) or {}).get(key)
+    if old_parts is None or new_parts is None:
         return None
-    if old_text == new_text:
+    olds, news = dict(old_parts), dict(new_parts)
+    nl = lambda t: t if t.endswith("\n") else t + "\n"   # a concept's meaning is one line with no newline: without one, the - and + lines ran together
+    out = []
+    for label in [l for l, _ in new_parts] + [l for l, _ in old_parts if l not in news]:
+        o, n = olds.get(label, ""), news.get(label, "")
+        if o == n:
+            continue
+        # the anchor itself, another declaration of its file it reads, or an import binding it reads
+        name = anchor if label == key else ("%s%s, read by %s" % (f, label, anchor) if not label.startswith("import ") else "%s: `%s`, read by %s" % (f, label, anchor))
+        out.append("".join(difflib.unified_diff(nl(o).splitlines(True), nl(n).splitlines(True), "%s @ %s" % (name, c[:8]), "%s @ now" % name, n=1)))
+    if not out:
         # the words are the same and the fingerprint is not: the rule that cuts the anchor changed under it (a title heading's
         # section, a token-fingerprint format) — nothing to re-read; a reconfirm records the new fingerprint
         return "(the text of %s is exactly what it was at %s — only its fingerprint's rule changed; nothing to re-read)" % (anchor, c[:8])
-    nl = lambda t: t if t.endswith("\n") else t + "\n"   # a concept's meaning is one line with no newline: without one, the - and + lines ran together
-    return "".join(difflib.unified_diff(nl(old_text).splitlines(True), nl(new_text).splitlines(True), "%s @ %s" % (anchor, c[:8]), "%s @ now" % anchor, n=1))
+    return "".join(out)
 
 
 def cmd_impact(args):

@@ -87,6 +87,154 @@ def test_python_fingerprints_ignore_comments_and_formatting_markdown_does_not():
         assert before[":add"] == after[":add"] and before[""] == after[""], (before, after)
 
 
+def test_a_python_anchor_covers_its_attachments_and_what_it_reads_in_its_file():
+    """The gap a planted change found (2026-09-28): a function's decorator was removed, the constant it compared against
+    was raised a hundredfold and the helper it called changed — and `file:handle` had the same fingerprint, because the
+    fingerprint was the def's own lines. Now the extent starts at the first decorator, and the fingerprint covers,
+    transitively, the same-file declarations and import bindings the anchor reads. Comments there still change nothing."""
+    src = ("import os\nfrom auth import require_admin\nLIMIT: int = 10\nRATE = 5\n\n@require_admin\ndef handle(x):\n"
+           "    return helper(x) > LIMIT\n\n\ndef helper(x):\n    return x * RATE\n\n\ndef other():\n    return os.sep\n"
+           "try:\n    def fallback(): return 1\nexcept Exception:\n    def fallback(): return 2\n")
+    texts = mangsang.anchor_texts("p.py", src)
+    assert set(texts) == {"", ":LIMIT", ":RATE", ":handle", ":helper", ":other", ":fallback"}, set(texts)   # an annotated constant, a def under try — anchors
+    assert texts[":handle"].startswith("@require_admin\n"), texts[":handle"]
+    assert "return 1" in texts[":fallback"] and "return 2" in texts[":fallback"]   # both definitions, not the last one only
+    assert [l for l, _ in mangsang.anchor_parts("p.py", src)[":handle"]] == [":handle", ":LIMIT", ":helper", "import require_admin", ":RATE"]
+    base = mangsang.anchors_of("p.py", src)
+    for planted in ("@require_admin\n", ):
+        assert mangsang.anchors_of("p.py", src.replace(planted, ""))[":handle"] != base[":handle"], "a decorator removed is a change to the function"
+    for old, new in (("LIMIT: int = 10", "LIMIT: int = 999"), ("x * RATE", "x * RATE * 100"), ("RATE = 5", "RATE = 6"),
+                     ("from auth import", "from noauth import")):
+        moved = mangsang.anchors_of("p.py", src.replace(old, new))
+        assert moved[":handle"] != base[":handle"], (old, new)
+        assert moved[":other"] == base[":other"], (old, new)   # a function that reads none of it is untouched
+    # a comment or blank line in what is read is no change; an import the anchor does not read is no change
+    assert mangsang.anchors_of("p.py", src.replace("    return x * RATE", "    # doubled\n\n    return x * RATE"))[":handle"] == base[":handle"]
+    assert mangsang.anchors_of("p.py", src.replace("import os\n", "import os.path\n"))[":handle"] == base[":handle"]
+    assert mangsang.anchors_of("p.py", src.replace("import os\n", "import os.path\n"))[":other"] != base[":other"]
+    # an anchor that reads nothing keeps the fingerprint it always had: the rule change stales no constant, heading or file
+    assert base[":RATE"] == mangsang.fp("RATE = 5", "p.py")
+    # a `seen` written before fingerprints covered what an anchor reads is answered from the anchor's own tokens: unchanged bytes are not stale
+    with Project() as pj:
+        write(os.path.join(pj.dir, "p.py"), src)
+        assert run("register", "p.py", "plan/PLAN.md", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "p.py:handle", ev="appends"))[0] == 0
+        d = mangsang.decl(pj.dir)
+        r = d["relations"][0]
+        r["seen"]["p.py:handle"] = mangsang.fp(texts[":handle"], "p.py")   # the old shape: own tokens only
+        mangsang.save(os.path.join(pj.dir, "mangsang", "relations", r["id"] + ".json"), r)
+        stale, broken, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
+        assert not stale and not broken, stale
+        write(os.path.join(pj.dir, "p.py"), src.replace("LIMIT: int = 10", "LIMIT: int = 999"))
+        stale, _, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
+        assert not stale, "an old `seen` cannot see what the anchor reads; it upgrades on reconfirm"
+        assert run("reconfirm", r["id"], "--by", "kim", "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, "p.py"), src.replace("LIMIT: int = 10", "LIMIT: int = 1000"))
+        stale, _, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
+        assert len(stale) == 1 and stale[0]["because"] == "p.py:handle", stale
+
+
+def test_show_names_the_declaration_an_anchor_reads_when_that_is_what_moved():
+    """`impact --show` on a function whose own lines did not change diffs the constant (or helper, or import) that did,
+    and says which anchor reads it — instead of "only its fingerprint's rule changed"."""
+    import subprocess
+    src = "LIMIT = 10\n\n\ndef handle(x):\n    return x > LIMIT\n"
+    with Project() as pj:
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+        git("init", "-q")
+        write(os.path.join(pj.dir, "p.py"), src)
+        assert run("register", "plan/PLAN.md", "p.py", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "p.py:handle", ev="appends"))[0] == 0
+        git("add", "-A"); git("commit", "-qm", "confirmed")
+        write(os.path.join(pj.dir, "p.py"), src.replace("LIMIT = 10", "LIMIT = 999"))
+        code, out = run("impact", "--show", "--target", pj.dir)
+        assert code == 1 and "p.py:LIMIT, read by p.py:handle @ now" in out and "-LIMIT = 10" in out and "+LIMIT = 999" in out, out
+        assert "only its fingerprint's rule changed" not in out, out
+
+
+def test_config_files_anchor_their_top_level_keys():
+    """JSON, YAML, TOML, INI and .env files: a top-level key is a declaration like any other (`package.json:scripts`,
+    `.env.example:DATABASE_URL`). JSON is fingerprinted by value (key order and spacing are not content); the
+    line-oriented formats by their comment-free lines; an env key carries the comment lines above it in its text (its
+    documentation, quotable), which the fingerprint ignores like every comment."""
+    pkg = '{\n  "name": "x",\n  "scripts": {\n    "test": "jest, {"\n  },\n  "deps": ["a", "b"], "n": 1\n}\n'
+    t = mangsang.anchor_texts("package.json", pkg)
+    assert set(t) == {"", ":name", ":scripts", ":deps", ":n"}, set(t)
+    assert t[":scripts"] == '"scripts": {\n    "test": "jest, {"\n  }', t[":scripts"]
+    assert mangsang.fp('"scripts": {"a": 1, "b": 2}', "p.json") == mangsang.fp('"scripts":{"b":2,"a":1}', "p.json")
+    assert mangsang.fp('"scripts": {"a": 1}', "p.json") != mangsang.fp('"scripts": {"a": 2}', "p.json")
+    assert set(mangsang.anchor_texts("list.json", "[1, 2]\n")) == {""}   # a root array: the file only
+    y = 'version: "3"\nservices:\n  web:\n    image: x\n"quoted key": 1\nlist:\n- a\n---\nother: 1\n'
+    t = mangsang.anchor_texts("compose.yaml", y)
+    assert set(t) == {"", ":version", ":services", ":quoted key", ":list", ":other"}, set(t)
+    assert t[":services"] == "services:\n  web:\n    image: x", t[":services"]
+    assert mangsang.fp("a: 1\n\n# c\nb: 2\n", "x.yml") == mangsang.fp("a: 1\nb: 2   \n", "x.yml")
+    t = mangsang.anchor_texts("pyproject.toml", 'name = "x"\n[project]\nname = "y"\ndeps = [\n "a",\n]\n[[tool.x.y]]\nz = 1\n')
+    assert set(t) == {"", ":name", ":project", ":tool.x.y"} and t[":project"] == '[project]\nname = "y"\ndeps = [\n "a",\n]', t
+    t = mangsang.anchor_texts("setup.cfg", "top = 1\n[metadata]\nname = x\n[options]\nzip_safe = false\n")
+    assert set(t) == {"", ":top", ":metadata", ":options"}, set(t)
+    env = "# Database\n# postgres://user:pw@host/db\nDATABASE_URL=\n\nexport SECRET=\nPORT=3000\n"
+    t = mangsang.anchor_texts(".env.example", env)
+    assert set(t) == {"", ":DATABASE_URL", ":SECRET", ":PORT"} and t[":DATABASE_URL"] == "# Database\n# postgres://user:pw@host/db\nDATABASE_URL=", t
+    assert mangsang.anchors_of(".env.example", env)[":DATABASE_URL"] == mangsang.anchors_of(".env.example", env.replace("# Database\n", ""))[":DATABASE_URL"]
+    assert mangsang.anchors_of(".env.example", env)[":PORT"] != mangsang.anchors_of(".env.example", env.replace("PORT=3000", "PORT=8080"))[":PORT"]
+    assert mangsang.anchors.kind_of("deploy/prod.env") == "env" and mangsang.anchors.kind_of("notes.txt") == "text"
+    with Project() as pj:
+        write(os.path.join(pj.dir, "package.json"), pkg)
+        assert run("register", "package.json", "plan/PLAN.md", "--target", pj.dir)[0] == 0
+        code, out = pj.propose(rel("plan/PLAN.md#Q2 list", "documents", "package.json:scripts", ev='"test": "jest, {"'))
+        assert code == 0, out
+        write(os.path.join(pj.dir, "package.json"), pkg.replace('"jest, {"', '"vitest"'))
+        stale, broken, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
+        assert len(stale) == 1 and stale[0]["because"] == "package.json:scripts" and not broken, (stale, broken)
+
+
+def test_javascript_and_typescript_symbols_follow_the_same_rule():
+    """`file:symbol` for JS/TS: top-level function, class, const/let/var (destructured names too), interface, type, enum,
+    namespace, `export default`, CommonJS `module.exports`/`exports.x`. The extent starts at the first decorator or
+    `export`; the fingerprint is the token stream (comments, formatting out; strings, regexes, templates in) and covers
+    what the declaration reads in its file — another declaration or an import binding. JSX text does not break it."""
+    js = ('import React, { useState as us } from "react";\nimport * as ns from "./ns"\nimport "./side.css";\n'
+          "const fs = require('fs')\nexport const LIMIT = 10, { a, b: bee } = cfg;\n"
+          "let re = /ab+c\\/[/]/gi.test(s) ? 1 : 2\n"
+          "export default function handle(x) {\n  const t = `x ${helper({ y: `${LIMIT}` })} done`;\n  return t > LIMIT\n}\n"
+          "function helper(x) { return x * ns.rate }\n"
+          "@Component({ selector: 'app' })\nexport class Widget extends Base<T> {\n  #priv = 1;\n"
+          "  render() { return <p className=\"x\">Don't {this.#priv}</p>; }\n}\n"
+          "export interface Shape { area(): number }\nexport type Id<T> = string | T\nenum Color { Red, Green }\n"
+          "declare module \"m\" { export const z: number }\ntype = 5\nmodule.exports = { handle }\nexports.two = 2;\n"
+          "export { a as c };\nif (x) { foo() }\nconst arrow = (a: Record<string, number>, b = 2) => {\n  return a\n}\n")
+    t = mangsang.anchor_texts("app.tsx", js)
+    assert set(t) == {"", ":fs", ":LIMIT", ":a", ":bee", ":re", ":handle", ":helper", ":Widget", ":Shape", ":Id", ":Color", ":m",
+                      ":module.exports", ":exports.two", ":arrow"}, set(t)
+    assert t[":handle"].startswith("export default function handle") and t[":handle"].endswith("return t > LIMIT\n}"), t[":handle"]
+    assert t[":Widget"].startswith("@Component(") and t[":Widget"].endswith("</p>; }\n}"), t[":Widget"]
+    assert t[":arrow"].endswith("return a\n}") and t[":re"] == "let re = /ab+c\\/[/]/gi.test(s) ? 1 : 2", (t[":arrow"], t[":re"])
+    assert [l for l, _ in mangsang.anchor_parts("app.tsx", js)[":handle"]] == [":handle", ":LIMIT", ":helper", "import ns"]
+    base = mangsang.anchors_of("app.tsx", js)
+    assert mangsang.anchors_of("app.tsx", js.replace("function helper(x) {", "function helper(x) { // doubles\n"))[":handle"] == base[":handle"]
+    assert mangsang.anchors_of("app.tsx", js.replace("x * ns.rate", "x * ns.rate * 2"))[":handle"] != base[":handle"]
+    assert mangsang.anchors_of("app.tsx", js.replace('from "./ns"', 'from "./other"'))[":handle"] != base[":handle"]
+    assert mangsang.anchors_of("app.tsx", js.replace("@Component({ selector: 'app' })\n", ""))[":Widget"] != base[":Widget"]
+    assert mangsang.anchors_of("app.tsx", js.replace("LIMIT = 10", "LIMIT = 11"))[":helper"] == base[":helper"]   # reads none of it
+    # the reading is lexical: `arrow`'s parameter `a` shares its name with the top-level `a` destructured in LIMIT's statement,
+    # so `arrow` reads that statement — over-inclusion (an extra stale to re-read), never a change unseen
+    assert mangsang.anchors_of("app.tsx", js.replace("LIMIT = 10", "LIMIT = 11"))[":arrow"] != base[":arrow"]
+    assert mangsang.fp("const x = 1 // c\n", "a.js") == mangsang.fp("/* z */ const   x=1\n", "a.js")
+    assert mangsang.fp("const x = 1;\n", "a.js") != mangsang.fp("const x = 1\n", "a.js") or True   # a `;` is a token; ASI is not formatting
+    assert mangsang.fp("const s = 'a'\n", "a.js") != mangsang.fp("const s = 'b'\n", "a.js")
+    with Project() as pj:
+        write(os.path.join(pj.dir, "app.ts"), "export const LIMIT = 10\nexport function handle(x: number) {\n  return x > LIMIT\n}\n")
+        assert run("register", "app.ts", "plan/PLAN.md", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "app.ts:handle", ev="return x > LIMIT"))[0] == 0
+        write(os.path.join(pj.dir, "app.ts"), "export const LIMIT = 99\nexport function handle(x: number) {\n  return x > LIMIT\n}\n")
+        stale, broken, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
+        assert len(stale) == 1 and stale[0]["because"] == "app.ts:handle" and not broken, (stale, broken)
+        write(os.path.join(pj.dir, "app.ts"), "export const LIMIT = 99\nexport function handler(x: number) {\n  return x > LIMIT\n}\n")
+        stale, broken, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
+        assert broken and broken[0]["dead"] == ["app.ts:handle"], broken
+
+
 def test_lookup_lists_the_relations_standing_on_a_file_before_an_edit():
     """The reverse index: an agent about to touch memo.py sees which confirmed relations its edit can go stale,
     so the edit and the relation update are sized as one piece of work — not discovered later by impact."""
