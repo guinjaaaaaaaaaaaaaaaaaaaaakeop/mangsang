@@ -333,6 +333,157 @@ def test_javascript_and_typescript_symbols_follow_the_same_rule():
         assert broken and broken[0]["dead"] == ["app.ts:handle"], broken
 
 
+def test_a_retired_projection_leaves_its_concept_owing_a_re_read():
+    """guin-site, 2026-09-30: the deploy moved from GitHub Pages to Workers. Three projections of `site-build` were retired,
+    three confirmed, the stale rest reconfirmed with "matches site-build's new meaning" — and the sentence still said Pages.
+    `cq` had been red while projections were stale, and reconfirm turned it green: it answers "does this still realize the
+    concept?", never "does the concept's sentence still say what the project does?". A retired projection now leaves the
+    concept owing that re-read; only `revise` or `reaffirm` answers it. Adding a projection, or moving one, owes nothing."""
+    with Project() as pj:
+        write(os.path.join(pj.dir, "pages.yml"), "deploy: pages\n")
+        write(os.path.join(pj.dir, "wrangler.jsonc"), '{"name": "site"}\n')
+        assert run("register", "plan/PLAN.md", "pages.yml", "wrangler.jsonc", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "site-build", "--means", "a push to main deploys to GitHub Pages", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run("cq", "add", "site-made", "--text", "How is the site built and published?", "--verify",
+                   '{"kind": "answered-by", "concepts": ["site-build"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("pages.yml", "realizes", "concept:site-build", ev="deploy: pages"),
+                          rel("plan/PLAN.md#Q1 add", "realizes", "concept:site-build"))[0] == 0
+        assert run("cq", "--target", pj.dir)[0] == 0
+        # the slice: a new projection (owes nothing), the old one retired (owes), the section edited and reconfirmed
+        assert pj.propose(rel("wrangler.jsonc", "realizes", "concept:site-build", ev='"name": "site"'))[0] == 0
+        assert run("cq", "--target", pj.dir)[0] == 0, "adding a projection owes nothing"
+        old = next(r["id"] for r in mangsang.decl(pj.dir)["relations"] if r["src"] == "pages.yml")
+        code, out = run("retire", old, "--why", "file removed: the deploy moved to Workers", "--target", pj.dir)
+        assert code == 0 and "concept site-build lost a projection" in out and "concept reaffirm" in out, out
+        write(os.path.join(pj.dir, "plan", "PLAN.md"), PLAN.replace("appends and prints", "appends and prints; deploys on Workers"))
+        for x in mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir))[0]:
+            assert run("reconfirm", x["id"], "--delegated", "matches site-build's new meaning", "--target", pj.dir)[0] == 0
+        assert run("impact", "--target", pj.dir)[0] == 0   # every relation fresh...
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 1 and "FAILED" in out and ("site-build lost projection(s) %s (pages.yml) since its sentence was affirmed" % old) in out, out   # ...and the sentence still owed
+        code, out = run("concept", "list", "--target", pj.dir)
+        assert "owes a re-read: lost %s" % old in out, out
+        # reaffirm: a judgment, signed, kept with what it answered; then the question is answered again
+        assert run("concept", "reaffirm", "site-build", "--target", pj.dir)[0] != 0, "a reaffirmation is signed"
+        assert run("concept", "reaffirm", "site-build", "--by", "kim", "--target", pj.dir)[0] == 0
+        c = next(c for c in mangsang.decl(pj.dir)["concepts"] if c["name"] == "site-build")
+        assert "owes" not in c and c["history"][-1]["owed"] == [old] and c["history"][-1]["reaffirmed"]["by"] == "kim", c
+        assert run("cq", "--target", pj.dir)[0] == 0
+        assert run("concept", "reaffirm", "site-build", "--by", "kim", "--target", pj.dir)[0] != 0, "nothing owed, nothing to reaffirm"
+        # a projection still there in another form owes nothing: the same name in another file (a refactoring by hand), or the
+        # same file under a narrower anchor
+        write(os.path.join(pj.dir, "a.py"), "def deploy():\n    return 'workers'\n")
+        write(os.path.join(pj.dir, "b.py"), "def deploy():\n    return 'workers'\n")
+        assert run("register", "a.py", "b.py", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("a.py:deploy", "realizes", "concept:site-build", ev="def deploy"), rel("b.py:deploy", "realizes", "concept:site-build", ev="def deploy"),
+                          rel("b.py", "realizes", "concept:site-build", ev="def deploy"))[0] == 0
+        for src in ("a.py:deploy", "b.py"):
+            rid = next(r["id"] for r in mangsang.decl(pj.dir)["relations"] if r["src"] == src)
+            code, out = run("retire", rid, "--why", "moved by hand / narrowed", "--target", pj.dir)
+            assert code == 0 and "lost a projection" not in out, (src, out)
+        assert run("cq", "--target", pj.dir)[0] == 0
+        # revise answers it too, and keeps what was owed with the old sentence
+        wr = next(r["id"] for r in mangsang.decl(pj.dir)["relations"] if r["src"] == "wrangler.jsonc")
+        assert run("retire", wr, "--why", "trying again", "--target", pj.dir)[0] == 0
+        assert run("concept", "revise", "site-build", "--means", "a deploy runs on Workers after a preview", "--by", "kim", "--target", pj.dir)[0] == 0
+        c = next(c for c in mangsang.decl(pj.dir)["concepts"] if c["name"] == "site-build")
+        assert "owes" not in c and c["history"][-1]["owed"] == [wr] and c["history"][-1]["means"] == "a push to main deploys to GitHub Pages", c
+
+
+def test_a_concept_on_the_stale_side_is_judged_by_its_sentence():
+    """The judge was asked whether "the sentence in stale_text — the one quote_at_confirm quotes — still holds". When the
+    concept is the stale side, the quote is a sentence of the section, which still held; the concept's sentence, which
+    did not, was never the question. Such an item is marked and the instructions say what is judged there."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "a memo is appended and its id printed", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "realizes", "concept:adding"))[0] == 0
+        write(os.path.join(pj.dir, "plan", "PLAN.md"), PLAN.replace("appends and prints", "appends and prints; ids restart daily"))
+        d = os.path.join(pj.dir, "judge")
+        assert run("judge", "request", "--out", d, "--target", pj.dir)[0] == 0
+        req = json.load(open(os.path.join(d, "judge-request.json"), encoding="utf-8"))
+        item = req["items"][0]
+        assert item["stale"] == "concept:adding" and item["judge"] == "concept-sentence" and item["stale_text"] == "a memo is appended and its id printed", item
+        assert "the concept's whole meaning" in req["instructions"] and "quote_at_confirm is context there" in req["instructions"]
+        # the other direction is judged as before: a section on the stale side, no mark
+        assert run("reconfirm", item["relation"], "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run("concept", "revise", "adding", "--means", "a memo is appended; its id is printed and restarts daily", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run("judge", "request", "--out", d, "--target", pj.dir)[0] == 0
+        item = json.load(open(os.path.join(d, "judge-request.json"), encoding="utf-8"))["items"][0]
+        assert item["stale"] == "plan/PLAN.md#Q1 add" and "judge" not in item, item
+
+
+def test_a_section_after_the_last_one_leaves_it_fresh():
+    """Found by a net over mangsang's own change (2026-09-30): the plan's last section was related, a status section was
+    appended after it, and the last section went stale with no word changed — its text had gained the blank line before
+    the new heading. A section's trailing blank lines are the layout of what follows, not its content."""
+    with Project() as pj:
+        write(os.path.join(pj.dir, "notes.md"), "# notes\n\n## A\n\nthe rule.\n")
+        assert run("register", "notes.md", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "rule", "--means", "the rule.", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("notes.md#A", "realizes", "concept:rule", ev="the rule."))[0] == 0
+        write(os.path.join(pj.dir, "notes.md"), "# notes\n\n## A\n\nthe rule.\n\n\n## B\n\nmore.\n")
+        stale, _, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir))
+        assert not stale, stale
+        write(os.path.join(pj.dir, "notes.md"), "# notes\n\n## A\n\nthe rule, changed.\n\n## B\n\nmore.\n")
+        stale, _, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir))
+        assert len(stale) == 1, "a word changed is still a change"
+    # a `seen` written as the raw hash of the section when it was the file's last is answered too (the records made before this)
+    with Project() as pj:
+        write(os.path.join(pj.dir, "notes.md"), "# notes\n\n## A\n\nthe rule.\n")
+        assert run("register", "notes.md", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "rule", "--means", "the rule.", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("notes.md#A", "realizes", "concept:rule", ev="the rule."))[0] == 0
+        r = mangsang.decl(pj.dir)["relations"][0]
+        r["seen"]["notes.md#A"] = mangsang.fp("## A\n\nthe rule.\n")   # the old shape: raw text, ending at the file's last newline
+        mangsang.save(os.path.join(pj.dir, "mangsang", "relations", r["id"] + ".json"), r)
+        write(os.path.join(pj.dir, "notes.md"), "# notes\n\n## A\n\nthe rule.\n\n## B\n\nmore.\n")
+        stale, _, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir))
+        assert not stale, stale
+
+
+def test_what_the_net_cannot_see_is_said_and_can_be_checked():
+    """guin-site, 2026-09-30: a whole backend (schema, Worker code, four test files, its design document) was built and
+    none of it was registered — impact 0, check holds, cq green, over a project that had changed underneath. And the owner's
+    decisions about it were kept as sources that grounded no concept. Now: an invariant `registered` asks that every
+    tracked file under some prefixes is in the registry; without one, check says (never red) which tracked files beside
+    registered ones the net cannot see; and a person's source that nothing stands on is said."""
+    import subprocess
+    with Project() as pj:
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+        write(os.path.join(pj.dir, "src", "site.py"), "def build():\n    return 1\n")
+        write(os.path.join(pj.dir, "src", "worker.py"), "def serve():\n    return 2\n")
+        write(os.path.join(pj.dir, "tests", "test_worker.py"), "def test_serve():\n    assert True\n")
+        write(os.path.join(pj.dir, "tests", "fixture.json"), "{}\n")
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run("register", "plan/PLAN.md", "src/site.py", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert "unseen" in out and "src/worker.py" in out and "tests/" not in out.split("unseen", 1)[1].split("\n")[0], out   # beside registered ones: src/, plan/
+        assert code == 0, "advice, not a red"
+        # the invariant: declared, it is red until every tracked file under its prefixes is registered (globs excepted)
+        assert run("cq", "add", "all-seen", "--text", "Does the net see every file of the code and the tests?", "--verify",
+                   '{"kind": "registered", "paths": ["src/", "tests/"], "except": ["tests/*.json"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "FAILED" in out and "2 unregistered tracked file(s): src/worker.py, tests/test_worker.py" in out and "unseen" not in out, out
+        assert run("register", "src/worker.py", "tests/test_worker.py", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 0 and "holds        all-seen" in out, out
+        assert run("cq", "add", "bad", "--text", "?", "--verify", '{"kind": "registered"}', "--by", "kim", "--target", pj.dir)[0] != 0   # names no paths: refused
+        # a person's words nothing stands on are said; an agent's turn is not; grounding one ends it
+        said = os.path.join(pj.dir, "said.txt")
+        write(said, "The record lives in D1 from now on.")
+        assert run("source", "add", "rd-02", "--file", said, "--speaker", "kim", "--target", pj.dir)[0] == 0
+        write(said, "Shall the record live in D1?")
+        assert run("source", "add", "rd-01", "--file", said, "--speaker", "Claude (claude-opus-5-5)", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 0 and "ungrounded" in out and "source:rd-02" in out and "source:rd-01" not in out, out
+        assert run("concept", "add", "record", "--means", "The record lives in D1.", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("source:rd-02", "realizes", "concept:record", ev="The record lives in D1"))[0] == 0
+        assert "ungrounded" not in run("check", "--target", pj.dir)[1]
+        doc = json.loads(run("check", "--findings", "--target", pj.dir)[1])
+        assert not [f for f in doc["findings"] if f["kind"] in ("unregistered", "ungrounded-source")], doc
+
+
 def test_lookup_lists_the_relations_standing_on_a_file_before_an_edit():
     """The reverse index: an agent about to touch memo.py sees which confirmed relations its edit can go stale,
     so the edit and the relation update are sized as one piece of work — not discovered later by impact."""
@@ -677,6 +828,7 @@ def test_a_stale_relation_shows_what_changed_since_it_was_confirmed():
         rid = mangsang.decl(pj.dir)["relations"][0]["id"]
         code, out = run("reconfirm", rid, "--by", "kim", "--evidence", "appends and prints", "--target", pj.dir)
         assert code == 0 and "changed since" in out and "+    return 2" in out, out
+        assert "plan/PLAN.md#Q1 add changed since" not in out and "fingerprint's rule" not in out, out   # the end that did not move is not shown
 
 
 def test_an_agent_signs_a_persons_name_only_where_that_person_said_yes():

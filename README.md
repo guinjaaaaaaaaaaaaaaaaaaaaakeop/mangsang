@@ -47,8 +47,18 @@ turn. The same id with other text is refused — a correction is a new source.
 ### `/mangsang:concept`
 
 The net's own nodes: `add NAME --means "..."` declares one (with `--by` or `--delegated`); `revise` changes its
-meaning and stales every projection; `rename` moves the name under every relation and every question that names it, in
-one command; `list` shows each concept with its projections
+meaning and stales every projection; `reaffirm` says the sentence still holds after a projection of it was retired;
+`rename` moves the name under every relation and every question that names it, in one command; `list` shows each
+concept with its projections, and what it owes
+
+A concept's sentence is affirmed over the projections it had. Retiring one leaves the concept owing a re-read (`owes`):
+the questions it answers are FAILED until `revise` gives it a new sentence or `reaffirm` (signed) says the old one still
+holds — reconfirming the projections that remain does not answer it, since each reconfirm asks only "does this still
+realize the concept?". Nothing is owed for adding a projection, for a `move`, for a projection still there in another
+form (the same file under a narrower anchor, the same name in another file — a refactoring done by hand), or for a
+source. Measured on one project's history (guin-site): 73 retired projections, 15 debts in 3 commits — a deploy that
+moved from GitHub Pages to Workers while the sentence still said Pages, a rewrite from Python to Astro, tags leaving the
+post header.
 
 ### `/mangsang:confirm`
 
@@ -71,7 +81,9 @@ commit that last wrote the relation) against now; `reconfirm` prints the same be
 
 The judge round for stale relations: `request` packs, per relation, the text that may be stale, the text that changed,
 the change itself (the diff since the confirming commit, when git has it) with the declarations the changed side reads
-now — a function stale because its constant moved shows the constant, not two unchanged texts — and the quote confirmed; `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
+now — a function stale because its constant moved shows the constant, not two unchanged texts — and the quote confirmed;
+when the stale side is a concept, the item is marked and the sentence under judgment is the concept's whole meaning, the
+quote only context; `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
 quote the stale text verbatim) and applies only still-true — as a delegation, recorded on the relation and reported to
 the reviewer. Drifted and cannot-tell wait for a person
 
@@ -134,8 +146,9 @@ what is watched; what a predicate means and which way it propagates
 
 Committed: yes.
 
-the net's nodes — one per file, each a name, its `means` sentence, who declared it, and under `history` every earlier
-meaning a `revise` replaced
+the net's nodes — one per file, each a name, its `means` sentence, who declared it, `owes` (retired projections not yet
+answered by a `revise` or `reaffirm`), and under `history` every earlier meaning a `revise` replaced and every
+`reaffirm`, each with what it answered
 
 ### every record file
 
@@ -259,7 +272,7 @@ formatting out; strings, regexes and template literals in — Python by token *n
 numeric token types were renumbered), CSS and SQL and schema blocks their comment-free whitespace-collapsed text, HTML
 its comment-free collapsed text, JSON anchors the canonical value (key order and spacing are not content),
 YAML/TOML/INI/env/Dockerfile anchors their comment-free stripped lines, Markdown and unknown files their text: in prose,
-wording *is* the content. An anchor that reads other declarations hashes its parts' fingerprints together. Older `seen`
+wording *is* the content — a Markdown section without its trailing blank lines, which belong to the layout of what follows. An anchor that reads other declarations hashes its parts' fingerprints together. Older `seen`
 shapes — a text hash, a numeric-token hash, an own-tokens-only hash — are still answered for compatibility (unchanged
 bytes are not stale) and never written; such a record cannot see what its anchor reads until a `reconfirm` upgrades it.
 
@@ -270,16 +283,25 @@ Two layers, two commands — they used to share one name, and the name lied: a l
 **`check` asks the net's invariants** — its health, `git fsck` not code review. Verify kinds: `coverage` (anchors
 matching a pattern each carry a relation — `*` matches across `.` too, so `compose.yaml:*` counts every nested key to
 depth 3; name the level you mean, `compose.yaml:services.*`, or the keys themselves), `projection` (every concept realized in each named medium — doc, code,
-test), `resolved` (no relation on a dead anchor). Three reds: **FAILED** (the invariant does not hold — propose the
+test), `resolved` (no relation on a dead anchor), `registered` (every file git tracks under `paths` is in the registry,
+`except` globs aside — `{"kind": "registered", "paths": ["src/", "tests/", "db/"]}`). Three reds: **FAILED** (the invariant does not hold — propose the
 missing relations), **UNASKABLE** (the net moved out from under it — its predicate or anchors are gone; revise it),
 **UNWATCHED** (the net holds something no invariant watches — a used predicate, concepts without a projection
 invariant; declare one or say why not).
+
+Two observations, never red: **unseen** — with no `registered` invariant, the tracked files beside registered ones that
+are not registered (guin-site built a whole backend outside the net, and impact, check and cq were all green over it);
+**ungrounded** — a person's words kept as a source that no relation uses, no signature cites (`approved-in`,
+`approval-of`) and no registered document cites by id: a decision the model does not carry yet. Measured there: 73 of
+the owner's sources, 37 related to nothing, 32 of those cited by the plan; the 5 left included the backend's two
+decisions, which only an unregistered document cited.
 
 **`cq` asks the domain questions** — what the model can answer, after Grüninger & Fox. A domain CQ names its answer:
 `{"kind": "answered-by", "concepts": ["NAME"]}` — the concept's `means` sentence carries the answer, and `cq` prints
 it. The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every
 confirm); it audits that the answer is *alive*. Three reds: **FAILED** (the answering concept is realized nowhere, or
-its projections moved since confirmation — the promise's reality shifted; re-read before trusting the sentence),
+its projections moved since confirmation, or it owes a re-read for a retired projection — the promise's reality
+shifted; re-read before trusting the sentence),
 **UNANSWERABLE** (the concept a question names is gone: the model cannot answer this of the domain), **UNQUESTIONED**
 (a concept no question names — the model holds a meaning nobody asks for; write the question or say why not).
 A question may also be asked before anything answers it — `{"kind": "open"}`, naming no answer: `cq` lists it
