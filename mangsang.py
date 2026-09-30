@@ -12,7 +12,8 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 keep what was said or written, verbatim and unchangeable, as the anchor `source:ID` — a concept
                                 grounded in a conversation relates to it like to any projection, with a quote as evidence. Both
                                 sides of a conversation are sources: "yes, both" means nothing without the question it answers
-  concept [add|revise|rename|list] declare/change the net's own nodes; `concept:NAME` anchors relations; revising `means` stales every projection
+  concept [add|revise|reaffirm|rename|list] declare/change the net's own nodes; `concept:NAME` anchors relations; revising `means` stales every
+                                projection; retiring a projection leaves the concept owing a re-read (`owes`) until `revise` or `reaffirm`
   confirm <proposals.json> --by NAME | --delegated WHY
                                 store relations after checking: anchors exist, predicate is in the vocabulary, no duplicates
   observe [--reset [--at REV]]  this machine's change list: --reset takes a baseline (from git at REV if given), otherwise prints what moved since it
@@ -442,7 +443,10 @@ def compute_impact(target, d, only=None, persist=False):
             if not (texts and key in texts):
                 return True
             old = r["seen"][anchor]
-            return not (fp(texts[key]) == old or fp(texts[key], f) == old or fp_legacy_numeric(texts[key], f) == old)
+            # (a Markdown `seen` from before trailing blank lines left the fingerprint was a raw hash of the section as it stood —
+            # often the file's last section, ending at one newline: that shape is tried too)
+            return not (fp(texts[key]) == old or fp(texts[key], f) == old or fp_legacy_numeric(texts[key], f) == old
+                        or (anchors.kind_of(f) == "markdown" and fp(texts[key].rstrip() + "\n") == old))
         if ev is None:
             unjudged.append(r["id"])
             return False
@@ -579,7 +583,10 @@ def cmd_judge(args):
                           "because": x["because"], "because_text": texts[x["because"]][:args.limit],
                           "because_changed": "\n".join(dd for dd in diffs if dd)[:args.limit * 2] or None,
                           "because_reads": reads or None,
-                          "quote_at_confirm": r.get("evidence")})
+                          "quote_at_confirm": r.get("evidence"),
+                          # the concept is the stale side: the sentence under judgment is its whole meaning, not the quote — the quote is
+                          # a sentence of the projection, which still held when a deploy moved and the concept still named the old one
+                          **({"judge": "concept-sentence"} if x["stale"].startswith("concept:") else {})})
         if not items:
             print("nothing stale to judge")
             return 0
@@ -588,7 +595,9 @@ def cmd_judge(args):
                                    "was confirmed) and decide whether the sentence in stale_text — the one quote_at_confirm quotes — still holds. "
                                    "because_changed is the change itself, as a diff since the confirmation, when git has it; because_reads are the "
                                    "declarations because_text reads now (a constant, a helper, an import) — when because_text itself did not change, "
-                                   "the change is there. "
+                                   "the change is there. An item with \"judge\": \"concept-sentence\" has a concept on its stale side: the sentence "
+                                   "under judgment is stale_text, the concept's whole meaning — does it still describe what because_text and "
+                                   "because_changed now say? quote_at_confirm is context there, not the sentence under judgment. "
                                    "still-true: it does; say why in evidence. drifted: it does not; put the sentence that no longer holds in `quote`, "
                                    "verbatim from stale_text, and why in evidence from because_text. cannot-tell: say what the texts do not settle. "
                                    "Judge only the relations in the request. Similar names are not evidence. Read files under target if you must. Change no files.")}
@@ -681,6 +690,9 @@ def cq_presuppositions(d, files, q):
             missing.append("presupposes `media` naming each medium's anchor prefixes")
     elif v.get("kind") == "resolved":
         pass   # asks only about the relations themselves; always askable
+    elif v.get("kind") == "registered":
+        if not v.get("paths"):
+            missing.append("presupposes `paths` — the tracked prefixes whose every file must be registered (\"src/\", \"tests/\" …)")
     elif v.get("kind") == "open":
         # asked before anything answers it: a model built from conversation starts with what nobody has answered yet.
         # It names no answer — a later `revise` to answered-by is where the answer is signed — but it may say what it asks
@@ -708,7 +720,49 @@ def cq_presuppositions(d, files, q):
     return missing
 
 
-INVARIANT_KINDS = ("coverage", "projection", "resolved")
+INVARIANT_KINDS = ("coverage", "projection", "resolved", "registered")
+
+
+def tracked_files(target):
+    """Files git tracks under the target, relative to it (a target inside a repository is fine), or None without git."""
+    import subprocess
+    done = subprocess.run(["git", "ls-files", "-z", "--", "."], cwd=target, capture_output=True)
+    if done.returncode:
+        return None
+    return sorted(p.decode("utf-8", "replace").replace("\\", "/") for p in done.stdout.split(b"\0") if p)
+
+
+def unregistered(target, d, paths, excepts=()):
+    """Tracked files under `paths` the registry does not hold — what the net cannot see. None without git."""
+    import fnmatch
+    have = {e["path"] for e in d["registry"]}
+    got = tracked_files(target)
+    if got is None:
+        return None
+    return [f for f in got if f.startswith(tuple(paths)) and f not in have and not any(fnmatch.fnmatch(f, g) for g in excepts)
+            and not f.startswith((DECL + "/", OBS + "/"))]
+
+
+def ungrounded_sources(d, target):
+    """A person's words kept as a source that nothing stands on — no relation uses it, no signature cites it (approved-in,
+    approval-of), no registered document cites it by id. guin-site's owner decided the backend's read path and five more of its questions (source:rd-02,
+    source:bd2-02): kept verbatim, grounding no concept, and nothing said so."""
+    roster = people(target) or {}
+    agents = tuple(roster.get("agents") or ()) + ("Claude (",)
+    records = json.dumps([d["relations"], d["retired"], d["concepts"], d["cq_declared"], d["cq"]], ensure_ascii=False)
+    # a registered document that cites it by id (a plan quoting the owner's decision) grounds it in text the net watches;
+    # measured on guin-site: 37 person sources nothing related, 31 of them cited by the plan — the 6 left were real
+    for e in d["registry"]:
+        path = os.path.join(target, e["path"])
+        if os.path.isfile(path):
+            records += io.open(path, encoding="utf-8", errors="replace").read()
+    out = []
+    for x in d["sources"]:
+        if str(x.get("speaker", "")).startswith(agents) or x.get("kind") in ("agent", "question"):
+            continue
+        if not re.search(r"source:%s(?![\w-])" % re.escape(x["id"]), records):   # the id itself, however it is quoted (JSON, backticks)
+            out.append(x["id"])
+    return out
 
 
 def reach(d, names):
@@ -748,6 +802,14 @@ def answer_health(d, names, moved):
         via = "" if n in names else " (through %s)" % reached[n][0]
         if ids:
             problems.append("%s%s has moved projections (%s) — the sentence stands but what realizes it changed since confirmation" % (n, via, ", ".join(ids)))
+    owing = {c["name"]: c.get("owes") for c in d["concepts"] if c.get("owes")}
+    gone = {r["id"]: r["src"] for r in d.get("retired", [])}
+    for n in list(names) + list(reached):
+        if n in owing:
+            via = "" if n in names else " (through %s)" % reached[n][0]
+            lost = ", ".join("%s (%s)" % (i, gone[i]) if i in gone else i for i in owing[n])
+            problems.append("%s%s lost projection(s) %s since its sentence was affirmed — does it still hold? `concept revise` or `concept reaffirm`; "
+                            "reconfirming what remains does not answer it" % (n, via, lost))
     for n, (frm, rid) in reached.items():
         if rid in moved:
             rel = next(r for r in d["relations"] if r["id"] == rid)
@@ -769,7 +831,7 @@ def members(d, spec):
     return sorted(out)
 
 
-def eval_invariant(d, files, all_anchors, q):
+def eval_invariant(d, files, all_anchors, q, target="."):
     """One invariant, evaluated: (ok, detail). These are the net's health checks — the fsck, not the questions."""
     v = q.get("verify", {})
     if v.get("kind") == "coverage":
@@ -792,6 +854,11 @@ def eval_invariant(d, files, all_anchors, q):
                 if not any(a.startswith(tuple(prefixes)) for a in pro):
                     missing.append("%s lacks %s" % (c["name"], medium))
         return not missing, "%d concept(s), %d gap(s)%s" % (len(d["concepts"]), len(missing), ("; ".join([": "] + missing).replace(": ; ", ": ") if missing else ""))
+    if v.get("kind") == "registered":
+        missing = unregistered(target, d, v.get("paths") or [], v.get("except") or [])
+        if missing is None:
+            return False, "no git here — which files are tracked cannot be told"
+        return not missing, "%d unregistered tracked file(s)%s" % (len(missing), (": " + ", ".join(missing[:12]) + (" … and %d more" % (len(missing) - 12) if len(missing) > 12 else "")) if missing else "")
     # resolved
     dead = [r["id"] for r in d["relations"] if any((split_anchor(a)[0] not in files or split_anchor(a)[1] not in files[split_anchor(a)[0]]) for a in (r["src"], r["dst"]))]
     return not dead, "%d relations, %d with dead anchors%s" % (len(d["relations"]), len(dead), (": " + ", ".join(dead)) if dead else "")
@@ -820,7 +887,7 @@ def cmd_check(args):
                 say("      %s" % m)
             findings.append({"kind": "invariant-unaskable", "where": q["id"], "source": "mangsang", "text": "; ".join(presup)})
             continue
-        ok, detail = eval_invariant(d, files, all_anchors, q)
+        ok, detail = eval_invariant(d, files, all_anchors, q, args.target)
         failed += not ok
         if not ok:
             findings.append({"kind": "invariant-failed", "where": q["id"], "source": "mangsang", "text": detail})
@@ -856,6 +923,21 @@ def cmd_check(args):
                                  "text": "committed as written by %s — a build that is not a release; nobody can install what wrote it" % w})
     proposed = [("concept:" + c["name"]) for c in d["concepts"] if (c.get("declared") or {}).get("approval-of")] + \
                [("cq:" + q["id"]) for q in d["cq_declared"] if (q.get("declared") or {}).get("approval-of")]
+    # what the net cannot see, said as advice (never red): tracked files beside the registered ones that nobody registered,
+    # when no `registered` invariant asks — guin-site's whole backend was outside the net and every command was green
+    if not any(q.get("verify", {}).get("kind") == "registered" for q in active):
+        dirs = sorted({e["path"].rsplit("/", 1)[0] + "/" for e in d["registry"] if "/" in e["path"]})
+        missing = unregistered(args.target, d, dirs) if dirs else []
+        if missing:
+            say("  %-12s %d tracked file(s) beside registered ones are not registered (%s%s) — the net cannot see them; register them, or declare "
+                "`{\"kind\": \"registered\", \"paths\": [...]}` to make it a check" % ("unseen", len(missing), ", ".join(missing[:6]), " …" if len(missing) > 6 else ""))
+            findings.append({"kind": "unregistered", "layer": "observation", "where": ", ".join(missing[:12]), "source": "mangsang",
+                             "text": "%d tracked file(s) in registered directories are not registered; no invariant asks" % len(missing)})
+    loose = ungrounded_sources(d, args.target)
+    if loose:
+        say("  %-12s %d thing(s) a person said ground nothing — no relation uses them, no signature or registered document cites them: %s" % ("ungrounded", len(loose), ", ".join("source:" + i for i in loose)))
+        findings.append({"kind": "ungrounded-source", "layer": "observation", "where": ", ".join("source:" + i for i in loose), "source": "mangsang",
+                         "text": "a person's words kept as a source that no concept stands on — a decision the model does not carry yet"})
     if proposed:
         say("  %-12s %d declaration(s) signed in a person's name on their yes to the agent's proposal: %s" % ("proposed", len(proposed), ", ".join(proposed)))
         findings.append({"kind": "agent-proposed", "layer": "observation", "where": ", ".join(proposed), "source": "mangsang",
@@ -1005,8 +1087,28 @@ def cmd_retire(args):
         raise SystemExit("no relation %s" % args.id)
     d["relations"].remove(r)
     d["retired"].append({**r, "retired": {"why": args.why}})
+    # a projection of a concept retired: what the concept's sentence was affirmed over has changed, and reconfirming the
+    # projections that remain answers only whether each still realizes it — not whether the sentence still says what the
+    # project does (guin-site, 2026-09-30: a deploy moved, three projections retired, three added, nine reconfirmed, and the
+    # sentence still named the old deploy). The concept owes a re-read until `concept revise` or `concept reaffirm`.
+    # Owes nothing: adding a projection; a `move`; a projection that is still there in another form — the same file (an
+    # anchor narrowed to a symbol) or the same name in another file (a refactoring done by hand: retire, re-propose) — and a
+    # source (grounding, not a projection of what the project does). Measured on guin-site's history: 73 retired projections,
+    # 15 debts in 3 commits — the Workers deploy, the rewrite from Python to Astro, tags leaving the post header.
+    owed = None
+    rf, rk = split_anchor(r["src"])
+    still = [x for x in d["relations"] if x["predicate"] == "realizes" and x["dst"] == r["dst"]
+             and (split_anchor(x["src"])[0] == rf or (rk and split_anchor(x["src"])[1] == rk))]
+    if r["predicate"] == "realizes" and r["dst"].startswith("concept:") and not r["src"].startswith("source:") and not still:
+        owed = next((c for c in d["concepts"] if c["name"] == r["dst"][len("concept:"):]), None)
+        if owed is not None and r["id"] not in owed.setdefault("owes", []):
+            owed["owes"].append(r["id"])
     save_decl(args.target, d)
     print("retired %s (%s %s %s) — kept in `retired`" % (r["id"], r["src"], r["predicate"], r["dst"]))
+    if owed is not None:
+        print("  concept %s lost a projection: its sentence owes a re-read (%s) — `concept revise %s --means \"...\"` if it no longer holds, "
+              "`concept reaffirm %s --by|--delegated` if it does; until then the questions it answers fail"
+              % (owed["name"], ", ".join(owed["owes"]), owed["name"], owed["name"]))
     return 0
 
 
@@ -1025,6 +1127,8 @@ def cmd_reconfirm(args):
         if dead:
             raise SystemExit("%s: anchor %s is gone — a relation on a dead anchor cannot be re-confirmed; retire it" % (rid, dead))
         for a in (r["src"], r["dst"]):   # what the person re-read: the change itself, printed with the record of it
+            if (r.get("seen") or {}).get(a) == files[split_anchor(a)[0]][split_anchor(a)[1]]:
+                continue   # this end did not move: nothing of it to re-read (it used to say "only its fingerprint's rule changed")
             diff = what_changed(args.target, r, a)
             if diff:
                 print("  %s changed since %s was confirmed:\n%s" % (a, rid, "\n".join("      " + l for l in diff.rstrip().split("\n"))))
@@ -1559,12 +1663,27 @@ def cmd_concept(args):
             raise SystemExit("--means \"the new sentence\"")
         if not (args.by or args.delegated):
             raise SystemExit("say who revised it (--by) or why the human delegated it (--delegated)")
-        c.setdefault("history", []).append({"means": c["means"], "declared": c["declared"]})   # what the word meant before, and on whose word
+        c.setdefault("history", []).append({"means": c["means"], "declared": c["declared"], **({"owed": c["owes"]} if c.get("owes") else {})})   # what the word meant before, and on whose word
+        c.pop("owes", None)   # a new sentence answers what was owed: every projection goes stale and is re-read against it
         c["means"] = args.means.strip()
         c["declared"] = signature(args.by, args.delegated)
         save_decl(args.target, d)
         n = sum(1 for r in d["relations"] if "concept:" + args.name in (r["src"], r["dst"]))
         print("concept %s now means: %s — %d projection relation(s) will go stale; that is the point" % (args.name, c["means"], n))
+        return 0
+    if args.mode == "reaffirm":
+        c = byname.get(args.name)
+        if not c:
+            raise SystemExit("no concept %s" % args.name)
+        if not (args.by or args.delegated):
+            raise SystemExit("say who re-read it (--by) or why the human delegated it (--delegated)")
+        if not c.get("owes"):
+            raise SystemExit("concept %s owes nothing — reaffirm answers a retired projection; nothing was retired since its sentence was affirmed" % args.name)
+        # the sentence stands, read against what realizes it now: recorded as a judgment beside the declaration, with what it answered
+        c.setdefault("history", []).append({"reaffirmed": signature(args.by, args.delegated), "owed": c.pop("owes")})
+        save_decl(args.target, d)
+        now = [r["src"] for r in d["relations"] if r["predicate"] == "realizes" and r["dst"] == "concept:" + args.name]
+        print("concept %s reaffirmed: \"%s\" — read against what realizes it now: %s" % (args.name, c["means"], ", ".join(now) or "nothing"))
         return 0
     if args.mode == "rename":
         c = byname.get(args.name)
@@ -1614,6 +1733,8 @@ def cmd_concept(args):
             print("      %s %s (%s)" % (r["predicate"], other, r["id"]))
         if not pro:
             print("      (no projections — nothing yet realizes this concept)")
+        if c.get("owes"):
+            print("      owes a re-read: lost %s since its sentence was affirmed (`concept revise` or `concept reaffirm`)" % ", ".join(c["owes"]))
     return 0
 
 
@@ -1712,7 +1833,7 @@ def main(argv=None):
             p.add_argument("--html", default=None, help="write one self-contained HTML page here: the graph draws in any browser, offline")
             p.add_argument("--check", default=None, help="a page written earlier with --out: exit 0 when it is what the record renders now, 1 when it is behind (for a page kept in git)")
         if name == "concept":
-            p.add_argument("mode", nargs="?", default="list", choices=["add", "revise", "rename", "list"])
+            p.add_argument("mode", nargs="?", default="list", choices=["add", "revise", "reaffirm", "rename", "list"])
             p.add_argument("name", nargs="?", default=None)
             p.add_argument("new", nargs="?", default=None, help="rename: the new name")
             p.add_argument("--means", default=None, help="one sentence: what this name means in this project")

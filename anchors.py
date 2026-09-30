@@ -141,6 +141,10 @@ def normalize(path, text):
         return " ".join(re.sub(r"//[^\n]*|#[^\n]*|/\*.*?\*/", " ", text, flags=re.S).split())
     if kind in ("html", "component"):
         return " ".join(re.sub(r"<!--.*?-->", " ", text, flags=re.S).split())
+    if kind == "markdown":
+        # a section runs to the next heading, so its blank lines before that heading are the layout of what follows: the last
+        # section of a file ended at one newline, and adding a section after it staled it with no word changed (2026-09-30)
+        return text.rstrip() + "\n"
     return text
 
 
