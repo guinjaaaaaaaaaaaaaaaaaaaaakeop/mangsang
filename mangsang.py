@@ -14,6 +14,8 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 sides of a conversation are sources: "yes, both" means nothing without the question it answers
   concept [add|revise|reaffirm|rename|list] declare/change the net's own nodes; `concept:NAME` anchors relations; revising `means` stales every
                                 projection; retiring a projection leaves the concept owing a re-read (`owes`) until `revise` or `reaffirm`
+  concept list --brief          the net as a map in a line or two: `N concept(s): a, b, … ; M open question(s)` (names cut to fit ~300
+                                characters), then how many relations are stale or broken when any are; an empty net prints nothing
   confirm <proposals.json> --by NAME | --delegated WHY
                                 store relations after checking: anchors exist, predicate is in the vocabulary, no duplicates
   observe [--reset [--at REV]]  this machine's change list: --reset takes a baseline (from git at REV if given), otherwise prints what moved since it
@@ -36,6 +38,9 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
   lookup <path>                 before touching a file: the confirmed relations standing on it, grouped by concept (its meaning once),
                                 each with its quote, its confirmer and fresh/stale now; or which of not registered / registered with
                                 nothing on it / not in the tree (read-only) — size the edit as code + relations
+  lookup <path> --brief         the same as at most five lines, one per concept (or other end) reached: its meaning's first sentence,
+                                and `(N relation(s); K stale)` when any is stale; no ids, no quotes. A tracked file the net does not see
+                                gets one line; registered with nothing on it, or not in the tree, prints nothing — a reader's first look
   move [ID...] --by NAME | --delegated WHY [--dry-run]   after a refactoring: a broken relation whose dead `file:symbol` / `file#heading` has exactly one
                                 new home is retired (why: moved) and re-confirmed there with the same evidence; ambiguous or homeless ones are left for a person
   reconfirm <id>... --by NAME | --delegated WHY [--evidence "..."]
@@ -1192,6 +1197,8 @@ def cmd_lookup(args):
                 break
     registered = any(e["path"] == args.path for e in d["registry"])
     on_disk = os.path.exists(os.path.join(args.target, args.path))
+    if getattr(args, "brief", False):
+        return lookup_brief(args, d, rels, registered, on_disk)
     if not rels:
         if registered:
             print("%s is registered; no confirmed relation stands on it — an edit here makes nothing stale%s"
@@ -1238,6 +1245,76 @@ def cmd_lookup(args):
             print("      \"%s\" — %s" % ("\n        ".join(r.get("evidence", "").split("\n")), who_signed(r.get("confirmed"))))
     print("%d relation(s) on %s, reaching %d concept(s) or anchor(s) — an edit here and their update are one piece of work, not two"
           % (len(rels), args.path, len(groups)))
+    return 0
+
+
+def first_sentence(text, limit=160):
+    """A concept's `means`, cut to its first sentence and to one short line — the whole sentence is in the record."""
+    text = " ".join(str(text).split())
+    m = re.search(r"[.!?。](\s|$)", text)
+    text = text[:m.end()].rstrip() if m else text
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
+BRIEF_LINES = 5
+
+
+def lookup_brief(args, d, rels, registered, on_disk):
+    """`lookup PATH --brief`: what a reader (jokbo) puts in front of an agent at its first look at a file — one line per concept
+    (or other end) the file's confirmed relations reach, its meaning's first sentence, and how many of them are stale when any is.
+    Whole outputs pasted into an agent's context were not read (~43k characters in one cycle); a line per fact is. No ids, no
+    quotes: `lookup PATH` has them. A tracked file the net does not see gets one line saying so; a registered file with nothing
+    on it, or a path not in the tree, prints nothing — a reader adds no line where there is no fact."""
+    if not rels:
+        if registered or not on_disk:
+            return 0
+        tracked = tracked_files(args.target)
+        if tracked is None or args.path in tracked:
+            print("%s: not registered — the net does not see it (no relation stands on it; edits here are never stale)" % args.path)
+        return 0
+    stale, broken, _, _ = compute_impact(args.target, d, persist=False)
+    bad = {x["id"] for x in stale} | {x["id"] for x in broken}
+    concepts = {"concept:" + c["name"]: c for c in d["concepts"]}
+    groups = {}
+    for r, a, other, _ in rels:
+        groups.setdefault(other, []).append(r)
+    order = sorted(groups, key=lambda o: (-sum(r["id"] in bad for r in groups[o]), not o.startswith("concept:"), -len(groups[o]), o))
+    shown = order if len(order) <= BRIEF_LINES else order[:BRIEF_LINES - 1]
+    for other in shown:
+        rs = groups[other]
+        k = sum(r["id"] in bad for r in rs)
+        c = concepts.get(other)
+        say = first_sentence(c.get("means", "")) if c else ", ".join(sorted({r["predicate"] for r in rs}))
+        print("%s — %s%s" % (other, say, " (%d relation(s); %d stale)" % (len(rs), k) if k else ""))
+    if len(shown) < len(order):
+        rest = order[len(shown):]
+        k = sum(r["id"] in bad for o in rest for r in groups[o])
+        print("… and %d more (%d relation(s)%s) — `mangsang lookup %s` for all"
+              % (len(rest), sum(len(groups[o]) for o in rest), "; %d stale" % k if k else "", args.path))
+    return 0
+
+
+def concept_map(args, d):
+    """`concept list --brief`: the net in a line or two, for a reader's session-start map — how many concepts and their names
+    (cut to fit), the open questions, and how many relations are stale or broken when any are. An empty net prints nothing."""
+    if not d["concepts"] and not d["relations"]:
+        return 0
+    names = sorted(c["name"] for c in d["concepts"])
+    opened = sum(1 for q in cq_active(d) if (q.get("verify") or {}).get("kind") == "open")
+    tail = " ; %d open question(s)" % opened if opened else ""
+    head = "%d concept(s): " % len(names)
+    shown, budget = [], 300 - len(head) - len(tail) - len(", … (+999)")
+    for n in names:
+        if len(", ".join(shown + [n])) > budget:
+            break
+        shown.append(n)
+    listed = ", ".join(shown) + (", … (+%d)" % (len(names) - len(shown)) if len(shown) < len(names) else "")
+    print(head + (listed or "none declared") + tail)
+    if d["relations"]:
+        stale, broken, _, _ = compute_impact(args.target, d, persist=False)
+        if stale or broken:
+            print("%d relation(s); %s — `mangsang impact` lists them" % (len(d["relations"]), "; ".join(
+                x for x in ("%d stale" % len(stale) if stale else "", "%d broken" % len(broken) if broken else "") if x)))
     return 0
 
 
@@ -1789,6 +1866,8 @@ def cmd_concept(args):
               % (args.name, args.new, moved, asked))
         return 0
     # list
+    if getattr(args, "brief", False):
+        return concept_map(args, d)
     if not d["concepts"]:
         print("no concepts — `concept add NAME --means \"...\" --by WHO` declares the net's first node")
         return 0
@@ -1879,6 +1958,7 @@ def main(argv=None):
             p.add_argument("--evidence", default=None, help="the sentence that holds now, when the old quote is gone from the text (one id at a time)")
         if name == "lookup":
             p.add_argument("path", help="a file (as registered): print the confirmed relations standing on it — the concept's meaning, the quote, who confirmed, fresh or stale — before you touch it")
+            p.add_argument("--brief", action="store_true", help="one line per concept the file's relations reach (its meaning's first sentence; how many are stale, when any) — for a reader's first look; silent when there is nothing to say")
         if name == "move":
             p.add_argument("ids", nargs="*", default=None, help="broken relations to move (default: every broken one)")
             signing(p)
@@ -1904,6 +1984,7 @@ def main(argv=None):
             p.add_argument("name", nargs="?", default=None)
             p.add_argument("new", nargs="?", default=None, help="rename: the new name")
             p.add_argument("--means", default=None, help="one sentence: what this name means in this project")
+            p.add_argument("--brief", action="store_true", help="list: the net as a map in a line or two — concepts by name, open questions, stale relations")
             signing(p)
     args = ap.parse_args(argv)
     if getattr(args, "by", None) and args.cmd != "judge":

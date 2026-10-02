@@ -540,6 +540,77 @@ def test_lookup_says_what_each_relation_means_and_why_a_file_has_none():
         assert code == 0 and "not in the tree" in out and "NOT REGISTERED" not in out, out
 
 
+def test_lookup_brief_is_a_line_per_concept_and_silent_where_there_is_no_fact():
+    """jokbo puts `lookup PATH --brief` in front of an agent at its first look at a file: whole outputs pasted into its context
+    went unread (~43k characters in a cycle). One line per concept reached — its meaning's first sentence, no ids, no quotes —
+    the stale count only when something is stale, at most five lines; one line for a tracked file the net does not see;
+    nothing at all for a registered file with nothing on it or a path not in the tree."""
+    import subprocess
+    with Project() as pj:
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+        write(os.path.join(pj.dir, "notes.py"), "Y = 2\n")
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "Appending one memo. It prints its id, which " + "x" * 200, "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("memo.py:add", "realizes", "concept:adding", ev="def add(store, text):"),
+                          rel("memo.py:list_", "realizes", "concept:adding", ev="def list_(store):"),
+                          rel("test_memo.py:test_Q1_add", "verifies", "memo.py:add", ev="def test_Q1_add"))[0] == 0
+        code, out = run("lookup", "memo.py", "--brief", "--target", pj.dir)
+        lines = out.splitlines()
+        assert code == 0 and lines[0] == "concept:adding — Appending one memo.", out   # the first sentence only; fresh: no count
+        assert lines[1] == "test_memo.py:test_Q1_add — verifies" and len(lines) == 2, out   # an end that is no concept: how it is related
+        assert "rel-" not in out and "kim" not in out and "def add" not in out, out   # no ids, no confirmer, no quote
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        code, out = run("lookup", "memo.py", "--brief", "--target", pj.dir)
+        assert "concept:adding — Appending one memo. (2 relation(s); 1 stale)" in out, out
+        assert "test_memo.py:test_Q1_add — verifies (1 relation(s); 1 stale)" in out, out
+        assert not os.path.exists(os.path.join(pj.dir, ".mangsang")), "lookup --brief writes nothing"
+        long = "a sentence with no end " * 20
+        assert run("concept", "add", "long", "--means", long, "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("test_memo.py:test_Q1_add", "realizes", "concept:long", ev="def test_Q1_add"))[0] == 0
+        out = run("lookup", "test_memo.py", "--brief", "--target", pj.dir)[1]
+        line = next(x for x in out.splitlines() if x.startswith("concept:long"))
+        assert line.endswith("…") and len(line) <= len("concept:long — ") + 160, line   # cut at ~160 characters
+        # at most five lines: the rest summed in one
+        for i in range(6):
+            assert run("concept", "add", "c%d" % i, "--means", "concept %d." % i, "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(*[rel("memo.py:add", "realizes", "concept:c%d" % i, ev="def add(store, text):") for i in range(6)])[0] == 0
+        out = run("lookup", "memo.py", "--brief", "--target", pj.dir)[1]
+        assert len(out.splitlines()) == 5 and "… and " in out and "`mangsang lookup memo.py` for all" in out, out
+        assert out.index("(2 relation(s); 1 stale)") < out.index("concept:c0"), out   # what is stale comes first
+        # the silent cases print nothing at all; an unseen file, one line
+        assert run("lookup", "plan/PLAN.md", "--brief", "--target", pj.dir) == (0, ""), "registered, nothing on it"
+        assert run("lookup", "gone.py", "--brief", "--target", pj.dir) == (0, ""), "not in the tree"
+        code, out = run("lookup", "notes.py", "--brief", "--target", pj.dir)   # no git: it cannot tell untracked, so it says it
+        assert code == 0 and len(out.splitlines()) == 1 and "the net does not see it" in out, out
+        git("init", "-q"); git("add", "plan", "memo.py", "test_memo.py", "notes.py")
+        write(os.path.join(pj.dir, "build.py"), "Z = 3\n")   # untracked output: no fact to add
+        assert run("lookup", "build.py", "--brief", "--target", pj.dir) == (0, ""), "untracked, unregistered"
+        code, out = run("lookup", "notes.py", "--brief", "--target", pj.dir)
+        assert code == 0 and out.splitlines() == ["notes.py: not registered — the net does not see it (no relation stands on it; edits here are never stale)"], out
+
+
+def test_concept_list_brief_is_the_net_as_a_map_in_a_line_or_two():
+    """jokbo's session-start map: what exists, in a line or two — the concepts by name (cut to fit), the open questions,
+    how many relations are stale when any are. An empty net prints nothing."""
+    with Project() as pj:
+        assert run("concept", "list", "--brief", "--target", pj.dir) == (0, ""), "an empty net says nothing"
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        for n in ("beta", "alpha"):
+            assert run("concept", "add", n, "--means", "%s means something." % n, "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("memo.py:add", "realizes", "concept:alpha", ev="def add(store, text):"))[0] == 0
+        code, out = run("concept", "list", "--brief", "--target", pj.dir)
+        assert code == 0 and out == "2 concept(s): alpha, beta\n", out
+        assert run("cq", "add", "q1", "--text", "what is left?", "--verify", '{"kind": "open"}', "--by", "kim", "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        code, out = run("concept", "list", "--brief", "--target", pj.dir)
+        assert out.splitlines() == ["2 concept(s): alpha, beta ; 1 open question(s)",
+                                    "1 relation(s); 1 stale — `mangsang impact` lists them"], out
+        for i in range(60):
+            assert run("concept", "add", "concept-number-%02d" % i, "--means", "one.", "--by", "kim", "--target", pj.dir)[0] == 0
+        first = run("concept", "list", "--brief", "--target", pj.dir)[1].splitlines()[0]
+        assert first.startswith("62 concept(s): alpha, beta, concept-number-00") and ", … (+" in first and len(first) <= 300, first
+
+
 def test_concepts_are_the_nets_own_nodes_and_survive_what_kills_anchors():
     """The net is primary: a concept is declared once, projections realize it, and the failure modes that kill
     anchor-pair relations — a section retitle, a meaning change nobody wrote down — become one visible event each:
