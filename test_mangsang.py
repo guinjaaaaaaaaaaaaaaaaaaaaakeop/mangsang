@@ -500,7 +500,44 @@ def test_lookup_lists_the_relations_standing_on_a_file_before_an_edit():
         code, out = run("lookup", "plan/PLAN.md", "--target", pj.dir)
         assert code == 0 and "1 relation(s)" in out and "stale" not in out, out   # documents propagates dst->src: editing the doc moves nothing
         code, out = run("lookup", "nothing.py", "--target", pj.dir)
-        assert code == 0 and "no confirmed relations" in out, out
+        assert code == 0 and "not in the tree" in out, out
+
+
+def test_lookup_says_what_each_relation_means_and_why_a_file_has_none():
+    """guin-site's agents read concepts/*.json and relations/*.json by hand after lookup: it printed ids and names. lookup groups
+    by concept — its meaning once — and gives each relation its quote, its confirmer (delegated said as delegated) and its state
+    now. A file with nothing on it says which case it is: an unregistered backend read like a quiet one."""
+    import subprocess
+    with Project() as pj:
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+        write(os.path.join(pj.dir, "worker", "render.py"), "def render():\n    return 1\n")
+        write(os.path.join(pj.dir, "notes.py"), "Y = 2\n")
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "appending one memo; it prints its id", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("memo.py:add", "realizes", "concept:adding", ev="def add(store, text):"),
+                          rel("test_memo.py:test_Q1_add", "verifies", "memo.py:add", ev="def test_Q1_add"))[0] == 0
+        write(os.path.join(pj.dir, "p.json"), {"relations": [rel("memo.py:list_", "realizes", "concept:adding", ev="def list_(store):")]})
+        assert run("confirm", os.path.join(pj.dir, "p.json"), "--delegated", "the owner left it to me; I re-read the code", "--target", pj.dir)[0] == 0
+        code, out = run("lookup", "memo.py", "--target", pj.dir)
+        assert code == 0 and out.count("appending one memo; it prints its id") == 1, out   # the meaning once, for both projections
+        assert out.index("concept:adding — means:") < out.index("[memo.py:add] realizes concept:adding") < out.index("[memo.py:list_] realizes"), out
+        assert '"def add(store, text):" — by kim' in out and '"def test_Q1_add" — by kim' in out, out
+        assert '"def list_(store):" — delegated: the owner left it to me' in out and "I re-read" not in out, out   # its first clause, said as delegated
+        assert out.count("— fresh") == 3 and "3 relation(s) on memo.py" in out, out
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        code, out = run("lookup", "memo.py", "--target", pj.dir)
+        assert out.count("STALE now (memo.py:add changed since confirmed)") == 2 and out.count("— fresh") == 1, out
+        assert not os.path.exists(os.path.join(pj.dir, ".mangsang")), "lookup writes nothing"
+        # three ways to have no relations, each said
+        code, out = run("lookup", "plan/PLAN.md", "--target", pj.dir)
+        assert code == 0 and "is registered; no confirmed relation stands on it" in out, out
+        code, out = run("lookup", "notes.py", "--target", pj.dir)   # no git yet: not registered, said without "tracked"
+        assert code == 0 and "NOT REGISTERED" in out and "tracked" not in out and "mangsang register notes.py" in out, out
+        git("init", "-q"); git("add", "-A")
+        code, out = run("lookup", "worker/render.py", "--target", pj.dir)
+        assert code == 0 and "NOT REGISTERED (tracked by git, beside 3 registered file(s) under the root)" in out and "the net cannot see it" in out, out
+        code, out = run("lookup", "worker/gone.py", "--target", pj.dir)
+        assert code == 0 and "not in the tree" in out and "NOT REGISTERED" not in out, out
 
 
 def test_concepts_are_the_nets_own_nodes_and_survive_what_kills_anchors():
@@ -1212,24 +1249,6 @@ def test_check_coverage_and_resolved():
         assert "FAILED" in out and "C3" in out and "with dead anchors" in out, out
 
 
-if __name__ == "__main__":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    failed = 0
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_"):
-            try:
-                fn()
-                print("PASS", name)
-            except Skip as why:
-                print("SKIP", name, "--", why)
-            except (Exception, SystemExit) as err:   # a self-check that dies between tests lies by omission
-                failed += 1
-                print("FAIL", name, "--", "%s: %s" % (type(err).__name__, err))
-    print("all passed" if not failed else "%d failed" % failed)
-    sys.exit(1 if failed else 0)
-
-
 def test_move_carries_broken_relations_to_the_symbols_new_home_and_leaves_the_ambiguous():
     """A refactoring split memo.py: `add` moved to core.py, `list_` to both core.py and extra.py (ambiguous), `X` went nowhere.
     `move` retires the relation on the dead anchor and re-confirms it where the symbol is now, with the same quote; what it
@@ -1344,3 +1363,21 @@ def test_a_turn_can_be_kept_as_the_sentences_that_matter():
         assert run("source", "add", "G", "--from-transcript", tr, "--turn", "u3", "--speaker", "lee", "--target", pj.dir)[0] == 0
         src = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "G.json"))
         assert src["text"] == "ㄱㄱ" and "u3" in src["locator"] and src["verbatim-from"] == "host transcript", src
+
+
+if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    failed = 0
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_"):
+            try:
+                fn()
+                print("PASS", name)
+            except Skip as why:
+                print("SKIP", name, "--", why)
+            except (Exception, SystemExit) as err:   # a self-check that dies between tests lies by omission
+                failed += 1
+                print("FAIL", name, "--", "%s: %s" % (type(err).__name__, err))
+    print("all passed" if not failed else "%d failed" % failed)
+    sys.exit(1 if failed else 0)

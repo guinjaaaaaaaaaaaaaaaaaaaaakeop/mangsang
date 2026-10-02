@@ -33,7 +33,9 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 the sources; a Mermaid graph. Markdown, or --html: one self-contained file whose graph draws in any
                                 browser with no network (mermaid is vendored and inlined). Read-only — derived, not committed
   retire <id> --why WHY         drop a relation, keeping it (and why) in `retired`
-  lookup <path>                 before touching a file: the confirmed relations standing on it (read-only) — size the edit as code + relations
+  lookup <path>                 before touching a file: the confirmed relations standing on it, grouped by concept (its meaning once),
+                                each with its quote, its confirmer and fresh/stale now; or which of not registered / registered with
+                                nothing on it / not in the tree (read-only) — size the edit as code + relations
   move [ID...] --by NAME | --delegated WHY [--dry-run]   after a refactoring: a broken relation whose dead `file:symbol` / `file#heading` has exactly one
                                 new home is retired (why: moved) and re-confirmed there with the same evidence; ambiguous or homeless ones are left for a person
   reconfirm <id>... --by NAME | --delegated WHY [--evidence "..."]
@@ -1147,30 +1149,95 @@ def cmd_reconfirm(args):
     return 0
 
 
+def first_clause(text, limit=80):
+    """A delegation's reason, cut to its first clause for a line that must stay short — the whole reason is in the record."""
+    text = " ".join(str(text).split())
+    cut = min([i for i in (text.find(c) for c in ("; ", ": ", " — ", ". ", "；", "。")) if i > 0] or [len(text)])
+    text = text[:cut]
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def who_signed(sig):
+    """The confirmer, as a terminal line: `by NAME (approved in source:…)` or `delegated: <first clause>` (said as delegated)."""
+    sig = sig or {}
+    if sig.get("by"):
+        return "by %s" % sig["by"] + (" (approved in %s)" % sig["approved-in"] if sig.get("approved-in") else "")
+    dl = sig.get("delegated")
+    if isinstance(dl, dict):
+        return "delegated: ref %s" % dl.get("ref", "?")
+    return "delegated: %s" % first_clause(dl or "?") if dl else "unsigned"
+
+
 def cmd_lookup(args):
-    """Before touching a file: which confirmed relations stand on it? The reverse index every drift tool grew
-    (drift `refs`, docdrift `lookup`) — here so an agent can size its task as 'the edit plus these relations',
-    instead of learning about them afterwards from `impact`. Read-only; prints nothing but the record."""
+    """Before touching a file: which confirmed relations stand on it, and what they say? The reverse index every drift tool
+    grew (drift `refs`, docdrift `lookup`) — here so an agent can size its task as 'the edit plus these relations', instead
+    of learning about them afterwards from `impact`. Grouped by what each relation reaches: a concept's `means` once, then
+    each relation with its quote, its confirmer and whether it is fresh now — what agents on guin-site opened
+    concepts/*.json and relations/*.json by hand to learn, because lookup printed only ids and names. A file with nothing
+    on it says which of three it is: not registered (the net cannot see it), registered with nothing on it, or not in the
+    tree — "no relations" read the same for all three, and a whole unregistered backend looked like a quiet one.
+    Read-only; prints nothing but the record."""
     d = decl(args.target)
     rels = []
     for r in d["relations"]:
         for a in (r["src"], r["dst"]):
             f, key = split_anchor(a)
-            if f == args.path or (key == "" and args.path == f):
+            if f == args.path:
                 prop = d["vocabulary"].get(r["predicate"], {}).get("propagates", "none")
-                other = r["dst"] if a == r["src"] else r["src"]
                 moves = (a == r["dst"] and prop in ("dst->src", "both")) or (a == r["src"] and prop in ("src->dst", "both"))
-                rels.append((r["id"], r["src"], r["predicate"], r["dst"], a, moves))
+                other = r["dst"] if a == r["src"] else r["src"]
+                if split_anchor(other)[0] == args.path:
+                    other = r["dst"]   # both ends on this file: grouped under dst, as stored
+                rels.append((r, a, other, moves))
                 break
+    registered = any(e["path"] == args.path for e in d["registry"])
+    on_disk = os.path.exists(os.path.join(args.target, args.path))
     if not rels:
-        print("no confirmed relations touch %s" % args.path)
+        if registered:
+            print("%s is registered; no confirmed relation stands on it — an edit here makes nothing stale%s"
+                  % (args.path, "" if on_disk else " (it is not in the tree now: deleted or moved? `register` the new path)"))
+        elif not on_disk:
+            print("%s is not in the tree (no such file under %s) and not registered — nothing stands on it" % (args.path, args.target))
+        else:
+            tracked = tracked_files(args.target)
+            near = ""
+            if tracked is not None and args.path in tracked:
+                parts = args.path.split("/")[:-1]
+                for n in range(len(parts), -1, -1):   # the nearest directory holding registered files: "beside" them
+                    pre = "/".join(parts[:n]) + "/" if n else ""
+                    have = [e["path"] for e in d["registry"] if e["path"].startswith(pre)]
+                    if have:
+                        near = ", beside %d registered file(s) under %s" % (len(have), pre or "the root")
+                        break
+            print("%s is NOT REGISTERED%s — the net cannot see it: no relation stands on it and no edit to it is ever stale. "
+                  "Not a file with nothing on it: an unseen one." % (args.path, " (tracked by git%s)" % near if tracked is not None and args.path in tracked else ""))
+            print("  to watch it: `mangsang register %s`, then relate its anchors to the concepts they realize (`confirm`)" % args.path)
         return 0
-    for rid, src, pred, dst, a, moves in rels:
-        # the relation as it is stored, src predicate dst — never reordered around the looked-up anchor (a reader who copied the
-        # line into a proposal got src and dst swapped when the anchor was the dst)
-        mark = lambda x: "[%s]" % x if x == a else x
-        print("  %s  %s %s %s%s" % (rid, mark(src), pred, mark(dst), "  — changing this anchor makes the relation stale" if moves else ""))
-    print("%d relation(s) on %s — an edit here and their update are one piece of work, not two" % (len(rels), args.path))
+    stale, broken, unjudged, _ = compute_impact(args.target, d, persist=False)
+    state = {x["id"]: "STALE now (%s changed since confirmed)" % x["because"] for x in stale}
+    state.update({x["id"]: "BROKEN now (%s gone)" % ", ".join(x["dead"]) for x in broken})
+    state.update({i: "unjudged (no `seen`, no baseline)" for i in unjudged if i not in state})
+    concepts = {"concept:" + c["name"]: c for c in d["concepts"]}
+    groups = {}
+    for item in rels:
+        groups.setdefault(item[2], []).append(item)
+    for other in sorted(groups):
+        c = concepts.get(other)
+        if c is not None:
+            print("%s — means: %s" % (other, " ".join(c.get("means", "").split())))
+        elif other.startswith("concept:"):
+            print("%s — no such concept is declared" % other)
+        else:
+            print(other)
+        for r, a, _, moves in groups[other]:
+            # the relation as it is stored, src predicate dst — never reordered around the looked-up anchor (a reader who copied
+            # the line into a proposal got src and dst swapped when the anchor was the dst)
+            mark = lambda x: "[%s]" % x if x == a else x
+            print("  %s  %s %s %s — %s%s" % (r["id"], mark(r["src"]), r["predicate"], mark(r["dst"]), state.get(r["id"], "fresh"),
+                                            "; changing this anchor makes the relation stale" if moves else ""))
+            print("      \"%s\" — %s" % ("\n        ".join(r.get("evidence", "").split("\n")), who_signed(r.get("confirmed"))))
+    print("%d relation(s) on %s, reaching %d concept(s) or anchor(s) — an edit here and their update are one piece of work, not two"
+          % (len(rels), args.path, len(groups)))
     return 0
 
 
@@ -1811,7 +1878,7 @@ def main(argv=None):
             signing(p)
             p.add_argument("--evidence", default=None, help="the sentence that holds now, when the old quote is gone from the text (one id at a time)")
         if name == "lookup":
-            p.add_argument("path", help="a file (as registered): print the confirmed relations standing on it before you touch it")
+            p.add_argument("path", help="a file (as registered): print the confirmed relations standing on it — the concept's meaning, the quote, who confirmed, fresh or stale — before you touch it")
         if name == "move":
             p.add_argument("ids", nargs="*", default=None, help="broken relations to move (default: every broken one)")
             signing(p)

@@ -1,6 +1,6 @@
 {
   "name": "mangsang",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "engines": {
     "python": ">=3.11"
   },
@@ -24,5 +24,22 @@
       "Write"
     ],
     "defaultPrompt": "Use mangsang on this project."
+  },
+  "reads": {
+    "file": [
+      "python3",
+      "{plugin:mangsang}/mangsang.py",
+      "lookup",
+      "{path}",
+      "--target",
+      "{target}"
+    ],
+    "decision": [
+      "python3",
+      "{plugin:mangsang}/mangsang.py",
+      "cq",
+      "--target",
+      "{target}"
+    ]
   }
 }

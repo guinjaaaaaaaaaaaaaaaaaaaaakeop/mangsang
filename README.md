@@ -103,7 +103,12 @@ name on their yes to the agent's own proposal — `approval-of`)
 ### `/mangsang:lookup`
 
 Before touching a file: the confirmed relations standing on it, and which ones the edit would make stale — size the
-task as the edit plus those relations. Read-only
+task as the edit plus those relations. Grouped by what each relation reaches: a concept's meaning once, then each
+relation with its anchor, predicate, the confirmed quote, who confirmed it (`by NAME`, or `delegated:` and the reason's
+first clause) and whether it is fresh, stale or broken now — what an agent otherwise opens `concepts/` and `relations/`
+for by hand. A file with nothing on it says which case it is: not registered (and, when git tracks it beside
+registered files, that the net cannot see it and how to register it), registered with no relations, or not in the
+tree. Read-only
 
 ### `/mangsang:move`
 
