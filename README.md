@@ -49,7 +49,9 @@ turn. The same id with other text is refused — a correction is a new source.
 The net's own nodes: `add NAME --means "..."` declares one (with `--by` or `--delegated`); `revise` changes its
 meaning and stales every projection; `reaffirm` says the sentence still holds after a projection of it was retired;
 `rename` moves the name under every relation and every question that names it, in one command; `list` shows each
-concept with its projections, and what it owes
+concept with its projections, and what it owes; `list --brief` is the net as a map in a line or two — `N concept(s):
+a, b, … ; M open question(s)` (names cut to fit ~300 characters), then how many relations are stale or broken when any
+are — what a reader (jokbo) shows an agent at session start; an empty net prints nothing
 
 A concept's sentence is affirmed over the projections it had. Retiring one leaves the concept owing a re-read (`owes`):
 the questions it answers are FAILED until `revise` gives it a new sentence or `reaffirm` (signed) says the old one still
@@ -109,6 +111,12 @@ first clause) and whether it is fresh, stale or broken now — what an agent oth
 for by hand. A file with nothing on it says which case it is: not registered (and, when git tracks it beside
 registered files, that the net cannot see it and how to register it), registered with no relations, or not in the
 tree. Read-only
+
+`lookup PATH --brief` is the same fact for an agent's first look at a file: one line per concept (or other end) the
+file's relations reach — `concept:NAME — <its meaning's first sentence, cut at ~160 characters>`, with `(N relation(s);
+K stale)` when any is stale — at most five lines, no ids, no quotes. A tracked file the net does not see gets one line
+saying so; registered with nothing on it, or not in the tree, prints nothing. Whole outputs pasted into an agent's
+context went unread (~43k characters in one cycle); a line per fact is read
 
 ### `/mangsang:move`
 
@@ -360,6 +368,10 @@ what they mean; it reads their `propagates`, the same rule `impact` judges stale
 
 - `judge_worker.py` starts its host session through `hostcall.py` — one host call for every worker of this family (hunsu's judge, mangsang's judge, dwitbuk's eyes,
   hacheong's members), vendored: the same file in each plugin, since a plugin imports no other plugin. The umbrella checkout's `tools/same-file.py` says when the copies drift.
+
+- mangsang declares `reads` in its plugin.json — what a reader (jokbo) runs, kind -> argv: `file` (`lookup {path}`),
+  `decision` (`cq`), `note` (`lookup {path} --brief`: a line per fact at an agent's first look at a file) and `map`
+  (`concept list --brief`: the net in a line or two at session start).
 
 - mangsang declares `records: ["mangsang/", ".mangsang/"]` in its plugin.json; hunsu's lock carries it as `record-paths`, so the
   runner, the builder and the eyes leave the record alone without naming it.

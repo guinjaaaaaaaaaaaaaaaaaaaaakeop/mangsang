@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mangsang",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "engines": {
     "python": ">=3.9"
   },
@@ -23,6 +23,24 @@
       "python3",
       "{plugin:mangsang}/mangsang.py",
       "cq",
+      "--target",
+      "{target}"
+    ],
+    "note": [
+      "python3",
+      "{plugin:mangsang}/mangsang.py",
+      "lookup",
+      "{path}",
+      "--brief",
+      "--target",
+      "{target}"
+    ],
+    "map": [
+      "python3",
+      "{plugin:mangsang}/mangsang.py",
+      "concept",
+      "list",
+      "--brief",
       "--target",
       "{target}"
     ]
