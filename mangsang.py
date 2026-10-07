@@ -9,6 +9,9 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 HTML and Astro/Vue/Svelte, SQL, Prisma/GraphQL/proto, Dockerfile; `file:key` for JSON, YAML, TOML, INI and
                                 .env files, nested keys dotted — see anchors.py for the one rule behind them)
   source add ID --file F|- --speaker WHO [--locator L] [--replies-to ID]
+  source add ID --from-transcript JSONL --match PHRASE|--turn ID [--kind person|agent|question|answer]
+                                (a typed reply right after the agent's turn is a person turn and an answer both; a miss says which turns
+                                are there, or where in the record the phrase is, and the ids to name one by)
                                 keep what was said or written, verbatim and unchangeable, as the anchor `source:ID` — a concept
                                 grounded in a conversation relates to it like to any projection, with a quote as evidence. Both
                                 sides of a conversation are sources: "yes, both" means nothing without the question it answers
@@ -22,9 +25,13 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
   impact [--findings] [--only ANCHOR-PREFIX...]
                                 observe, then events x relations -> stale / broken. exit 1 when anything is unresolved (usable as a check);
                                 --only judges only relations touching those anchors (a slice's check); --findings prints `dwitbuk/findings@1`
-  judge request --out DIR [--ids ID...]   the stale relations as a packet: the possibly-stale text, the changed text, the quote confirmed
-  judge consume --response FILE --by WHO  the judge's verdicts: still-true -> re-confirmed by delegation (recorded as such), drifted (with a
-                                quote from the text) and cannot-tell -> printed for a human; judge_worker.py runs one packet
+  judge request --out DIR [--ids ID...]   the stale relations as a packet: the possibly-stale text, the changed text, the quote confirmed.
+                                DIR is a directory (an existing one is used as is): the packet is DIR/judge-request.json, its path printed
+  judge consume --response FILE [--by WHO [--approved-in source:ID]] [--judge "HOST MODEL"]
+                                the judge's verdicts: still-true -> re-confirmed as `{judge: "<host> <model>", applied-by: ...}` — the
+                                judge from the response's worker record, the applier the agent running this unless --by names one; a
+                                person's name there, at an agent's hand, needs --approved-in (where they read the verdicts). drifted
+                                (with a quote from the text) and cannot-tell -> printed for a human; judge_worker.py runs one packet
   cq [run]                      ask the competency questions; audits both directions — a question whose presuppositions fail is UNANSWERABLE
                                 (the model moved out from under it), model content no question examines is UNQUESTIONED; exit 1 on any of the three.
                                 A question declared `{"kind": "open"}` is asked before anything answers it: listed OPEN, an observation, not a failure
@@ -38,13 +45,15 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
   lookup <path>                 before touching a file: the confirmed relations standing on it, grouped by concept (its meaning once),
                                 each with its quote, its confirmer and fresh/stale now; or which of not registered / registered with
                                 nothing on it / not in the tree (read-only) — size the edit as code + relations
-  lookup <path> --brief         the same as at most five lines, one per concept (or other end) reached: its meaning's first sentence,
+  lookup <path> --brief         the same as at most five lines, one per concept (or other end) reached: its meaning's first sentence
+                                (and the next, when the first is a bare name like "첫 화면."), cut at ~160 characters,
                                 and `(N relation(s); K stale)` when any is stale; no ids, no quotes. A tracked file the net does not see
                                 gets one line; registered with nothing on it, or not in the tree, prints nothing — a reader's first look
   move [ID...] --by NAME | --delegated WHY [--dry-run]   after a refactoring: a broken relation whose dead `file:symbol` / `file#heading` has exactly one
                                 new home is retired (why: moved) and re-confirmed there with the same evidence; ambiguous or homeless ones are left for a person
-  reconfirm <id>... --by NAME | --delegated WHY [--evidence "..."]
-                                a human re-read a stale relation and it still holds: `seen` becomes what the tree has now; the evidence must still be in the text
+  reconfirm <id>... [--by NAME | --delegated WHY] [--evidence "..."]
+                                a re-read stale relation still holds: `seen` becomes what the tree has now; the evidence must still be in the text.
+                                Run by an agent with neither flag, it is the agent's own re-read, signed `{agent: ...}` — never a person's name
 
 Two places. `mangsang/` is the project's knowledge (registry, vocabulary, cq, one file per relation) — committed, changed only when a human
 confirms. `.mangsang/` holds this machine's baseline for `observe` — not committed, and nothing a judgment depends on: staleness is judged
@@ -71,6 +80,18 @@ DELEGATION_REF = re.compile(r"^D-[0-9a-f]+$")
 APPROVED_IN = None   # set by main when an agent signs in a person's name: the source where that person approved
 APPROVAL_OF = None   # and, when that approval answers an agent's own words (a proposal), the source it answers
 AGENT_ENV = ("CLAUDECODE", "CODEX_THREAD_ID", "AGENT_WORKER")
+def running_agent():
+    """The agent running this command, named from its host's env (None at a person's terminal). Not a person's name: what an
+    agent does on its own is signed as the agent's, so it stops wearing the person's."""
+    if os.environ.get("CODEX_THREAD_ID"):
+        return "Codex (thread %s)" % os.environ["CODEX_THREAD_ID"]
+    if os.environ.get("CLAUDECODE"):
+        return "Claude Code"
+    if os.environ.get("AGENT_WORKER"):
+        return "an agent worker"
+    return None
+
+
 RECORD_KINDS = ("relations", "retired", "concepts", "cq", "sources")   # the folders whose files are record objects: each says which mangsang wrote it
 
 
@@ -529,14 +550,28 @@ def what_changed(target, r, anchor):
     return "".join(out)
 
 
+def unread_by_a_person(sig):
+    """How a relation was re-confirmed when no person read it (None when one did): by delegation, by a judge's verdict
+    applied, or by the agent on its own."""
+    if sig.get("delegated"):
+        dl = sig["delegated"]
+        return "by delegation: %s" % (("ref " + dl["ref"]) if isinstance(dl, dict) else dl)
+    if sig.get("judge") and not sig.get("approved-in"):
+        return "by the judge %s, applied by %s: %s" % (sig["judge"], sig.get("applied-by") or "?", sig.get("why", ""))
+    if sig.get("agent"):
+        return "by the agent %s, on its own" % sig["agent"]
+    return None
+
+
 def cmd_impact(args):
     d = decl(args.target)
     stale, broken, unjudged, files = compute_impact(args.target, d, args.only)   # answers and leaves nothing behind: the verdict is what it prints
     if args.findings:
         findings = [{"kind": "stale", "where": "%s %s" % (x["id"], x["stale"]), "text": "stale because %s changed since it was confirmed" % x["because"]} for x in stale]
         findings += [{"kind": "broken", "where": "%s %s" % (x["id"], ", ".join(x["dead"])), "text": "dead anchor(s): the relation points at nothing"} for x in broken]
-        findings += [{"kind": "delegated", "where": "%s %s %s %s" % (r["id"], r["src"], r["predicate"], r["dst"]), "text": "re-confirmed by delegation: %s" % (("ref " + r["confirmed"]["delegated"]["ref"]) if isinstance(r["confirmed"]["delegated"], dict) else r["confirmed"]["delegated"])}
-                     for r in d["relations"] if isinstance(r.get("confirmed"), dict) and r["confirmed"].get("delegated")]
+        # no person read these: a delegation, a judge's verdict applied, an agent's own re-read — observations of the record
+        findings += [{"kind": "delegated", "where": "%s %s %s %s" % (r["id"], r["src"], r["predicate"], r["dst"]), "text": "re-confirmed %s" % unread_by_a_person(r["confirmed"])}
+                     for r in d["relations"] if isinstance(r.get("confirmed"), dict) and unread_by_a_person(r["confirmed"])]
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "standing": True, "findings": findings}, ensure_ascii=False, indent=1))
         return 1 if stale or broken else 0
     for x in stale:
@@ -566,6 +601,12 @@ def cmd_judge(args):
     still holds; mangsang validates (a drifted verdict quotes the text as it is) and applies only what is safe to apply."""
     d = decl(args.target)
     if args.mode == "request":
+        # --out is a directory: the packet is written into it as judge-request.json and the response goes beside it. Seen:
+        # `--out .../judge-req.json` made a directory of that name, and the agent's next step crashed reading it as a file
+        if os.path.isfile(args.out) or (args.out.lower().endswith(".json") and not os.path.isdir(args.out)):
+            raise SystemExit("judge request --out DIR takes a directory (the packet is written into it as judge-request.json, the response "
+                             "goes beside it as judge-response.json); %s is a file name — give the directory, e.g. --out %s"
+                             % (args.out, os.path.dirname(args.out) or "."))
         stale, broken, unjudged, files = compute_impact(args.target, d)
         rels = {r["id"]: r for r in d["relations"]}
         wanted = set(args.ids or [])
@@ -609,15 +650,39 @@ def cmd_judge(args):
                                    "verbatim from stale_text, and why in evidence from because_text. cannot-tell: say what the texts do not settle. "
                                    "Judge only the relations in the request. Similar names are not evidence. Read files under target if you must. Change no files.")}
         os.makedirs(args.out, exist_ok=True)
-        save(os.path.join(args.out, "judge-request.json"), packet)
-        print("judge packet: %d stale relation(s) -> %s. Run judge_worker.py on it, then `judge consume --response %s --by WHO`"
-              % (len(items), os.path.join(args.out, "judge-request.json"), os.path.join(args.out, "judge-response.json")))
+        packet_path, response_path = os.path.join(args.out, "judge-request.json"), os.path.join(args.out, "judge-response.json")
+        save(packet_path, packet)
+        print("judge packet: %d stale relation(s)\n  packet:   %s\n  response: %s (judge_worker.py writes it there; consume reads the packet beside it)\n"
+              "next: python3 %s --request %s --response %s\n      mangsang judge consume --response %s"
+              % (len(items), packet_path, response_path, os.path.join(os.path.dirname(os.path.abspath(__file__)), "judge_worker.py"),
+                 packet_path, response_path, response_path))
         return 0
     # consume
+    if not args.response:
+        raise SystemExit("judge consume --response FILE: the judgment judge_worker.py wrote (beside its judge-request.json)")
     resp = load(args.response)
     req = load(os.path.join(os.path.dirname(os.path.abspath(args.response)), "judge-request.json"))
     if resp.get("artifact-type") != JUDGMENT or not isinstance(resp.get("items"), list) or not req:
         raise SystemExit("a judgment is %s with `items`, next to its judge-request.json" % JUDGMENT)
+    # the judgment's author is the judge — the model that read the texts, from the worker's own record of the call; who
+    # applied it is a second fact. On guin-site 120/120 and 65/65 still-true were applied as `judge <owner>`, rounds the
+    # owner never read: a person's name goes on a judgment only with the source where that person read it (--approved-in)
+    worker = resp.get("worker") if isinstance(resp.get("worker"), dict) else {}
+    judge = args.judge or " ".join(str(x) for x in (worker.get("host"), worker.get("model")) if x)
+    if not judge:
+        raise SystemExit("the response has no worker record (judge_worker.py writes one): say which model judged, --judge \"<host> <model>\"")
+    roster = people(args.target) or {}
+    agents = tuple(roster.get("agents") or ()) + ("Claude", "Codex", "an agent")
+    if args.by and not str(args.by).startswith(agents):
+        sign_as_agent(args)   # a person's name: at an agent's hand, only with the source where that person read the verdicts
+        applied_by = {"applied-by": args.by, **({"approved-in": APPROVED_IN} if APPROVED_IN else {})}
+    elif args.by:
+        applied_by = {"applied-by": args.by}
+    elif running_agent():
+        applied_by = {"applied-by": running_agent()}
+    else:
+        raise SystemExit("say who applies the judge's verdicts: --by NAME (run by an agent: --by is yours to omit, or a person's "
+                         "name with --approved-in source:ID where they read the verdicts)")
     asked = {i["relation"]: i for i in req.get("items", [])}
     rels = {r["id"]: r for r in d["relations"]}
     norm = lambda t: " ".join(str(t).split())
@@ -639,15 +704,17 @@ def cmd_judge(args):
         if it["verdict"] == "still-true":
             # the one safe application: what a human would do after reading — recorded as a delegation, never as a person's confirmation
             if all(split_anchor(a)[0] in files and split_anchor(a)[1] in files[split_anchor(a)[0]] for a in (r["src"], r["dst"])) and quoted(args.target, r["evidence"], r["src"], r["dst"]):
+                was_seen = r.get("seen")
                 r["seen"] = {a: files[split_anchor(a)[0]][split_anchor(a)[1]] for a in (r["src"], r["dst"])}
-                r["confirmed"] = {"delegated": "judge %s: %s" % (args.by, it["evidence"][:200])}
+                r.setdefault("history", []).append({"confirmed": r.get("confirmed"), "seen": was_seen, "evidence": r["evidence"]})
+                r["confirmed"] = {"judge": judge, **applied_by, "why": it["evidence"][:200]}
                 save(os.path.join(args.target, DECL, "relations", r["id"] + ".json"), r)
                 applied.append(r["id"])
             else:
                 rejected.append("%s: still-true, but its quote is no longer in the text — a human re-reads (`reconfirm --evidence`)" % r["id"])
-    save(os.path.join(args.target, OBS, "judgments.json"), {"artifact-type": JUDGMENT, "by": args.by, "items": kept, "rejected": rejected, "applied": applied})
+    save(os.path.join(args.target, OBS, "judgments.json"), {"artifact-type": JUDGMENT, "judge": judge, **applied_by, "items": kept, "rejected": rejected, "applied": applied})
     for it in kept:
-        print("  %-11s %s%s — %s" % (it["verdict"], it["relation"], (" (re-confirmed by delegation)" if it["relation"] in applied else ""), it["evidence"][:100]))
+        print("  %-11s %s%s — %s" % (it["verdict"], it["relation"], (" (re-confirmed: judged by %s, applied by %s)" % (judge, applied_by["applied-by"]) if it["relation"] in applied else ""), it["evidence"][:100]))
         if it["verdict"] == "drifted":
             print("      quote: %s" % it["quote"][:120])
     for line in rejected:
@@ -1121,8 +1188,10 @@ def cmd_retire(args):
 
 def cmd_reconfirm(args):
     """A stale relation that still holds after someone read it. Only what the tree has now is recorded; a dead anchor is refused (retire it)."""
-    if not (args.by or args.delegated):
+    if not (args.by or args.delegated or running_agent()):
         raise SystemExit("say who re-read it (--by) or why the human delegated it (--delegated)")
+    # an agent that re-read it itself signs as itself: {"agent": ...} — no person's name, no made-up delegation
+    sig = signature(args.by, args.delegated) if (args.by or args.delegated) else {"agent": running_agent()}
     d = decl(args.target)
     files, _ = snapshot(args.target, d["registry"])
     root = os.path.join(args.target, DECL, "relations")
@@ -1148,9 +1217,9 @@ def cmd_reconfirm(args):
         # and how many times this relation has been re-read stay in the file (they used to be overwritten — a record with no history)
         r.setdefault("history", []).append(was)
         r["seen"] = {a: files[split_anchor(a)[0]][split_anchor(a)[1]] for a in (r["src"], r["dst"])}
-        r["confirmed"] = signature(args.by, args.delegated)
+        r["confirmed"] = dict(sig)
         save(os.path.join(root, rid + ".json"), r)   # save_decl never rewrites an existing relation; this is the one command that does
-        print("re-confirmed %s (%s %s %s)" % (rid, r["src"], r["predicate"], r["dst"]))
+        print("re-confirmed %s (%s %s %s)%s" % (rid, r["src"], r["predicate"], r["dst"], " as %s's own re-read — no person's" % sig["agent"] if sig.get("agent") else ""))
     return 0
 
 
@@ -1167,6 +1236,10 @@ def who_signed(sig):
     sig = sig or {}
     if sig.get("by"):
         return "by %s" % sig["by"] + (" (approved in %s)" % sig["approved-in"] if sig.get("approved-in") else "")
+    if sig.get("judge"):
+        return "judged by %s, applied by %s" % (sig["judge"], sig.get("applied-by") or "?") + (" (read in %s)" % sig["approved-in"] if sig.get("approved-in") else "")
+    if sig.get("agent"):
+        return "by the agent %s, on its own" % sig["agent"]
     dl = sig.get("delegated")
     if isinstance(dl, dict):
         return "delegated: ref %s" % dl.get("ref", "?")
@@ -1248,12 +1321,20 @@ def cmd_lookup(args):
     return 0
 
 
+BRIEF_AT_LEAST = 10   # a first sentence shorter than this ("첫 화면.", five characters) names a thing without saying it: the next follows
+
+
 def first_sentence(text, limit=160):
-    """A concept's `means`, cut to its first sentence and to one short line — the whole sentence is in the record."""
+    """A concept's `means`, cut to its first sentence and to one short line — the whole sentence is in the record. A first
+    sentence too short to say anything ("첫 화면." — the home page, of what?) is followed by the next, the line cut at the limit."""
     text = " ".join(str(text).split())
-    m = re.search(r"[.!?。](\s|$)", text)
-    text = text[:m.end()].rstrip() if m else text
-    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+    out, rest = "", text
+    while rest and len(out) < BRIEF_AT_LEAST:
+        m = re.search(r"[.!?。](\s|$)", rest)
+        piece = rest[:m.end()].rstrip() if m else rest
+        out = (out + " " + piece).strip() if out else piece
+        rest = rest[m.end():].strip() if m else ""
+    return out if len(out) <= limit else out[:limit - 1].rstrip() + "…"
 
 
 BRIEF_LINES = 5
@@ -1390,19 +1471,31 @@ def cmd_move(args):
     return 0 if not refused else 1
 
 
-def transcript_turns(path):
-    """A host session transcript (Claude Code's JSONL) as the turns a person would recognize: what the person typed, what the
-    agent answered in text (blocks of one message joined), each multiple-choice question it asked and the answer it got —
-    each as the host recorded it, with its id, time and (for the agent) model. Tool traffic other than questions is left out:
-    it is how the agent worked, not what was said."""
-    turns, agent = [], {}
+def transcript_records(path):
+    """The host's records, one JSON object per line, in order (a line that is not one is skipped)."""
     for line in io.open(path, encoding="utf-8", errors="replace"):
         try:
             d = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(d, dict) or d.get("isSidechain"):
+        if isinstance(d, dict):
+            yield d
+
+
+def transcript_turns(path):
+    """A host session transcript (Claude Code's JSONL) as the turns a person would recognize: what the person typed, what the
+    agent answered in text (blocks of one message joined), each multiple-choice question it asked and the answer it got —
+    each as the host recorded it, with its id, time and (for the agent) model. Tool traffic other than questions is left out:
+    it is how the agent worked, not what was said. A turn the person typed right after the agent's turn is also an answer
+    to it (`answers`: that turn's id) — "ㄱㄱ" and "1번" are answers as much as a choice picked in a question is."""
+    turns, agent, n = [], {}, -1
+    for n, d in enumerate(transcript_records(path)):
+        if d.get("isSidechain"):
             continue
+        for t in turns[::-1]:   # each turn knows its record's place, so a phrase found elsewhere can be shown among its neighbours
+            if "n" in t:
+                break
+            t["n"] = n - 1
         msg, when, uid = d.get("message") or {}, d.get("timestamp"), d.get("uuid")
         c = msg.get("content")
         if d.get("type") == "user" and isinstance(c, str) and not d.get("isMeta"):
@@ -1430,8 +1523,87 @@ def transcript_turns(path):
                     agent.setdefault("asks", {})[x.get("id")] = True
                     turns.append({"kind": "question", "text": json.dumps(x.get("input"), ensure_ascii=False, indent=1), "uuid": uid, "at": when,
                                   "model": msg.get("model")})
+    for t in turns[::-1]:
+        if "n" in t:
+            break
+        t["n"] = n
     host_notes = ("<task-notification>", "<local-command", "<command-name>", "<system-reminder>", "[Request interrupted")
-    return [t for t in turns if t["text"].strip() and not (t["kind"] == "person" and t["text"].lstrip().startswith(host_notes))]
+    turns = [t for t in turns if t["text"].strip() and not (t["kind"] == "person" and t["text"].lstrip().startswith(host_notes))]
+    for before, t in zip([None] + turns, turns):
+        if t["kind"] == "person" and before and before["kind"] in ("agent", "question"):
+            t["answers"] = before["uuid"]
+    return turns
+
+
+def turn_is(t, kind):
+    """--kind KIND: a typed reply right after the agent's turn is a `person` turn and an `answer` both."""
+    return not kind or t["kind"] == kind or (kind == "answer" and t["kind"] == "person" and bool(t.get("answers")))
+
+
+def record_place(d):
+    """Where in the host's record a phrase sits when it is in no turn: the agent's thinking, a tool call, a tool's output…"""
+    msg = d.get("message") or {}
+    c = msg.get("content")
+    if d.get("isSidechain"):
+        return "a subagent's side conversation"
+    if d.get("type") == "assistant" and isinstance(c, list):
+        kinds = [x.get("type") for x in c if isinstance(x, dict)]
+        if "tool_use" in kinds:
+            return "the agent's %s call" % next(x.get("name") for x in c if isinstance(x, dict) and x.get("type") == "tool_use")
+        if "thinking" in kinds:
+            return "the agent's thinking (never shown as said)"
+    if d.get("type") == "user" and isinstance(c, list) and any(isinstance(x, dict) and x.get("type") == "tool_result" for x in c):
+        return "a tool's output"
+    if d.get("type") == "user" and (d.get("isMeta") or isinstance(c, str)):
+        return "a host note (a command, a reminder, a notification)"
+    return "the host's %s record" % (d.get("type") or "")
+
+
+def strings_in(x):
+    if isinstance(x, str):
+        yield x
+    elif isinstance(x, dict):
+        for v in x.values():
+            yield from strings_in(v)
+    elif isinstance(x, list):
+        for v in x:
+            yield from strings_in(v)
+
+
+def turn_line(t):
+    return "  %s %s at %s%s: %s" % (t["kind"], t["uuid"], t["at"], " (answers %s)" % t["answers"] if t.get("answers") else "",
+                                    " ".join(t["text"].split())[:80])
+
+
+def why_no_turn(path, turns, match, turn_id, kind):
+    """Nothing matched: say what the transcript has there — turns of another kind that contain the phrase, or the record it
+    is in (thinking, a tool call) and the turns around it — and how to name one. "found 0 turn(s)" said none of this."""
+    out = []
+    asked = ("--match %r" % match if match else "") + (" --turn %s" % turn_id if turn_id else "") + (" --kind %s" % kind if kind else "")
+    near = [t for t in turns if (not match or match in t["text"]) and (not turn_id or t["uuid"] == turn_id)]
+    if near:
+        out.append("%s: no %s turn — the turn(s) there are of another kind; name one with --kind KIND or --turn ID:" % (asked.strip(), kind))
+        out += [turn_line(t) for t in near[-5:]]
+        return "\n".join(out)
+    found = [(n, d) for n, d in enumerate(transcript_records(path))
+             if (turn_id and d.get("uuid") == turn_id) or (match and any(match in x for x in strings_in(d.get("message") or d)))]
+    if found:
+        # a tool call often holds the phrase only because the agent passed it (this very command, or a grep for it): the
+        # other places say more, so the turns shown are around the first of those
+        places = {}
+        for n, d in found:
+            places.setdefault(record_place(d), []).append(d.get("uuid"))
+        out.append("%s: found in no turn — it is in %s; none of that is something said." % (asked.strip(), "; ".join(
+            "%s (%s)" % (k, ", ".join(v[:2]) + (" and %d more" % (len(v) - 2) if len(v) > 2 else "")) for k, v in places.items())))
+        n = next((n for n, d in found if d.get("type") != "assistant" or "call" not in record_place(d)), found[0][0])
+        around = [t for t in turns if t["n"] < n][-2:] + [t for t in turns if t["n"] > n][:2]
+        if around:
+            out.append("the turns around it — keep the one that was said, by --turn ID:")
+            out += [turn_line(t) for t in around]
+        return "\n".join(out)
+    out.append("%s: nothing in this transcript has it — is it the session the words were said in? The latest turns, by --turn ID:" % asked.strip())
+    out += [turn_line(t) for t in turns[-3:]]
+    return "\n".join(out)
 
 
 def people(target):
@@ -1503,19 +1675,22 @@ def cmd_source(args):
         # tell those apart, the host's id can
         if not (args.match or args.turn):
             raise SystemExit("--from-transcript needs --match \"a phrase from the turn\" (or --turn ID) — the one turn that contains it is kept, whole")
-        hits = [t for t in transcript_turns(args.from_transcript) if (not args.match or args.match in t["text"])
-                and (not args.turn or t["uuid"] == args.turn) and (not args.kind or t["kind"] == args.kind)]
+        turns = transcript_turns(args.from_transcript)
+        hits = [t for t in turns if (not args.match or args.match in t["text"]) and (not args.turn or t["uuid"] == args.turn) and turn_is(t, args.kind)]
+        if not hits:
+            raise SystemExit(why_no_turn(args.from_transcript, turns, args.match, args.turn, args.kind))
         if len(hits) != 1:
-            raise SystemExit("%s found %d turn(s) in the transcript%s — give a phrase that only the turn you mean contains, or --turn ID "
-                             "(the latest are listed last)" % ("--turn" if args.turn and not args.match else "--match", len(hits),
-                             "".join("\n  %s %s at %s: %s" % (t["kind"], t["uuid"], t["at"], " ".join(t["text"].split())[:80]) for t in hits[-5:])))
+            raise SystemExit("%s found %d turn(s) in the transcript — give a phrase that only the turn you mean contains, or --turn ID "
+                             "(the latest are listed last):\n%s" % ("--turn" if args.turn and not args.match else "--match", len(hits),
+                             "\n".join(turn_line(t) for t in hits[-5:])))
         turn = hits[0]
         if turn["kind"] in ("agent", "question"):
             args.speaker = args.speaker or "Claude (%s)" % (turn.get("model") or "unknown model")
         elif not args.speaker:
             raise SystemExit("this turn is the person's: --speaker says who they are (the name they gave, not one read from the account)")
         session = os.path.splitext(os.path.basename(args.from_transcript))[0]
-        args.locator = args.locator or "session %s, %s %s at %s" % (session, turn["kind"], turn["uuid"], turn["at"])
+        args.locator = args.locator or "session %s, %s %s at %s%s" % (session, turn["kind"], turn["uuid"], turn["at"],
+                                                                      ", answering %s" % turn["answers"] if turn.get("answers") and args.kind == "answer" else "")
         args.file = None
         text = turn["text"].replace("\r\n", "\n")
         if args.excerpt:
@@ -1573,6 +1748,10 @@ def signed(sig):
     if sig.get("by"):
         where = sig.get("approved-in")
         return "by %s" % sig["by"] + ((" (approved in `%s`%s)" % (where, ", answering the agent's `%s`" % sig["approval-of"] if sig.get("approval-of") else "")) if where else "")
+    if sig.get("judge"):
+        return "judged by %s, applied by %s" % (esc(sig["judge"]), esc(sig.get("applied-by") or "?")) + (" (read in `%s`)" % sig["approved-in"] if sig.get("approved-in") else "")
+    if sig.get("agent"):
+        return "by the agent %s, on its own" % esc(sig["agent"])
     dl = sig.get("delegated")
     why = ("ref " + dl["ref"]) if isinstance(dl, dict) else esc(dl)
     return "delegated: %s" % (why if len(why) <= 80 else why[:77] + "…")   # the whole reason is in the record; a page of twenty relations need not repeat it twenty times
@@ -1941,11 +2120,13 @@ def main(argv=None):
             p.add_argument("--show", action="store_true", help="for each stale relation, print what changed: the anchor's text when it was confirmed (from git) against now")
         if name == "judge":
             p.add_argument("mode", choices=["request", "consume"])
-            p.add_argument("--out", default="mangsang-judge")
+            p.add_argument("--out", default="mangsang-judge", help="request: a directory (created, or an existing one used as is) — the packet is written into it as judge-request.json, its path printed; not a file name")
             p.add_argument("--ids", nargs="*", default=None)
             p.add_argument("--limit", type=int, default=6000)
-            p.add_argument("--response", default=None)
-            p.add_argument("--by", default="unknown")
+            p.add_argument("--response", default=None, help="consume: the judgment judge_worker.py wrote, beside its judge-request.json")
+            p.add_argument("--by", default=None, help="consume: who applies the verdicts (default: the agent running this). A person's name, when an agent runs it, only with --approved-in")
+            p.add_argument("--approved-in", default=None, help="consume, with --by a person: source:ID where that person read the verdicts")
+            p.add_argument("--judge", default=None, help="consume: who judged, as \"<host> <model>\" — only when the response carries no worker record (a host subagent answered --prompt-only)")
         if name == "observe":
             p.add_argument("--reset", action="store_true")
             p.add_argument("--at", default=None, help="with --reset: take the baseline from git at this revision (e.g. the merge base)")
@@ -1955,6 +2136,8 @@ def main(argv=None):
         if name == "reconfirm":
             p.add_argument("ids", nargs="+")
             signing(p)
+            p.description = ("a re-read stale relation still holds. Sign --by NAME (with --approved-in source:ID when an agent runs it) or "
+                             "--delegated WHY; an agent that re-read it itself passes neither and is recorded as itself ({\"agent\": ...})")
             p.add_argument("--evidence", default=None, help="the sentence that holds now, when the old quote is gone from the text (one id at a time)")
         if name == "lookup":
             p.add_argument("path", help="a file (as registered): print the confirmed relations standing on it — the concept's meaning, the quote, who confirmed, fresh or stale — before you touch it")
@@ -1973,7 +2156,7 @@ def main(argv=None):
             p.add_argument("--from-transcript", default=None, help="a host session transcript (Claude Code JSONL): take the turn from it, verbatim, instead of --file")
             p.add_argument("--match", default=None, help="with --from-transcript: a phrase only the wanted turn contains")
             p.add_argument("--turn", default=None, help="with --from-transcript: the host's id for the turn (listed when --match finds several)")
-            p.add_argument("--kind", default=None, choices=["person", "agent", "question", "answer"], help="with --from-transcript: only turns of this kind")
+            p.add_argument("--kind", default=None, choices=["person", "agent", "question", "answer"], help="with --from-transcript: only turns of this kind — `answer` is a choice picked in a question or a reply the person typed right after the agent's turn (that one is `person` too)")
             p.add_argument("--excerpt", action="append", default=None, help="with --from-transcript: keep only these sentences of the turn (repeatable), verbatim and whole — when the turn clearly splits into what the record needs and what it does not")
         if name == "report":
             p.add_argument("--out", default=None, help="write the Markdown page here (never into mangsang/, .mangsang/ or a registered file); default stdout")
@@ -1987,6 +2170,8 @@ def main(argv=None):
             p.add_argument("--brief", action="store_true", help="list: the net as a map in a line or two — concepts by name, open questions, stale relations")
             signing(p)
     args = ap.parse_args(argv)
+    global APPROVED_IN, APPROVAL_OF
+    APPROVED_IN = APPROVAL_OF = None   # one command's approval is not the next one's (main runs many times in one process: the self-check)
     if getattr(args, "by", None) and args.cmd != "judge":
         sign_as_agent(args)
     return {"register": cmd_register, "confirm": cmd_confirm, "observe": cmd_observe, "impact": cmd_impact,

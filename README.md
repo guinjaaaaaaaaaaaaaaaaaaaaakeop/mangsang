@@ -37,7 +37,12 @@ Keep what was said or written, verbatim, as the anchor `source:ID` (`add ID --fi
 [--replies-to ID]`; `-` reads stdin — or `--from-transcript SESSION.jsonl --match "phrase" [--kind
 person|agent|question|answer]`, which takes the one turn containing the phrase from the host's own session record,
 verbatim, the agent's turn under its model's name, the locator filled in; `--turn ID` names the turn by the host's id when
-a phrase cannot — a short approval recurs — and the ids are listed, latest last, when `--match` finds several). Both sides of a conversation are sources,
+a phrase cannot — a short approval recurs — and the ids are listed, latest last, when `--match` finds several). An
+answer is the person's turn after the agent's turn it replies to: a choice picked in a question, or a reply typed
+("ㄱㄱ", "1번") — a typed reply right after the agent's turn matches `--kind person` and `--kind answer` both, and its
+locator names the turn it answers. When nothing matches, the error says what is there: turns of another kind that
+contain the phrase, or where in the record it is (the agent's thinking, a tool call, a tool's output — none of it said)
+and the turns around it, each with the id to pass as `--turn`. Both sides of a conversation are sources,
 and an answer is kept with the turn it answers. `--excerpt "sentence"` (repeatable) keeps only those sentences of the turn —
 whole sentences, verbatim, a cut mid-sentence refused, parts that sat side by side keeping their spacing — when a turn clearly splits into what the record needs and what
 it does not (an approval followed by a new request); the source says it is an excerpt, and its locator names the whole
@@ -75,7 +80,8 @@ Fingerprint every anchor; `--reset` takes a new baseline, `--reset --at REV` tak
 
 Report stale and broken relations; exit 1 when anything is unresolved. `--only ANCHOR-PREFIX..` judges only the
 relations touching those anchors — a slice's check; the whole-tree invariant belongs to the merge and goal checks.
-`--findings` prints `dwitbuk/findings@1` (stale, broken, and relations re-confirmed by delegation). `--show` prints,
+`--findings` prints `dwitbuk/findings@1` (stale, broken, and — as `delegated`, an observation — relations re-confirmed
+with no person reading them: by delegation, by a judge's verdict applied, or by an agent on its own). `--show` prints,
 for each stale relation, what changed: the anchor's text as it was when the relation was confirmed (from git, the
 commit that last wrote the relation) against now; `reconfirm` prints the same before it records
 
@@ -85,9 +91,16 @@ The judge round for stale relations: `request` packs, per relation, the text tha
 the change itself (the diff since the confirming commit, when git has it) with the declarations the changed side reads
 now — a function stale because its constant moved shows the constant, not two unchanged texts — and the quote confirmed;
 when the stale side is a concept, the item is marked and the sentence under judgment is the concept's whole meaning, the
-quote only context; `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
-quote the stale text verbatim) and applies only still-true — as a delegation, recorded on the relation and reported to
-the reviewer. Drifted and cannot-tell wait for a person
+quote only context. `--out DIR` is a directory (an existing one is used as is; a name ending in `.json` is refused, since
+the packet is written into it): the packet is `DIR/judge-request.json`, and `request` prints its path, the response's,
+and the two commands to run next. `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
+quote the stale text verbatim) and applies only still-true, recorded on the relation as
+`{"judge": "<host> <model>", "applied-by": "<who>", "why": "<the judge's evidence>"}` and reported to the reviewer. The
+judgment's author is the judge — the model, from the response's worker record (`--judge "<host> <model>"` when there is
+none, e.g. a host subagent answered `--prompt-only`); who applied it is a second fact: the agent running `consume` by
+default, or `--by NAME`. A person's name there, at an agent's hand, needs `--approved-in source:ID`, the turn where that
+person read the verdicts — on guin-site 120 of 120 and 65 of 65 still-true were applied in the owner's name, rounds the
+owner never read. Drifted and cannot-tell wait for a person
 
 ### `/mangsang:cq`
 
@@ -106,14 +119,15 @@ name on their yes to the agent's own proposal — `approval-of`)
 
 Before touching a file: the confirmed relations standing on it, and which ones the edit would make stale — size the
 task as the edit plus those relations. Grouped by what each relation reaches: a concept's meaning once, then each
-relation with its anchor, predicate, the confirmed quote, who confirmed it (`by NAME`, or `delegated:` and the reason's
-first clause) and whether it is fresh, stale or broken now — what an agent otherwise opens `concepts/` and `relations/`
+relation with its anchor, predicate, the confirmed quote, who confirmed it (`by NAME`, `judged by <host> <model>, applied by
+WHO`, `by the agent NAME, on its own`, or `delegated:` and the reason's first clause) and whether it is fresh, stale or broken now — what an agent otherwise opens `concepts/` and `relations/`
 for by hand. A file with nothing on it says which case it is: not registered (and, when git tracks it beside
 registered files, that the net cannot see it and how to register it), registered with no relations, or not in the
 tree. Read-only
 
 `lookup PATH --brief` is the same fact for an agent's first look at a file: one line per concept (or other end) the
-file's relations reach — `concept:NAME — <its meaning's first sentence, cut at ~160 characters>`, with `(N relation(s);
+file's relations reach — `concept:NAME — <its meaning's first sentence, cut at ~160 characters>` (a first sentence that is
+only a name, like "첫 화면.", is followed by the next, so the line says something), with `(N relation(s);
 K stale)` when any is stale — at most five lines, no ids, no quotes. A tracked file the net does not see gets one line
 saying so; registered with nothing on it, or not in the tree, prints nothing. Whole outputs pasted into an agent's
 context went unread (~43k characters in one cycle); a line per fact is read
@@ -271,7 +285,9 @@ something someone said.
 propagates both ways (a revised meaning stales the projection; a changed projection may have outgrown the meaning);
 `references` propagates nothing.
 A relation id is the hash of (src, predicate, dst); the same relation proposed twice is a duplicate.
-Every judgment (`confirm`, `reconfirm`, `concept`, `cq`) carries `--by` or `--delegated`; a `--delegated` value that
+Every judgment (`confirm`, `reconfirm`, `concept`, `cq`) carries `--by` or `--delegated` — except a `reconfirm` an agent
+runs with neither, which is the agent's own re-read and is signed as such (`{"agent": "Claude Code"}`), so an agent that
+read the change itself does not sign in the person's name; a `--delegated` value that
 is a delegation id (`D-xxxx`, chongdae's `delegate`) is stored as `{delegated: {ref}}` — machine-readable, declared
 once, never a pasted paragraph — though mangsang does not resolve it (whose delegation it is stays the record
 reader's audit, not a coupling).
@@ -349,8 +365,8 @@ what they mean; it reads their `propagates`, the same rule `impact` judges stale
   question, asked with both quotes. A stale relation is a question for a human (or a judge role); the answer is
   `retire` or `reconfirm`, after reading.
 - Optional for a project. Absent, what it would have watched is a non-claim.
-- The judge is a proposal: still-true is applied as a delegation (`confirmed: {delegated: "judge …"}`), never as a
-  person's confirmation; drifted is a quote a person acts on. The old product's judge measured recall 1.00 /
+- The judge is a proposal: still-true is applied as the judge's (`confirmed: {judge: "<host> <model>", applied-by: …}`),
+  never as a person's confirmation; drifted is a quote a person acts on. The old product's judge measured recall 1.00 /
   specificity 1.00 on planted drift; this port is not re-measured.
 - `report --html` inlines mermaid 11.17.2, vendored unmodified under `vendor/mermaid/` (MIT; provenance and hash in
   `SOURCE.md`) — the one piece of code here not written for mangsang, pinned so that it changes only with a mangsang

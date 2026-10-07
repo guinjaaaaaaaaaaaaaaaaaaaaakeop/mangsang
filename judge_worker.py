@@ -4,7 +4,8 @@
 
 The judge is the host's model. It gets the packet on stdin (`mangsang/judge-request@1`: for each stale relation, the text that may
 be stale, the text that changed, the quote confirmed), may Read files under the packet's target, and answers `mangsang/judgment@1`.
-mangsang validates on consume: a drifted verdict must quote the stale text verbatim, and only still-true is applied — as a delegation.
+mangsang validates on consume: a drifted verdict must quote the stale text verbatim, and only still-true is applied — signed by the
+judge, as this worker's record names it (`worker`: host and model), and applied by whoever consumes it; never as a person's reading.
 """
 import argparse
 import json
