@@ -1282,7 +1282,7 @@ def test_impact_only_and_the_judge_round():
         req = json.load(open(os.path.join(d, "judge-request.json"), encoding="utf-8"))
         ids = {i["stale"]: i["relation"] for i in req["items"]}
         assert set(ids) == {"plan/PLAN.md#Q1 add", "plan/PLAN.md#Q2 list"} and "return 2" in next(i["because_text"] for i in req["items"] if i["stale"].endswith("Q1 add"))
-        write(os.path.join(d, "judge-response.json"), {"artifact-type": "mangsang/judgment@1", "non-claims": [], "items": [
+        write(os.path.join(d, "judge-response.json"), {"artifact-type": "mangsang/judgment@1", "non-claims": [], "worker": {"host": "claude-code", "model": "claude-test-1"}, "items": [
             {"relation": ids["plan/PLAN.md#Q1 add"], "verdict": "still-true", "quote": "", "evidence": "add still appends; the return value changed, not the behavior the sentence names"},
             {"relation": ids["plan/PLAN.md#Q2 list"], "verdict": "drifted", "quote": "lists.", "evidence": "list_ now returns [1] regardless of the store"},
             {"relation": "R-nope", "verdict": "still-true", "quote": "", "evidence": "x"},
@@ -1290,11 +1290,11 @@ def test_impact_only_and_the_judge_round():
         code, out = run("judge", "consume", "--response", os.path.join(d, "judge-response.json"), "--by", "test", "--target", pj.dir)
         assert code == 1 and "still-true applied 1" in out and "drifted 1" in out and "rejected 2" in out, out
         r1 = next(x for x in mangsang.decl(pj.dir)["relations"] if x["id"] == ids["plan/PLAN.md#Q1 add"])
-        assert r1["confirmed"]["delegated"].startswith("judge test:"), r1["confirmed"]
+        assert r1["confirmed"]["judge"] == "claude-code claude-test-1" and r1["confirmed"]["applied-by"] == "test", r1["confirmed"]
         code, out = run("impact", "--target", pj.dir)
         assert code == 1 and "unresolved_total = 1" in out, out   # the drifted one waits for a human
         code, out = run("impact", "--findings", "--target", pj.dir)
-        assert any(f["kind"] == "delegated" and "judge test" in f["text"] for f in json.loads(out)["findings"]), out
+        assert any(f["kind"] == "delegated" and "the judge claude-code claude-test-1, applied by test" in f["text"] for f in json.loads(out)["findings"]), out
 
 
 def test_check_coverage_and_resolved():
@@ -1434,6 +1434,139 @@ def test_a_turn_can_be_kept_as_the_sentences_that_matter():
         assert run("source", "add", "G", "--from-transcript", tr, "--turn", "u3", "--speaker", "lee", "--target", pj.dir)[0] == 0
         src = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "G.json"))
         assert src["text"] == "ㄱㄱ" and "u3" in src["locator"] and src["verbatim-from"] == "host transcript", src
+
+
+def run_as_agent(*argv):
+    """`run`, but the env says an agent is running it (Claude Code's own marker)."""
+    os.environ["CLAUDECODE"] = "1"
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            try:
+                code = mangsang.main(list(argv))
+            except SystemExit as err:
+                code = err.code if isinstance(err.code, int) else 1
+                out.write(str(err) + "\n")
+    finally:
+        os.environ.pop("CLAUDECODE", None)
+    return code, out.getvalue()
+
+
+def test_a_typed_reply_is_an_answer_and_a_miss_says_what_is_there():
+    """guin-site, 2026-10-06: `--match 'ㄱㄱ' --kind answer` and `--turn <the reply's id> --kind answer` both "found 0 turn(s)" —
+    an answer was only a choice picked in an AskUserQuestion, and the owner had typed theirs. A turn the person typed right after
+    the agent's is an answer too. And when nothing matches, the error says which turns are there (another kind) or where in the
+    record the phrase is (the agent's thinking, a tool call) and the turns around it, by id."""
+    with Project() as pj:
+        tr = os.path.join(pj.dir, "s.jsonl")
+        lines = [{"type": "user", "uuid": "p1", "timestamp": "2026-10-06T07:00:00Z", "message": {"role": "user", "content": "띠를 칸으로 나눠줘"}},
+                 {"type": "assistant", "uuid": "a1", "timestamp": "2026-10-06T07:01:00Z", "message": {"id": "m1", "model": "claude-x", "content": [
+                     {"type": "thinking", "thinking": "the owner wants the regions named; propose two"}]}},
+                 {"type": "assistant", "uuid": "a2", "timestamp": "2026-10-06T07:01:01Z", "message": {"id": "m1", "model": "claude-x", "content": [
+                     {"type": "text", "text": "본문 칸과 옆 칸, 이대로 진행할까요?"}]}},
+                 {"type": "user", "uuid": "p2", "timestamp": "2026-10-06T07:02:00Z", "message": {"role": "user", "content": "ㄱㄱ"}}]
+        write(tr, "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines))
+        code, out = run("source", "add", "Q", "--from-transcript", tr, "--match", "이대로 진행할까요", "--kind", "agent", "--target", pj.dir)
+        assert code == 0, out
+        code, out = run("source", "add", "A", "--from-transcript", tr, "--match", "ㄱㄱ", "--kind", "answer", "--speaker", "lee", "--replies-to", "Q", "--target", pj.dir)
+        assert code == 0, out
+        src = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "A.json"))
+        assert src["text"] == "ㄱㄱ" and "person p2" in src["locator"] and "answering a2" in src["locator"], src
+        assert run("source", "add", "A2", "--from-transcript", tr, "--turn", "p2", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)[0] == 0
+        assert run("source", "add", "A3", "--from-transcript", tr, "--match", "ㄱㄱ", "--kind", "person", "--speaker", "lee", "--target", pj.dir)[0] == 0
+        # the first turn answers nothing: it is a person's turn, not an answer — and the miss says so, with the id to name it by
+        code, out = run("source", "add", "X", "--from-transcript", tr, "--match", "칸으로 나눠", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)
+        assert code != 0 and "no answer turn" in out and "person p1" in out and "--turn ID" in out, out
+        # the phrase is in the agent's thinking, which nobody saw: said so, with the turns around it
+        code, out = run("source", "add", "X", "--from-transcript", tr, "--match", "propose two", "--target", pj.dir)
+        assert code != 0 and "found in no turn" in out and "thinking" in out and "person p1" in out and "agent a2" in out, out
+        # an id the host gave a record that holds no turn
+        code, out = run("source", "add", "X", "--from-transcript", tr, "--turn", "a1", "--target", pj.dir)
+        assert code != 0 and "thinking" in out and "--turn ID" in out, out
+        code, out = run("source", "add", "X", "--from-transcript", tr, "--match", "never said", "--target", pj.dir)
+        assert code != 0 and "nothing in this transcript has it" in out and "person p2" in out, out
+
+
+def test_a_judge_round_is_signed_by_the_judge_and_applied_by_whoever_applied_it():
+    """guin-site, 2026-10-04..06: `judge consume --by <owner>` put the owner's name on 120/120 and 65/65 still-true verdicts —
+    rounds the owner never read. The judgment's author is the judge (the model, from the worker's record); who applied it is
+    a second fact, the agent by default; a person's name there needs the source where that person read the verdicts. And a
+    reconfirm the agent did on its own is signed as the agent's."""
+    with Project() as pj:
+        run("register", "plan/PLAN.md", "memo.py", "--target", pj.dir)
+        pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"))
+        write(os.path.join(pj.dir, "mangsang", "people.json"), {"people": ["lee", "kim"], "agents": ["Claude"]})
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        d = os.path.join(pj.dir, "judge")
+        os.makedirs(d)   # an existing directory is taken as it is
+        code, out = run("judge", "request", "--out", d, "--target", pj.dir)
+        rid = json.load(open(os.path.join(d, "judge-request.json"), encoding="utf-8"))["items"][0]["relation"]
+        resp = os.path.join(d, "judge-response.json")
+        write(resp, {"artifact-type": "mangsang/judgment@1", "non-claims": [], "items": [
+            {"relation": rid, "verdict": "still-true", "quote": "", "evidence": "add still appends"}]})
+        code, out = run_as_agent("judge", "consume", "--response", resp, "--target", pj.dir)
+        assert code != 0 and "no worker record" in out and "--judge" in out, out
+        write(resp, {"artifact-type": "mangsang/judgment@1", "non-claims": [], "worker": {"host": "claude-code", "model": "claude-j"}, "items": [
+            {"relation": rid, "verdict": "still-true", "quote": "", "evidence": "add still appends"}]})
+        # the owner's name, at an agent's hand, with nothing showing the owner read it: refused, and nothing applied
+        code, out = run_as_agent("judge", "consume", "--response", resp, "--by", "lee", "--target", pj.dir)
+        assert code != 0 and "--approved-in" in out, out
+        assert run("impact", "--target", pj.dir)[0] == 1
+        # default: the agent applied it, the judge judged it
+        code, out = run_as_agent("judge", "consume", "--response", resp, "--target", pj.dir)
+        assert code == 0 and "judged by claude-code claude-j, applied by Claude Code" in out, out
+        r = next(x for x in mangsang.decl(pj.dir)["relations"] if x["id"] == rid)
+        assert r["confirmed"] == {"judge": "claude-code claude-j", "applied-by": "Claude Code", "why": "add still appends"}, r["confirmed"]
+        assert r["history"][-1]["confirmed"] == {"by": "kim"}, r["history"]
+        assert "judged by claude-code claude-j, applied by Claude Code" in run("lookup", "memo.py", "--target", pj.dir)[1]
+        # with the source where the owner read the verdicts, the owner's name may stand as who applied them
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 3"))
+        assert run("judge", "request", "--out", d, "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, "read.txt"), "판정 읽었어, 적용해")
+        assert run("source", "add", "R1", "--file", os.path.join(pj.dir, "read.txt"), "--speaker", "lee", "--target", pj.dir)[0] == 0
+        code, out = run_as_agent("judge", "consume", "--response", resp, "--by", "lee", "--approved-in", "source:R1", "--target", pj.dir)
+        assert code == 0, out
+        r = next(x for x in mangsang.decl(pj.dir)["relations"] if x["id"] == rid)
+        assert r["confirmed"]["judge"] == "claude-code claude-j" and r["confirmed"]["applied-by"] == "lee" and r["confirmed"]["approved-in"] == "source:R1", r["confirmed"]
+        # at a person's terminal, no agent to default to: say who applies it
+        code, out = run("judge", "consume", "--response", resp, "--target", pj.dir)
+        assert code != 0 and "--by NAME" in out, out
+        # reconfirm with no --by and no --delegated: the agent's own re-read, signed as the agent's
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 4"))
+        assert run("reconfirm", rid, "--target", pj.dir)[0] != 0   # a person at a terminal still says who
+        code, out = run_as_agent("reconfirm", rid, "--target", pj.dir)
+        assert code == 0 and "Claude Code's own re-read" in out, out
+        r = next(x for x in mangsang.decl(pj.dir)["relations"] if x["id"] == rid)
+        assert r["confirmed"] == {"agent": "Claude Code"}, r["confirmed"]
+        code, out = run("impact", "--findings", "--target", pj.dir)
+        assert any(f["kind"] == "delegated" and "the agent Claude Code, on its own" in f["text"] for f in json.loads(out)["findings"]), out
+
+
+def test_a_brief_line_says_something_when_the_first_sentence_is_a_name():
+    """guin-site's feed: "첫 화면." — the brief line was the five characters. A first sentence that short is followed by the next."""
+    assert mangsang.first_sentence("첫 화면. 모든 글을 최신순으로, 글마다 분리된 상자로 보여준다. 짧은 글은 제목 없이.") == "첫 화면. 모든 글을 최신순으로, 글마다 분리된 상자로 보여준다."
+    assert mangsang.first_sentence("Appending one memo. It prints its id.") == "Appending one memo."   # a sentence that says something stands alone
+    long = mangsang.first_sentence("첫 화면. " + "가" * 300)
+    assert len(long) == 160 and long.startswith("첫 화면. 가") and long.endswith("…"), long
+    assert mangsang.first_sentence("첫 화면.") == "첫 화면."
+
+
+def test_judge_request_out_is_a_directory_and_says_where_the_packet_is():
+    """guin-site, 2026-10-06: `judge request --out .../judge-req.json` made a directory of that name; the agent's next step read
+    it as a file and crashed. --out takes a directory, says so when given a file name, and prints the packet's path."""
+    with Project() as pj:
+        run("register", "plan/PLAN.md", "memo.py", "--target", pj.dir)
+        pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"))
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        bad = os.path.join(pj.dir, "scratch", "judge-req.json")
+        code, out = run("judge", "request", "--out", bad, "--target", pj.dir)
+        assert code != 0 and "takes a directory" in out and os.path.join(pj.dir, "scratch") in out and not os.path.exists(bad), out
+        write(os.path.join(pj.dir, "afile"), "x")
+        assert run("judge", "request", "--out", os.path.join(pj.dir, "afile"), "--target", pj.dir)[0] != 0
+        d = os.path.join(pj.dir, "scratch")
+        code, out = run("judge", "request", "--out", d, "--target", pj.dir)
+        assert code == 0 and "packet:   %s" % os.path.join(d, "judge-request.json") in out and "response: %s" % os.path.join(d, "judge-response.json") in out, out
+        assert "judge_worker.py --request" in out and "judge consume --response" in out, out
 
 
 if __name__ == "__main__":
