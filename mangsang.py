@@ -15,8 +15,9 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 keep what was said or written, verbatim and unchangeable, as the anchor `source:ID` — a concept
                                 grounded in a conversation relates to it like to any projection, with a quote as evidence. Both
                                 sides of a conversation are sources: "yes, both" means nothing without the question it answers
-  concept [add|revise|reaffirm|rename|list] declare/change the net's own nodes; `concept:NAME` anchors relations; revising `means` stales every
-                                projection; retiring a projection leaves the concept owing a re-read (`owes`) until `revise` or `reaffirm`
+  concept [add|revise|reaffirm|drift|rename|list] declare/change the net's own nodes; `concept:NAME` anchors relations; revising `means` stales every
+                                projection; retiring a projection leaves the concept owing a re-read (`owes`) until `revise` or `reaffirm`;
+                                `drift NAME --why` marks a sentence known wrong whose revision waits: cq DRIFTED, its relations not re-confirmed
   concept list --brief          the net as a map in a line or two: `N concept(s): a, b, … ; M open question(s)` (names cut to fit ~300
                                 characters), then how many relations are stale or broken when any are; an empty net prints nothing
   confirm <proposals.json> --by NAME | --delegated WHY
@@ -44,7 +45,8 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
   retire <id> --why WHY         drop a relation, keeping it (and why) in `retired`
   lookup <path>                 before touching a file: the confirmed relations standing on it, grouped by concept (its meaning once),
                                 each with its quote, its confirmer and fresh/stale now; or which of not registered / registered with
-                                nothing on it / not in the tree (read-only) — size the edit as code + relations
+                                nothing on it / not in the tree (read-only) — size the edit as code + relations. Also an anchor
+                                (`concept:NAME`, `file:symbol`), or a relation id (that relation, whole)
   lookup <path> --brief         the same as at most five lines, one per concept (or other end) reached: its meaning's first sentence
                                 (and the next, when the first is a bare name like "첫 화면."), cut at ~160 characters,
                                 and `(N relation(s); K stale)` when any is stale; no ids, no quotes. A tracked file the net does not see
@@ -69,6 +71,7 @@ import json
 import os
 import re
 import sys
+import time
 
 import anchors   # what in a file can be named, how far it reaches, what it reads — one module per rule, one scanner per language
 
@@ -377,6 +380,9 @@ def cmd_confirm(args):
             f, key = split_anchor(p.get(end, ""))
             if f not in files or key not in files[f]:
                 why = why or "%s anchor %r does not resolve (%s)" % (end, p.get(end), "file not registered" if f not in files else "no such heading/symbol")
+        held = drifted_end(d, p.get("src", ""), p.get("dst", ""))
+        if held:
+            why = why or drift_refusal(d, held)   # the same hazard reconfirm refuses: a new relation quoting the false sentence
         if not str(p.get("evidence", "")).strip():
             why = why or "no evidence — quote the sentence that makes this relation true"
         elif not why and not quoted(args.target, p["evidence"], p["src"], p["dst"]):
@@ -567,14 +573,28 @@ def cmd_impact(args):
     d = decl(args.target)
     stale, broken, unjudged, files = compute_impact(args.target, d, args.only)   # answers and leaves nothing behind: the verdict is what it prints
     if args.findings:
-        findings = [{"kind": "stale", "where": "%s %s" % (x["id"], x["stale"]), "text": "stale because %s changed since it was confirmed" % x["because"]} for x in stale]
+        on_drift = lambda x: next(("; concept:%s is marked drifted — %s" % (a[len("concept:"):], drift_line(drift_of(d, a[len("concept:"):])))
+                                   for r in d["relations"] if r["id"] == x["id"] for a in (r["src"], r["dst"])
+                                   if a.startswith("concept:") and drift_of(d, a[len("concept:"):])), "")
+        findings = [{"kind": "stale", "where": "%s %s" % (x["id"], x["stale"]), "text": "stale because %s changed since it was confirmed%s" % (x["because"], on_drift(x))} for x in stale]
         findings += [{"kind": "broken", "where": "%s %s" % (x["id"], ", ".join(x["dead"])), "text": "dead anchor(s): the relation points at nothing"} for x in broken]
         # no person read these: a delegation, a judge's verdict applied, an agent's own re-read — observations of the record
         findings += [{"kind": "delegated", "where": "%s %s %s %s" % (r["id"], r["src"], r["predicate"], r["dst"]), "text": "re-confirmed %s" % unread_by_a_person(r["confirmed"])}
                      for r in d["relations"] if isinstance(r.get("confirmed"), dict) and unread_by_a_person(r["confirmed"])]
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "standing": True, "findings": findings}, ensure_ascii=False, indent=1))
         return 1 if stale or broken else 0
+    held = {}
     for x in stale:
+        rel = next((r for r in d["relations"] if r["id"] == x["id"]), None) or {}
+        n = next((a[len("concept:"):] for a in (rel.get("src", ""), rel.get("dst", "")) if a.startswith("concept:") and drift_of(d, a[len("concept:"):])), None)
+        if n:
+            held.setdefault(n, []).append(x["id"])
+    for n, ids in sorted(held.items()):
+        # one line for a concept known wrong: its stale relations wait for the new sentence, not for a re-read each
+        print("  drifted concept:%s — %s: %d stale relation(s) wait for `concept revise %s` (%s)" % (n, drift_line(drift_of(d, n)), len(ids), n, ", ".join(ids)))
+    for x in stale:
+        if any(x["id"] in ids for ids in held.values()) and not getattr(args, "show", False):
+            continue
         print("  stale   %s  %s  <- %s" % (x["id"], x["stale"], x["because"]))
         if getattr(args, "show", False):
             rel = next((r for r in d["relations"] if r["id"] == x["id"]), None)
@@ -610,10 +630,13 @@ def cmd_judge(args):
         stale, broken, unjudged, files = compute_impact(args.target, d)
         rels = {r["id"]: r for r in d["relations"]}
         wanted = set(args.ids or [])
-        items = []
+        items, held = [], []
         for x in stale:
             r = rels[x["id"]]
             if wanted and r["id"] not in wanted:
+                continue
+            if any(a.startswith("concept:") and drift_of(d, a[len("concept:"):]) for a in (r["src"], r["dst"])):
+                held.append(r["id"])   # its concept is known wrong: nothing for a judge to find still true
                 continue
             texts = {a: (texts_of(args.target, split_anchor(a)[0]) or {}).get(split_anchor(a)[1], "") for a in (x["stale"], x["because"])}
             # since 1.11 an anchor is stale when what it *reads* moved, its own text unchanged: a judge given the two texts alone saw
@@ -635,6 +658,8 @@ def cmd_judge(args):
                           # the concept is the stale side: the sentence under judgment is its whole meaning, not the quote — the quote is
                           # a sentence of the projection, which still held when a deploy moved and the concept still named the old one
                           **({"judge": "concept-sentence"} if x["stale"].startswith("concept:") else {})})
+        if held:
+            print("not asked: %d relation(s) on drifted concept(s) (%s) — they wait for `concept revise`" % (len(held), ", ".join(held)))
         if not items:
             print("nothing stale to judge")
             return 0
@@ -701,7 +726,9 @@ def cmd_judge(args):
     applied = []
     for it in kept:
         r = rels[it["relation"]]
-        if it["verdict"] == "still-true":
+        if it["verdict"] == "still-true" and any(a.startswith("concept:") and drift_of(d, a[len("concept:"):]) for a in (r["src"], r["dst"])):
+            rejected.append("%s: still-true, but its concept is marked drifted — `concept revise` first" % r["id"])
+        elif it["verdict"] == "still-true":
             # the one safe application: what a human would do after reading — recorded as a delegation, never as a person's confirmation
             if all(split_anchor(a)[0] in files and split_anchor(a)[1] in files[split_anchor(a)[0]] for a in (r["src"], r["dst"])) and quoted(args.target, r["evidence"], r["src"], r["dst"]):
                 was_seen = r.get("seen")
@@ -817,6 +844,57 @@ def unregistered(target, d, paths, excepts=()):
             and not f.startswith((DECL + "/", OBS + "/"))]
 
 
+UNSEEN_KINDS = ("python", "js", "component", "css", "html", "sql", "block", "dockerfile", "json", "yaml", "toml", "ini", "env")   # not markdown or text: in a directory nobody registered, that is content and assets
+
+
+def record_prefixes(target):
+    """The products' records and the environment, not the project: `record-paths` in hunsu.lock.json (each plugin declares its
+    `records`), else this product's own. A product knows no other by name; the lock says what is whose."""
+    lock = load(os.path.join(target, "hunsu.lock.json")) if os.path.isfile(os.path.join(target, "hunsu.lock.json")) else {}
+    declared = lock.get("record-paths") if isinstance(lock, dict) else None
+    others = {p for ps in declared.values() if isinstance(ps, list) for p in ps if isinstance(p, str)} if isinstance(declared, dict) else set()   # a string is no list of prefixes (its characters would skip nearly every file)
+    return tuple(sorted(others | {DECL + "/", OBS + "/"}))
+
+
+LOCKFILES = {"package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "deno.lock", "composer.lock",
+             "Cargo.lock", "poetry.lock", "Pipfile.lock", "uv.lock", "Gemfile.lock", "go.sum"}   # a resolver's output: nothing in it is the project's to say
+
+
+def unseen_directories(target, d, covered=(), excepts=()):
+    """Directories holding tracked code or config and no registered file at all, each with its count — the shallowest such
+    directory under one that has some. guin-site, 10-10: `write/` (an OAuth Worker, 11 files) and `lexicons/` (8 schemas)
+    were new top-level directories; the advice beside registered files never looked there, and the net stayed green. A
+    hidden directory, the products' records, lockfiles, what a `registered` invariant already asks for and what its `except`
+    globs leave out are left out. Files directly in a directory whose registered files are all deeper (`src/b.py` beside
+    `src/a/x.py`) are said as `src/*` — neither this nor the advice beside registered files looked there. The root's own
+    files are not: they are the project's manifests and settings, in every project, and a `registered` invariant names
+    them when they matter."""
+    import fnmatch
+    got = tracked_files(target)
+    if got is None:
+        return []
+    have = {e["path"] for e in d["registry"]}
+    direct = {p.rsplit("/", 1)[0] + "/" for p in have if "/" in p}
+    held = set()
+    for p in have:
+        parts = p.split("/")[:-1]
+        held.update("/".join(parts[:i]) + "/" for i in range(1, len(parts) + 1))
+    skip = record_prefixes(target) + tuple(covered)
+    found = {}
+    for f in got:
+        parts = f.split("/")
+        if len(parts) < 2 or f in have or f.startswith(skip) or any(x.startswith(".") for x in parts[:-1]):
+            continue
+        if anchors.kind_of(f) not in UNSEEN_KINDS or parts[-1] in LOCKFILES or any(fnmatch.fnmatch(f, g) for g in excepts):
+            continue
+        top = next(("/".join(parts[:i]) + "/" for i in range(1, len(parts)) if "/".join(parts[:i]) + "/" not in held), None)
+        if not top and "/".join(parts[:-1]) + "/" not in direct:
+            top = "/".join(parts[:-1]) + "/*"   # its directory holds registered files only deeper down
+        if top:
+            found[top] = found.get(top, 0) + 1
+    return sorted(found.items())
+
+
 def ungrounded_sources(d, target):
     """A person's words kept as a source that nothing stands on — no relation uses it, no signature cites it (approved-in,
     approval-of), no registered document cites it by id. guin-site's owner decided the backend's read path and five more of its questions (source:rd-02,
@@ -860,6 +938,34 @@ def reach(d, names):
                 out[nxt] = (cur, r["id"])
                 queue.append(nxt)
     return out
+
+
+def drift_of(d, name):
+    """The mark on a concept whose sentence is known not to hold any more, its revision owed (`concept drift`) — or None."""
+    return (next((c for c in d["concepts"] if c["name"] == name), None) or {}).get("drift")
+
+
+def drift_line(mark):
+    """A drift mark as a line: the reason's first clause, and who marked it."""
+    return "%s (marked %s)" % (first_clause(mark.get("why", "?"), 120), who_signed(mark))
+
+
+def drifted_end(d, *ends):
+    """The first concept among a relation's ends that is marked drifted, or None — a sentence known not to hold is not one
+    to sign a relation against (confirm, move, reconfirm)."""
+    return next((a[len("concept:"):] for a in ends if str(a).startswith("concept:") and drift_of(d, a[len("concept:"):])), None)
+
+
+def drift_refusal(d, name):
+    """What a refused signature on a drifted concept says, and what to do instead."""
+    return ("concept:%s is marked drifted — %s. Its sentence is known not to hold, so a signature now would record it as read and true: "
+            "`concept revise %s --means \"...\"` (then relate its projections to the new sentence), or `concept reaffirm %s` if the old "
+            "sentence holds after all" % (name, drift_line(drift_of(d, name)), name, name))
+
+
+def drifts_reached(d, names, reached):
+    """[(name, via, mark)] for the drifted concepts a question's answer names or stands on."""
+    return [(n, "" if n in names else " (through %s)" % reached[n][0], drift_of(d, n)) for n in list(names) + list(reached) if drift_of(d, n)]
 
 
 def answer_health(d, names, moved):
@@ -999,14 +1105,31 @@ def cmd_check(args):
                [("cq:" + q["id"]) for q in d["cq_declared"] if (q.get("declared") or {}).get("approval-of")]
     # what the net cannot see, said as advice (never red): tracked files beside the registered ones that nobody registered,
     # when no `registered` invariant asks — guin-site's whole backend was outside the net and every command was green
+    beside = []
     if not any(q.get("verify", {}).get("kind") == "registered" for q in active):
-        dirs = sorted({e["path"].rsplit("/", 1)[0] + "/" for e in d["registry"] if "/" in e["path"]})
+        dirs = beside = sorted({e["path"].rsplit("/", 1)[0] + "/" for e in d["registry"] if "/" in e["path"]})
         missing = unregistered(args.target, d, dirs) if dirs else []
         if missing:
             say("  %-12s %d tracked file(s) beside registered ones are not registered (%s%s) — the net cannot see them; register them, or declare "
                 "`{\"kind\": \"registered\", \"paths\": [...]}` to make it a check" % ("unseen", len(missing), ", ".join(missing[:6]), " …" if len(missing) > 6 else ""))
             findings.append({"kind": "unregistered", "layer": "observation", "where": ", ".join(missing[:12]), "source": "mangsang",
                              "text": "%d tracked file(s) in registered directories are not registered; no invariant asks" % len(missing)})
+    # ...and directories nobody registered anything in: the advice above looks beside registered files only, so a new
+    # top-level directory was invisible to it — said per directory, whether or not a `registered` invariant asks elsewhere
+    # (what that invariant or the advice above already names is not said twice)
+    asks = [q["verify"] for q in active if q.get("verify", {}).get("kind") == "registered"]
+    covered = beside + [p for v in asks for p in v.get("paths") or []]
+    blind = unseen_directories(args.target, d, covered, [g for v in asks for g in v.get("except") or []])
+    if blind:
+        # named up to a few: a monorepo with one package registered has thousands of such directories, and one line naming
+        # them all is no line anyone reads
+        more = lambda k: " … and %d more" % (len(blind) - k) if len(blind) > k else ""
+        say("  %-12s %d director%s with code or config and nothing registered (%s%s) — the net cannot see them; register what in them the "
+            "project is about, or exclude it — `except` globs in a `registered` invariant" % ("unseen", len(blind), "y" if len(blind) == 1 else "ies",
+                                                                                         ", ".join("%s %d file(s)" % b for b in blind[:6]), more(6)))
+        findings.append({"kind": "unregistered", "layer": "observation", "where": ", ".join(p for p, _ in blind[:12]), "source": "mangsang",
+                         "text": "%d director%s of tracked code or config hold no registered file: %s%s" % (len(blind), "y" if len(blind) == 1 else "ies",
+                                                                                                     ", ".join("%s (%d)" % b for b in blind[:12]), more(12))})
     loose = ungrounded_sources(d, args.target)
     if loose:
         say("  %-12s %d thing(s) a person said ground nothing — no relation uses them, no signature or registered document cites them: %s" % ("ungrounded", len(loose), ", ".join("source:" + i for i in loose)))
@@ -1050,7 +1173,7 @@ def cmd_cq(args):
     moved = {x["id"]: "stale" for x in stale}
     moved.update({x["id"]: "broken" for x in broken})
     byname = {c["name"]: c for c in d["concepts"]}
-    failed = unanswerable = 0
+    failed = unanswerable = drifted = answered = 0
     findings = []
     opened = [q for q in active if q.get("verify", {}).get("kind") == "open"]
     for q in opened:
@@ -1071,13 +1194,24 @@ def cmd_cq(args):
         names = q["verify"].get("concepts", [])
         problems, reached = answer_health(d, names, moved)
         q["_reached"] = reached
-        ok = not problems
-        failed += not ok
-        if not ok:
+        # a sentence someone marked as no longer true is not an answer, whatever its projections say (guin-site 748a4d8: the
+        # site moved off D1, the stale relations were re-confirmed "to be revised at stage 5", and two questions read green
+        # with a sentence false in production)
+        drifts = drifts_reached(d, names, reached)
+        ok = not problems and not drifts
+        failed += bool(problems)
+        drifted += bool(drifts)
+        answered += ok
+        if drifts:
+            findings.append({"kind": "cq-drifted", "where": q["id"], "source": "mangsang",
+                             "text": "; ".join("%s%s is marked drifted: %s" % (n, via, drift_line(m)) for n, via, m in drifts)})
+        if problems:   # a drift does not hide what else is wrong with the answer
             findings.append({"kind": "cq-failed", "where": q["id"], "source": "mangsang", "text": "; ".join(problems)})
         answer = "; ".join("%s: %s" % (n, byname[n]["means"]) for n in names if n in byname)
-        say("  %-12s %s  %s" % ("answered" if ok else "FAILED", q["id"], q["text"]))
-        say("      %s %s" % ("=" if ok else "?", answer[:240]))
+        say("  %-12s %s  %s" % ("answered" if ok else "DRIFTED" if drifts else "FAILED", q["id"], q["text"]))
+        say("      %s %s" % ("=" if ok else "!" if drifts else "?", answer[:240]))
+        for n, via, m in drifts:
+            say("      drifted: %s%s — %s; the answer waits for `concept revise %s`" % (n, via, drift_line(m), n))
         if reached:
             by = {}
             for n, (frm, rid) in reached.items():
@@ -1098,9 +1232,10 @@ def cmd_cq(args):
     if getattr(args, "findings", False):
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "standing": True, "findings": findings}, ensure_ascii=False, indent=1))
     tail = " · %d structural declaration(s) now answer to `check`" % structural if structural else ""
-    say("cq %d · answered %d · failed %d · unanswerable %d · unquestioned %d · open %d%s"
-          % (len(active) + len(opened), len(active) - failed - unanswerable, failed, unanswerable, len(unquestioned), len(opened), tail))
-    return 1 if failed or unanswerable or unquestioned else 0
+    say("cq %d · answered %d · failed %d · unanswerable %d · unquestioned %d · open %d%s%s"
+          % (len(active) + len(opened), answered, failed, unanswerable, len(unquestioned), len(opened),
+             " · drifted %d" % drifted if drifted else "", tail))
+    return 1 if failed or unanswerable or unquestioned or drifted else 0
 
 
 def cq_declare(args):
@@ -1199,6 +1334,10 @@ def cmd_reconfirm(args):
         r = next((x for x in d["relations"] if x["id"] == rid), None)
         if not r:
             raise SystemExit("no relation %s" % rid)
+        held = drifted_end(d, r["src"], r["dst"])
+        if held:
+            # re-reading against a sentence known to be false records the false sentence as re-read (guin-site 748a4d8)
+            raise SystemExit("%s: %s" % (rid, drift_refusal(d, held)))
         dead = [a for a in (r["src"], r["dst"]) if split_anchor(a)[0] not in files or split_anchor(a)[1] not in files[split_anchor(a)[0]]]
         if dead:
             raise SystemExit("%s: anchor %s is gone — a relation on a dead anchor cannot be re-confirmed; retire it" % (rid, dead))
@@ -1254,13 +1393,25 @@ def cmd_lookup(args):
     concepts/*.json and relations/*.json by hand to learn, because lookup printed only ids and names. A file with nothing
     on it says which of three it is: not registered (the net cannot see it), registered with nothing on it, or not in the
     tree — "no relations" read the same for all three, and a whole unregistered backend looked like a quiet one.
-    Read-only; prints nothing but the record."""
+    Read-only; prints nothing but the record.
+    Also takes a relation id (that relation, whole) and `concept:NAME` or another anchor (what stands on that anchor) — a
+    session re-confirming typed `lookup R-49cec80b` and was told nothing touched it (guin-site, 10-09)."""
     d = decl(args.target)
+    if RELATION_ID.fullmatch(args.path):
+        args.path = "R-" + args.path[2:].lower()   # ids are written lower-case; a pasted R-3DE794C9 is the same one
+        return lookup_relation(args, d)
+    concepts = {"concept:" + c["name"]: c for c in d["concepts"]}
+    if args.path.startswith("concept:") and args.path not in concepts:
+        print("no concept %s — `concept list` names them" % args.path[len("concept:"):])
+        return 1
+    if args.path.startswith("source:") and args.path[len("source:"):] not in {x["id"] for x in d["sources"]}:
+        print("no source %s — `source list` names them" % args.path[len("source:"):])
+        return 1
     rels = []
     for r in d["relations"]:
         for a in (r["src"], r["dst"]):
             f, key = split_anchor(a)
-            if f == args.path:
+            if f == args.path or a == args.path:
                 prop = d["vocabulary"].get(r["predicate"], {}).get("propagates", "none")
                 moves = (a == r["dst"] and prop in ("dst->src", "both")) or (a == r["src"] and prop in ("src->dst", "both"))
                 other = r["dst"] if a == r["src"] else r["src"]
@@ -1268,10 +1419,29 @@ def cmd_lookup(args):
                     other = r["dst"]   # both ends on this file: grouped under dst, as stored
                 rels.append((r, a, other, moves))
                 break
-    registered = any(e["path"] == args.path for e in d["registry"])
-    on_disk = os.path.exists(os.path.join(args.target, args.path))
+    path = args.path if os.path.exists(os.path.join(args.target, args.path)) or args.path.startswith("concept:") else split_anchor(args.path)[0]
+    registered = any(e["path"] == path for e in d["registry"])
+    on_disk = os.path.exists(os.path.join(args.target, path))
     if getattr(args, "brief", False):
         return lookup_brief(args, d, rels, registered, on_disk)
+    c = concepts.get(args.path)
+    if c is not None:   # the concept itself first: its meaning, and a mark when it is known wrong
+        print("%s — means: %s" % (args.path, " ".join(c.get("means", "").split())))
+        if c.get("drift"):
+            print("  DRIFTED: %s — the sentence is known not to hold; `concept revise %s` owed" % (drift_line(c["drift"]), c["name"]))
+        if not rels:
+            print("nothing stands on %s — nothing realizes it" % args.path)
+            return 0
+    if not rels and args.path.startswith("source:"):
+        print("%s is kept; no confirmed relation stands on it — it grounds nothing yet" % args.path)
+        return 0
+    if not rels and registered and on_disk and path != args.path:
+        f, key = split_anchor(args.path)
+        files, _ = snapshot(args.target, [e for e in d["registry"] if e["path"] == path])
+        if key not in files.get(f, {}):
+            print("%s: %s is registered, but has no %s now — no such heading, symbol or key (moved or renamed? `lookup %s` names what stands on the file)"
+                  % (args.path, f, key, f))
+            return 1
     if not rels:
         if registered:
             print("%s is registered; no confirmed relation stands on it — an edit here makes nothing stale%s"
@@ -1297,7 +1467,6 @@ def cmd_lookup(args):
     state = {x["id"]: "STALE now (%s changed since confirmed)" % x["because"] for x in stale}
     state.update({x["id"]: "BROKEN now (%s gone)" % ", ".join(x["dead"]) for x in broken})
     state.update({i: "unjudged (no `seen`, no baseline)" for i in unjudged if i not in state})
-    concepts = {"concept:" + c["name"]: c for c in d["concepts"]}
     groups = {}
     for item in rels:
         groups.setdefault(item[2], []).append(item)
@@ -1305,6 +1474,8 @@ def cmd_lookup(args):
         c = concepts.get(other)
         if c is not None:
             print("%s — means: %s" % (other, " ".join(c.get("means", "").split())))
+            if c.get("drift"):
+                print("  DRIFTED: %s — the sentence is known not to hold; `concept revise %s` owed" % (drift_line(c["drift"]), c["name"]))
         elif other.startswith("concept:"):
             print("%s — no such concept is declared" % other)
         else:
@@ -1318,6 +1489,40 @@ def cmd_lookup(args):
             print("      \"%s\" — %s" % ("\n        ".join(r.get("evidence", "").split("\n")), who_signed(r.get("confirmed"))))
     print("%d relation(s) on %s, reaching %d concept(s) or anchor(s) — an edit here and their update are one piece of work, not two"
           % (len(rels), args.path, len(groups)))
+    return 0
+
+
+RELATION_ID = re.compile(r"[Rr]-[0-9a-fA-F]{8}")
+
+
+def lookup_relation(args, d):
+    """`lookup R-xxxxxxxx`: one relation as `lookup` shows it — its ends (a concept's meaning, and its drift mark), its state now,
+    its quote and who confirmed it, how often it was re-read. A retired one says so, with why."""
+    r = next((x for x in d["relations"] if x["id"] == args.path), None)
+    if not r:
+        gone = next((x for x in d.get("retired", []) if x["id"] == args.path), None)
+        if gone:
+            why = gone.get("retired")
+            print("%s is retired: %s %s %s — %s" % (gone["id"], gone["src"], gone["predicate"], gone["dst"], why.get("why", "?") if isinstance(why, dict) else why))
+            return 0
+        print("no relation %s — `lookup` takes a relation id, `concept:NAME`, a file (as registered) or an anchor in one" % args.path)
+        return 1
+    stale, broken, unjudged, _ = compute_impact(args.target, d, persist=False)
+    state = {x["id"]: "STALE now (%s changed since confirmed)" % x["because"] for x in stale}
+    state.update({x["id"]: "BROKEN now (%s gone)" % ", ".join(x["dead"]) for x in broken})
+    state.update({i: "unjudged (no `seen`, no baseline)" for i in unjudged if i not in state})
+    for a in (r["src"], r["dst"]):
+        c = next((c for c in d["concepts"] if "concept:" + c["name"] == a), None)
+        if c is not None:
+            print("%s — means: %s" % (a, " ".join(c.get("means", "").split())))
+            if c.get("drift"):
+                print("  DRIFTED: %s — the sentence is known not to hold; `concept revise %s` owed, not a re-confirmation" % (drift_line(c["drift"]), c["name"]))
+    print("  %s  %s %s %s — %s" % (r["id"], r["src"], r["predicate"], r["dst"], state.get(r["id"], "fresh")))
+    print("      \"%s\" — %s%s" % ("\n        ".join(r.get("evidence", "").split("\n")), who_signed(r.get("confirmed")),
+                                  "; re-confirmed %d time(s)" % len(r["history"]) if r.get("history") else ""))
+    files = sorted({split_anchor(a)[0] for a in (r["src"], r["dst"])} - {"concept", "source"})
+    if files:
+        print("everything else on its file(s): %s" % "; ".join("`mangsang lookup %s`" % f for f in files))
     return 0
 
 
@@ -1345,7 +1550,15 @@ def lookup_brief(args, d, rels, registered, on_disk):
     (or other end) the file's confirmed relations reach, its meaning's first sentence, and how many of them are stale when any is.
     Whole outputs pasted into an agent's context were not read (~43k characters in one cycle); a line per fact is. No ids, no
     quotes: `lookup PATH` has them. A tracked file the net does not see gets one line saying so; a registered file with nothing
-    on it, or a path not in the tree, prints nothing — a reader adds no line where there is no fact."""
+    on it, or a path not in the tree, prints nothing — a reader adds no line where there is no fact. A concept: its own line."""
+    c = next((c for c in d["concepts"] if "concept:" + c["name"] == args.path), None)
+    if c is not None:
+        stale, broken, _, _ = compute_impact(args.target, d, persist=False) if rels else ([], [], [], [])
+        k = len({x["id"] for x in stale + broken} & {r["id"] for r, _, _, _ in rels})
+        print("%s — %s%s (%d relation(s)%s)" % (args.path, first_sentence(c.get("means", "")),
+                                               " [DRIFTED, known not to hold: %s]" % first_clause(c["drift"].get("why", "?"), 80) if c.get("drift") else "",
+                                               len(rels), "; %d stale" % k if k else ""))
+        return 0
     if not rels:
         if registered or not on_disk:
             return 0
@@ -1366,6 +1579,8 @@ def lookup_brief(args, d, rels, registered, on_disk):
         k = sum(r["id"] in bad for r in rs)
         c = concepts.get(other)
         say = first_sentence(c.get("means", "")) if c else ", ".join(sorted({r["predicate"] for r in rs}))
+        if c and c.get("drift"):
+            say += " [DRIFTED, known not to hold: %s]" % first_clause(c["drift"].get("why", "?"), 80)
         print("%s — %s%s" % (other, say, " (%d relation(s); %d stale)" % (len(rs), k) if k else ""))
     if len(shown) < len(order):
         rest = order[len(shown):]
@@ -1382,7 +1597,8 @@ def concept_map(args, d):
         return 0
     names = sorted(c["name"] for c in d["concepts"])
     opened = sum(1 for q in cq_active(d) if (q.get("verify") or {}).get("kind") == "open")
-    tail = " ; %d open question(s)" % opened if opened else ""
+    gone = sorted(c["name"] for c in d["concepts"] if c.get("drift"))
+    tail = (" ; %d open question(s)" % opened if opened else "") + (" ; drifted (meaning known wrong, revision owed): %s" % ", ".join(gone) if gone else "")
     head = "%d concept(s): " % len(names)
     shown, budget = [], 300 - len(head) - len(tail) - len(", … (+999)")
     for n in names:
@@ -1423,8 +1639,8 @@ def cmd_move(args):
         if not r or (wanted and r["id"] not in wanted):
             continue
         new = dict(r)
-        why = None
-        for end in ("src", "dst"):
+        why = drift_refusal(d, drifted_end(d, r["src"], r["dst"])) if drifted_end(d, r["src"], r["dst"]) else None
+        for end in ("src", "dst") if not why else ():
             if r[end] not in b["dead"]:
                 continue
             f, key = split_anchor(r[end])
@@ -1792,7 +2008,9 @@ def render_concepts(d, moved):
     out = ["## Concepts", ""]
     for c in sorted(d["concepts"], key=lambda c: c["name"]):
         out += ["### %s" % c["name"], "", "> %s" % esc(c["means"]), "",
-                "declared %s%s" % (signed(c.get("declared")), "; revised %d time(s)" % len(c["history"]) if c.get("history") else ""), ""]
+                "declared %s%s" % (signed(c.get("declared")), "; revised %d time(s)" % len([h for h in c["history"] if "means" in h]) if any("means" in h for h in c.get("history") or []) else ""), ""]
+        if c.get("drift"):
+            out += ["**drifted** — the sentence above is known not to hold; revision owed: %s (marked %s)" % (esc(c["drift"].get("why", "")), signed(c["drift"])), ""]
         for r in (r for r in d["relations"] if "concept:" + c["name"] in (r["src"], r["dst"])):
             other = r["src"] if r["dst"] == "concept:" + c["name"] else r["dst"]
             out.append("- `%s` %s — %s · %s%s · “%s”" % (other, r["predicate"], moved.get(r["id"], "fresh"), signed(r.get("confirmed")),
@@ -1816,8 +2034,8 @@ def render_questions(d, files, moved):
         elif cq_presuppositions(d, files, q):
             state = "UNANSWERABLE"
         else:
-            problems, _ = answer_health(d, v.get("concepts", []), moved)
-            state = "answered" if not problems else "FAILED"
+            problems, reached = answer_health(d, v.get("concepts", []), moved)
+            state = "DRIFTED" if drifts_reached(d, v.get("concepts", []), reached) else "answered" if not problems else "FAILED"
         out.append("- **%s** %s — %s%s · %s" % (q.get("id", "?"), esc(q.get("text", "")), state,
                                                 "; answered by " + ", ".join(n for n in v.get("concepts", []) if n in named) if v.get("concepts") else "", signed(q.get("declared"))))
     return out
@@ -1986,8 +2204,10 @@ def cmd_concept(args):
             raise SystemExit("--means \"the new sentence\"")
         if not (args.by or args.delegated):
             raise SystemExit("say who revised it (--by) or why the human delegated it (--delegated)")
-        c.setdefault("history", []).append({"means": c["means"], "declared": c["declared"], **({"owed": c["owes"]} if c.get("owes") else {})})   # what the word meant before, and on whose word
+        c.setdefault("history", []).append({"means": c["means"], "declared": c["declared"], **({"owed": c["owes"]} if c.get("owes") else {}),
+                                            **({"drift": c["drift"]} if c.get("drift") else {})})   # what the word meant before, and on whose word
         c.pop("owes", None)   # a new sentence answers what was owed: every projection goes stale and is re-read against it
+        c.pop("drift", None)   # and what was marked wrong: the new sentence is the revision it waited for
         c["means"] = args.means.strip()
         c["declared"] = signature(args.by, args.delegated)
         save_decl(args.target, d)
@@ -2000,13 +2220,34 @@ def cmd_concept(args):
             raise SystemExit("no concept %s" % args.name)
         if not (args.by or args.delegated):
             raise SystemExit("say who re-read it (--by) or why the human delegated it (--delegated)")
-        if not c.get("owes"):
-            raise SystemExit("concept %s owes nothing — reaffirm answers a retired projection; nothing was retired since its sentence was affirmed" % args.name)
+        if not c.get("owes") and not c.get("drift"):
+            raise SystemExit("concept %s owes nothing — reaffirm answers a retired projection or a drift mark; it has neither" % args.name)
         # the sentence stands, read against what realizes it now: recorded as a judgment beside the declaration, with what it answered
-        c.setdefault("history", []).append({"reaffirmed": signature(args.by, args.delegated), "owed": c.pop("owes")})
+        c.setdefault("history", []).append({"reaffirmed": signature(args.by, args.delegated), **({"owed": c.pop("owes")} if c.get("owes") else {}),
+                                            **({"drift": c.pop("drift")} if c.get("drift") else {})})
         save_decl(args.target, d)
         now = [r["src"] for r in d["relations"] if r["predicate"] == "realizes" and r["dst"] == "concept:" + args.name]
         print("concept %s reaffirmed: \"%s\" — read against what realizes it now: %s" % (args.name, c["means"], ", ".join(now) or "nothing"))
+        return 0
+    if args.mode == "drift":
+        # the sentence no longer says what the project does and its revision waits (a stage later, a person's word): said, so
+        # nothing reads it as true meanwhile. Seen without it (guin-site 748a4d8): the stale relations were re-confirmed with a
+        # note "revised at stage 5", and `cq` answered two questions green with a sentence false in production
+        c = byname.get(args.name)
+        if not c:
+            raise SystemExit("no concept %s" % args.name)
+        if not (args.why or "").strip():
+            raise SystemExit("say what no longer holds (--why \"...\") — the mark is read where the sentence is")
+        if not (args.by or args.delegated or running_agent()):
+            raise SystemExit("say who marked it (--by) or why the human delegated it (--delegated)")
+        sig = signature(args.by, args.delegated) if (args.by or args.delegated) else {"agent": running_agent()}
+        if c.get("drift"):
+            c.setdefault("history", []).append({"drift": c["drift"]})
+        c["drift"] = {"why": " ".join(args.why.split()), "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **sig}
+        save_decl(args.target, d)
+        asked = [q["id"] for q in cq_active(d) if args.name in ((q.get("verify") or {}).get("concepts") or [])]
+        print("concept %s marked drifted: \"%s\" — %s. Until `concept revise %s --means \"...\"` (or `concept reaffirm %s`): cq says DRIFTED for %s; "
+              "its relations are not re-confirmed" % (args.name, first_sentence(c["means"]), c["drift"]["why"], args.name, args.name, ", ".join(asked) or "no question"))
         return 0
     if args.mode == "rename":
         c = byname.get(args.name)
@@ -2060,6 +2301,8 @@ def cmd_concept(args):
             print("      (no projections — nothing yet realizes this concept)")
         if c.get("owes"):
             print("      owes a re-read: lost %s since its sentence was affirmed (`concept revise` or `concept reaffirm`)" % ", ".join(c["owes"]))
+        if c.get("drift"):
+            print("      DRIFTED: %s — the sentence is known not to hold; `concept revise %s` owed" % (drift_line(c["drift"]), c["name"]))
     return 0
 
 
@@ -2140,7 +2383,8 @@ def main(argv=None):
                              "--delegated WHY; an agent that re-read it itself passes neither and is recorded as itself ({\"agent\": ...})")
             p.add_argument("--evidence", default=None, help="the sentence that holds now, when the old quote is gone from the text (one id at a time)")
         if name == "lookup":
-            p.add_argument("path", help="a file (as registered): print the confirmed relations standing on it — the concept's meaning, the quote, who confirmed, fresh or stale — before you touch it")
+            p.add_argument("path", help="a file (as registered): print the confirmed relations standing on it — the concept's meaning, the quote, who confirmed, fresh or stale — before you touch it. "
+                                        "Also an anchor (`concept:NAME`, `file:symbol`): what stands on it; or a relation id (R-xxxxxxxx): that relation")
             p.add_argument("--brief", action="store_true", help="one line per concept the file's relations reach (its meaning's first sentence; how many are stale, when any) — for a reader's first look; silent when there is nothing to say")
         if name == "move":
             p.add_argument("ids", nargs="*", default=None, help="broken relations to move (default: every broken one)")
@@ -2163,11 +2407,12 @@ def main(argv=None):
             p.add_argument("--html", default=None, help="write one self-contained HTML page here: the graph draws in any browser, offline")
             p.add_argument("--check", default=None, help="a page written earlier with --out: exit 0 when it is what the record renders now, 1 when it is behind (for a page kept in git)")
         if name == "concept":
-            p.add_argument("mode", nargs="?", default="list", choices=["add", "revise", "reaffirm", "rename", "list"])
+            p.add_argument("mode", nargs="?", default="list", choices=["add", "revise", "reaffirm", "drift", "rename", "list"])
             p.add_argument("name", nargs="?", default=None)
             p.add_argument("new", nargs="?", default=None, help="rename: the new name")
             p.add_argument("--means", default=None, help="one sentence: what this name means in this project")
             p.add_argument("--brief", action="store_true", help="list: the net as a map in a line or two — concepts by name, open questions, stale relations")
+            p.add_argument("--why", default=None, help="drift: what no longer holds — the sentence is known wrong and its revision waits")
             signing(p)
     args = ap.parse_args(argv)
     global APPROVED_IN, APPROVAL_OF

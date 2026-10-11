@@ -52,7 +52,8 @@ turn. The same id with other text is refused — a correction is a new source.
 ### `/mangsang:concept`
 
 The net's own nodes: `add NAME --means "..."` declares one (with `--by` or `--delegated`); `revise` changes its
-meaning and stales every projection; `reaffirm` says the sentence still holds after a projection of it was retired;
+meaning and stales every projection; `reaffirm` says the sentence still holds after a projection of it was retired
+(or after it was marked drifted); `drift NAME --why "..."` marks a sentence known not to hold whose revision waits;
 `rename` moves the name under every relation and every question that names it, in one command; `list` shows each
 concept with its projections, and what it owes; `list --brief` is the net as a map in a line or two — `N concept(s):
 a, b, … ; M open question(s)` (names cut to fit ~300 characters), then how many relations are stale or broken when any
@@ -66,6 +67,14 @@ form (the same file under a narrower anchor, the same name in another file — a
 source. Measured on one project's history (guin-site): 73 retired projections, 15 debts in 3 commits — a deploy that
 moved from GitHub Pages to Workers while the sentence still said Pages, a rewrite from Python to Astro, tags leaving the
 post header.
+
+A sentence that no longer says what the project does, while its revision waits (a later stage, a person's word), is
+marked: `concept drift NAME --why "..."` — signed `--by`, `--delegated`, or, with neither, as the agent's own. Until
+`revise` (or `reaffirm`, when the old sentence holds after all) clears it: `cq` says DRIFTED for every question the
+concept answers or that stands on it (exit 1); `concept list`, `list --brief`, `lookup` and the report show the mark
+beside the sentence; `impact` puts its stale relations on one line; `reconfirm`, `confirm` and `move` of a relation on
+it are refused, and the judge is not asked about them. A question that also fails for another reason says both. Without it (guin-site, after the site moved off D1) the stale relations were
+re-confirmed "to be revised at stage 5" and two questions answered green with a sentence false in production.
 
 ### `/mangsang:confirm`
 
@@ -123,7 +132,8 @@ relation with its anchor, predicate, the confirmed quote, who confirmed it (`by 
 WHO`, `by the agent NAME, on its own`, or `delegated:` and the reason's first clause) and whether it is fresh, stale or broken now — what an agent otherwise opens `concepts/` and `relations/`
 for by hand. A file with nothing on it says which case it is: not registered (and, when git tracks it beside
 registered files, that the net cannot see it and how to register it), registered with no relations, or not in the
-tree. Read-only
+tree. Read-only. It also takes an anchor — `concept:NAME` (the meaning, then what stands on it), `file:symbol` — and a
+relation id: that relation whole, its concept's meaning, its state, quote and signer (a retired one says so, with why)
 
 `lookup PATH --brief` is the same fact for an agent's first look at a file: one line per concept (or other end) the
 file's relations reach — `concept:NAME — <its meaning's first sentence, cut at ~160 characters>` (a first sentence that is
@@ -174,7 +184,7 @@ what is watched; what a predicate means and which way it propagates
 Committed: yes.
 
 the net's nodes — one per file, each a name, its `means` sentence, who declared it, `owes` (retired projections not yet
-answered by a `revise` or `reaffirm`), and under `history` every earlier meaning a `revise` replaced and every
+answered by a `revise` or `reaffirm`), `drift` (the sentence marked as known wrong: why, when, who), and under `history` every earlier meaning a `revise` replaced and every
 `reaffirm`, each with what it answered
 
 ### every record file
@@ -319,7 +329,12 @@ missing relations), **UNASKABLE** (the net moved out from under it — its predi
 invariant; declare one or say why not).
 
 Two observations, never red: **unseen** — with no `registered` invariant, the tracked files beside registered ones that
-are not registered (guin-site built a whole backend outside the net, and impact, check and cq were all green over it);
+are not registered (guin-site built a whole backend outside the net, and impact, check and cq were all green over it),
+and — invariant or not — each directory of tracked code or config that holds no registered file at all, with its count
+(guin-site's write app and its schemas were new top-level directories the first observation never looked in; markdown and
+text there are content; hidden directories, lockfiles, the records `record-paths` in hunsu.lock.json declares and what a
+`registered` invariant's `except` globs leave out are left out; files directly in a directory whose registered files are
+all deeper are said as `dir/*`; the root's own files are not — every project's manifests; six are named, the rest counted);
 **ungrounded** — a person's words kept as a source that no relation uses, no signature cites (`approved-in`,
 `approval-of`) and no registered document cites by id: a decision the model does not carry yet. Measured there: 73 of
 the owner's sources, 37 related to nothing, 32 of those cited by the plan; the 5 left included the backend's two
