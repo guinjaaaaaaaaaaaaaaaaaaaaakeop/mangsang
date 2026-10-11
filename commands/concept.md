@@ -1,6 +1,6 @@
 ---
-description: The net's own nodes: add NAME --means '..' (--by|--delegated), revise, reaffirm (a retired projection owed a re-read), rename, list (--brief: the net as a map in a line or two)
-argument-hint: add|revise|reaffirm|rename|list [--brief] [NAME] [--means ..] [--by NAME|--delegated WHY]
+description: The net's own nodes: add NAME --means '..' (--by|--delegated), revise, reaffirm (a retired projection owed a re-read, or a drift mark), drift NAME --why '..' (the sentence is known wrong, revision owed), rename, list (--brief: the net as a map in a line or two)
+argument-hint: add|revise|reaffirm|drift|rename|list [--brief] [NAME] [--means ..] [--why ..] [--by NAME|--delegated WHY]
 ---
 !`python3 "${CLAUDE_PLUGIN_ROOT}/mangsang.py" concept $ARGUMENTS --target .`
 

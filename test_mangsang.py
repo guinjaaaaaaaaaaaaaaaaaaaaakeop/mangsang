@@ -484,6 +484,41 @@ def test_what_the_net_cannot_see_is_said_and_can_be_checked():
         assert not [f for f in doc["findings"] if f["kind"] in ("unregistered", "ungrounded-source")], doc
 
 
+def test_a_directory_nobody_registered_anything_in_is_said_too():
+    """guin-site, 10-10: a write app (`write/`, an OAuth Worker) and its schemas (`lexicons/`) were new top-level directories.
+    The unseen advice looked only beside registered files, so the net stayed green over both. Now a directory of tracked code
+    or config holding no registered file is said, once per directory with its count — not its content (markdown, text), not
+    a hidden directory, not the products' records the lock declares, and not what a `registered` invariant already asks for."""
+    import subprocess
+    with Project() as pj:
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+        write(os.path.join(pj.dir, "src", "site.py"), "def build():\n    return 1\n")
+        write(os.path.join(pj.dir, "write", "src", "index.ts"), "export function post() { return 1 }\n")
+        write(os.path.join(pj.dir, "write", "src", "oauth", "par.ts"), "export function par() { return 2 }\n")
+        write(os.path.join(pj.dir, "lexicons", "com", "x", "post.json"), "{}\n")
+        write(os.path.join(pj.dir, "content", "posts", "hello.md"), "# hello\n")
+        write(os.path.join(pj.dir, ".github", "workflows", "ci.yaml"), "on: push\n")
+        write(os.path.join(pj.dir, "reviews", "review-1.json"), "{}\n")
+        write(os.path.join(pj.dir, "hunsu.lock.json"), json.dumps({"record-paths": {"dwitbuk": ["reviews/"]}}))
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run("register", "plan/PLAN.md", "src/site.py", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        line = next(l for l in out.split("\n") if "director" in l and "unseen" in l)
+        assert code == 0 and "lexicons/ 1 file(s)" in line and "write/ 2 file(s)" in line and "2 directories" in line, out
+        assert not any(x in line for x in ("content/", ".github/", "reviews/")), line
+        doc = json.loads(run("check", "--findings", "--target", pj.dir)[1])
+        assert any(f["kind"] == "unregistered" and "write/" in f["where"] for f in doc["findings"]), doc
+        # a `registered` invariant over write/ asks for it: red there, and the advice no longer repeats it
+        assert run("cq", "add", "all-seen", "--text", "Does the net see the write app?", "--verify",
+                   '{"kind": "registered", "paths": ["write/"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        line = next(l for l in out.split("\n") if "director" in l and "unseen" in l)
+        assert code == 1 and "write/" not in line and "lexicons/" in line and "1 directory" in line, out
+        # registering one file in a directory brings it beside the registered ones: no longer a directory nobody looked in
+        assert run("register", "lexicons/com/x/post.json", "write/src/index.ts", "write/src/oauth/par.ts", "--target", pj.dir)[0] == 0
+        assert "director" not in run("check", "--target", pj.dir)[1]
+
+
 def test_lookup_lists_the_relations_standing_on_a_file_before_an_edit():
     """The reverse index: an agent about to touch memo.py sees which confirmed relations its edit can go stale,
     so the edit and the relation update are sized as one piece of work — not discovered later by impact."""
@@ -538,6 +573,158 @@ def test_lookup_says_what_each_relation_means_and_why_a_file_has_none():
         assert code == 0 and "NOT REGISTERED (tracked by git, beside 3 registered file(s) under the root)" in out and "the net cannot see it" in out, out
         code, out = run("lookup", "worker/gone.py", "--target", pj.dir)
         assert code == 0 and "not in the tree" in out and "NOT REGISTERED" not in out, out
+
+
+def test_lookup_takes_a_relation_id_and_a_concept_too():
+    """guin-site, 10-09: a session re-confirming typed `lookup R-49cec80b` and was told no relation touched R-49cec80b — lookup took
+    files only. A relation id shows that relation (its concept's meaning, its state, its quote and signer); `concept:NAME` what
+    stands on the concept; a retired id says so with why; an unknown one says what lookup takes."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "appending one memo; it prints its id", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("memo.py:add", "realizes", "concept:adding", ev="def add(store, text):"),
+                          rel("memo.py:list_", "realizes", "concept:adding", ev="def list_(store):"))[0] == 0
+        rid = mangsang.rel_id(rel("memo.py:add", "realizes", "concept:adding"))
+        code, out = run("lookup", rid, "--target", pj.dir)
+        assert code == 0 and "concept:adding — means: appending one memo" in out and "%s  memo.py:add realizes concept:adding — fresh" % rid in out, out
+        assert '"def add(store, text):" — by kim' in out and "`mangsang lookup memo.py`" in out and "no confirmed relations" not in out, out
+        code, out = run("lookup", "concept:adding", "--target", pj.dir)
+        assert code == 0 and out.count("appending one memo") == 1 and "[concept:adding]" in out and "2 relation(s) on concept:adding" in out, out
+        code, out = run("lookup", "concept:adding", "--brief", "--target", pj.dir)
+        assert out.strip() == "concept:adding — appending one memo; it prints its id (2 relation(s))", out
+        code, out = run("lookup", "memo.py:add", "--target", pj.dir)
+        assert code == 0 and "1 relation(s) on memo.py:add" in out and "list_" not in out, out
+        code, out = run("lookup", rid.upper(), "--target", pj.dir)   # pasted in capitals: the same relation
+        assert code == 0 and "%s  memo.py:add realizes" % rid in out, out
+        code, out = run("lookup", "memo.py:nosuch", "--target", pj.dir)
+        assert code == 1 and "has no :nosuch now" in out and "makes nothing stale" not in out, out
+        code, out = run("lookup", "source:nobody-said", "--target", pj.dir)
+        assert code == 1 and "no source nobody-said" in out and "no such file" not in out, out
+        assert run("retire", rid, "--why", "split in two", "--target", pj.dir)[0] == 0
+        code, out = run("lookup", rid, "--target", pj.dir)
+        assert code == 0 and "is retired" in out and "split in two" in out, out
+        code, out = run("lookup", "R-00000000", "--target", pj.dir)
+        assert code == 1 and "takes a relation id, `concept:NAME`, a file" in out, out
+        assert run("lookup", "concept:nothing", "--target", pj.dir)[0] == 1
+
+
+def test_a_concept_known_to_have_drifted_is_said_until_it_is_revised():
+    """guin-site 748a4d8: the site moved off D1, its concept still said "the original is in D1", and with no way to say "this
+    is known wrong, the revision waits" the session re-confirmed the stale relations and `cq` answered green with a false
+    sentence. `concept drift NAME --why` marks it: cq says DRIFTED (exit 1), list/lookup/--brief/report show the mark, impact
+    groups its stale relations on one line, reconfirm and the judge's still-true are refused; revise or reaffirm clears it,
+    and the mark stays in history."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "appending one memo; it prints its id", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("memo.py:add", "realizes", "concept:adding", ev="def add(store, text):"))[0] == 0
+        assert run("cq", "add", "how-add", "--text", "How is a memo added?", "--verify", '{"kind": "answered-by", "concepts": ["adding"]}',
+                   "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run("cq", "--target", pj.dir)[0] == 0
+        assert run("concept", "drift", "adding", "--target", pj.dir)[0] != 0, "a reason is required"
+        assert run("concept", "drift", "adding", "--why", "x", "--target", pj.dir)[0] != 0, "at a terminal, a mark is signed"
+        code, out = run_as_agent("concept", "drift", "adding", "--why", "memos moved to the PDS; the sentence still says a list. Revised at stage 5", "--target", pj.dir)
+        assert code == 0 and "cq says DRIFTED for how-add" in out, out
+        c = mangsang.load(os.path.join(pj.dir, "mangsang", "concepts", "adding.json"))
+        assert c["drift"]["agent"] == "Claude Code" and c["drift"]["why"].startswith("memos moved") and c["drift"]["at"].endswith("Z"), c
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 1 and "DRIFTED      how-add" in out and "drifted: adding — memos moved to the PDS" in out and "drifted 1" in out and "answered 0" in out, out
+        code, out = run("cq", "--findings", "--target", pj.dir)
+        assert [f["kind"] for f in json.loads(out)["findings"]] == ["cq-drifted"], out
+        assert "DRIFTED: memos moved to the PDS" in run("concept", "list", "--target", pj.dir)[1]
+        assert "drifted (meaning known wrong, revision owed): adding" in run("concept", "list", "--brief", "--target", pj.dir)[1]
+        assert "DRIFTED: memos moved" in run("lookup", "memo.py", "--target", pj.dir)[1]
+        assert "[DRIFTED, known not to hold: memos moved to the PDS" in run("lookup", "memo.py", "--brief", "--target", pj.dir)[1]
+        assert "**drifted**" in run("report", "--target", pj.dir)[1]
+        # the code moved: its relation is stale, and waits for the new sentence instead of a re-read
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        code, out = run("impact", "--target", pj.dir)
+        rid = mangsang.rel_id(rel("memo.py:add", "realizes", "concept:adding"))
+        assert code == 1 and "drifted concept:adding — memos moved to the PDS" in out and "1 stale relation(s) wait for `concept revise adding`" in out, out
+        assert "  stale   " not in out and "unresolved_total = 1" in out, out
+        code, out = run("reconfirm", rid, "--by", "kim", "--target", pj.dir)
+        assert code == 1 and "is marked drifted" in out and "concept revise adding" in out, out
+        code, out = run("judge", "request", "--out", os.path.join(pj.dir, "j"), "--target", pj.dir)
+        assert "not asked: 1 relation(s) on drifted concept(s)" in out and "nothing stale to judge" in out, out
+        # revised: the mark goes to history, the questions answer again once the projections are re-read
+        assert run("concept", "revise", "adding", "--means", "appending one memo to the PDS; it prints its id", "--by", "kim", "--target", pj.dir)[0] == 0
+        c = mangsang.load(os.path.join(pj.dir, "mangsang", "concepts", "adding.json"))
+        assert "drift" not in c and c["history"][-1]["drift"]["why"].startswith("memos moved"), c
+        assert "DRIFTED" not in run("cq", "--target", pj.dir)[1]
+        assert run("reconfirm", rid, "--by", "kim", "--target", pj.dir)[0] == 0
+        # reaffirm clears a mark too, when the old sentence holds after all
+        assert run_as_agent("concept", "drift", "adding", "--why", "maybe wrong", "--target", pj.dir)[0] == 0
+        assert run("concept", "reaffirm", "adding", "--by", "kim", "--target", pj.dir)[0] == 0
+        c = mangsang.load(os.path.join(pj.dir, "mangsang", "concepts", "adding.json"))
+        assert "drift" not in c and c["history"][-1]["drift"]["why"] == "maybe wrong" and c["history"][-1]["reaffirmed"] == {"by": "kim"}, c
+        assert run("cq", "--target", pj.dir)[0] == 0
+
+
+
+def test_a_drifted_concept_takes_no_new_signature_and_hides_nothing_else():
+    """Review of 1.17.0's drift: reconfirm refused a drifted concept, but `confirm` signed a new relation quoting the false
+    sentence and `move` re-signed one on it — the same hazard. A drifted question that also fails says both; a drift alone is
+    no revision in the report's count."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "appending one memo; it prints its id", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run("cq", "add", "how-add", "--text", "How is a memo added?", "--verify", '{"kind": "answered-by", "concepts": ["adding"]}',
+                   "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run_as_agent("concept", "drift", "adding", "--why", "memos moved to the PDS", "--target", pj.dir)[0] == 0
+        # realized nowhere and drifted: both said, each counted once
+        code, out = run("cq", "--findings", "--target", pj.dir)
+        assert sorted(f["kind"] for f in json.loads(out)["findings"] if f["where"] == "how-add") == ["cq-drifted", "cq-failed"], out
+        code, out = run("cq", "--target", pj.dir)
+        assert code == 1 and "answered 0 · failed 1" in out and "drifted 1" in out, out
+        # a new relation on it is refused like a re-confirmation
+        code, out = pj.propose(rel("memo.py:add", "realizes", "concept:adding", ev="def add(store, text):"))
+        assert code == 1 and "is marked drifted" in out and "concept revise adding" in out, out
+        assert not mangsang.decl(pj.dir)["relations"]
+        # two drift marks are no revision
+        assert run_as_agent("concept", "drift", "adding", "--why", "still wrong", "--target", pj.dir)[0] == 0
+        assert "revised" not in run("report", "--target", pj.dir)[1]
+        assert run("concept", "revise", "adding", "--means", "appending one memo to the PDS; it prints its id", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert "revised 1 time(s)" in run("report", "--target", pj.dir)[1]
+        # move: a broken relation on a drifted concept is left for a person
+        assert pj.propose(rel("memo.py:add", "realizes", "concept:adding", ev="def add(store, text):"))[0] == 0
+        write(os.path.join(pj.dir, "core.py"), "def add(store, text):\n    return 1\n")
+        os.remove(os.path.join(pj.dir, "memo.py"))
+        assert run("register", "core.py", "--target", pj.dir)[0] == 0
+        assert run_as_agent("concept", "drift", "adding", "--why", "moved again", "--target", pj.dir)[0] == 0
+        code, out = run("move", "--by", "kim", "--target", pj.dir)
+        assert "left" in out and "is marked drifted" in out and not any(r.get("moved-from") for r in mangsang.decl(pj.dir)["relations"]), out
+
+
+def test_unseen_directories_are_capped_excludable_and_reach_files_beside_deeper_ones():
+    """Review of 1.17.0's unseen directories: a monorepo with one package registered named thousands of directories in one
+    line; vendored code and lockfiles had no way out but an invariant nobody knew to write; and `src/b.py` beside a registered
+    `src/a/x.py` was seen by neither advice. Now: six named and the rest counted, a `registered` invariant's `except` globs and
+    lockfiles leave a directory out, and files directly in such a directory are said as `src/*`. The root's files are not:
+    they are every project's manifests."""
+    import subprocess
+    with Project() as pj:
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+        write(os.path.join(pj.dir, "src", "a", "x.py"), "def x():\n    return 1\n")
+        write(os.path.join(pj.dir, "src", "b.py"), "def b():\n    return 1\n")
+        for i in range(9):
+            write(os.path.join(pj.dir, "pkg%d" % i, "index.js"), "export const a = 1\n")
+        write(os.path.join(pj.dir, "web", "package-lock.json"), "{}\n")
+        write(os.path.join(pj.dir, "vendor", "lib.py"), "Z = 1\n")
+        write(os.path.join(pj.dir, "config.py"), "Y = 1\n")
+        write(os.path.join(pj.dir, "hunsu.lock.json"), json.dumps({"record-paths": {"dwitbuk": "reviews/"}}))   # a string: no prefixes
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run("register", "src/a/x.py", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        line = next(l for l in out.split("\n") if "director" in l and "unseen" in l)
+        assert "11 directories" in line and "… and 5 more" in line and "src/* 1 file(s)" not in line, line   # sorted: pkg0..pkg5 named first
+        assert "web/" not in line and "config.py" not in line and "`except` globs in a `registered` invariant" in line, line
+        doc = json.loads(run("check", "--findings", "--target", pj.dir)[1])
+        f = next(f for f in doc["findings"] if f["kind"] == "unregistered" and "pkg0/" in f["where"])
+        assert "src/* (1)" in f["text"] and "vendor/" in f["where"] and "more" not in f["text"], f   # twelve fit; a string record-paths skipped nothing
+        assert run("cq", "add", "seen", "--text", "Does the net see the code?", "--verify",
+                   '{"kind": "registered", "paths": ["src/a/"], "except": ["pkg*/*", "vendor/*"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        line = next(l for l in run("check", "--target", pj.dir)[1].split("\n") if "director" in l and "unseen" in l)
+        assert line.count("file(s)") == 1 and "src/* 1 file(s)" in line and "1 directory" in line, line
 
 
 def test_lookup_brief_is_a_line_per_concept_and_silent_where_there_is_no_fact():
