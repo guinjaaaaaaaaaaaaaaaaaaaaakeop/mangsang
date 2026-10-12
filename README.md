@@ -40,7 +40,10 @@ verbatim, the agent's turn under its model's name, the locator filled in; `--tur
 a phrase cannot — a short approval recurs — and the ids are listed, latest last, when `--match` finds several). An
 answer is the person's turn after the agent's turn it replies to: a choice picked in a question, or a reply typed
 ("ㄱㄱ", "1번") — a typed reply right after the agent's turn matches `--kind person` and `--kind answer` both, and its
-locator names the turn it answers. When nothing matches, the error says what is there: turns of another kind that
+locator names the turn it answers. A choice picked in a question form is only what the person picked or typed (and
+a note they typed beside it) — never the tool's wrapper ("Your questions have been answered: …"): each question of a
+form is its own answer turn (`ID#1`, `ID#2`, … when the form asked several; `--turn ID` lists them), its locator names
+the question it answers, and it replies to the form's source when that is kept. When nothing matches, the error says what is there: turns of another kind that
 contain the phrase, or where in the record it is (the agent's thinking, a tool call, a tool's output — none of it said)
 and the turns around it, each with the id to pass as `--turn`. Both sides of a conversation are sources,
 and an answer is kept with the turn it answers. `--excerpt "sentence"` (repeatable) keeps only those sentences of the turn —
@@ -87,7 +90,9 @@ Fingerprint every anchor; `--reset` takes a new baseline, `--reset --at REV` tak
 
 ### `/mangsang:impact`
 
-Report stale and broken relations; exit 1 when anything is unresolved. `--only ANCHOR-PREFIX..` judges only the
+Report stale and broken relations; exit 1 when anything is unresolved. Broken relations whose file is gone from the
+tree (and whose symbol or section is in no other registered file) are grouped by that file, with the one `retire --gone
+FILE.. --why WHY` that disposes of them. `--only ANCHOR-PREFIX..` judges only the
 relations touching those anchors — a slice's check; the whole-tree invariant belongs to the merge and goal checks.
 `--findings` prints `dwitbuk/findings@1` (stale, broken, and — as `delegated`, an observation — relations re-confirmed
 with no person reading them: by delegation, by a judge's verdict applied, or by an agent on its own). `--show` prints,
@@ -164,7 +169,13 @@ regenerate it rather than edit it; a project that keeps the page in git (to show
 
 ### `/mangsang:retire`
 
-Drop a relation, keeping it and the reason in retired/
+Drop a relation, keeping it and the reason in retired/. `retire --gone FILE.. --why WHY` (or `--deleted`) is for files
+deleted on purpose: every relation with an anchor in them is retired with the one reason (each kept in retired/ with
+`gone` naming the file), the files leave the registry, and the concepts that lost a projection with them owe a re-read
+(the `owes` rule). A path still in the tree is refused; a deleted directory names every file under it the net knew.
+`impact` groups such broken relations by the deleted file and prints the command — a contract that retired a backend
+left 28 broken relations on guin-site with no route but one retire each. A dead symbol or section that is in another
+registered file now is a rename, not a deletion: `move` it first
 
 ### `/mangsang:reconfirm`
 

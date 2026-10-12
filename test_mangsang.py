@@ -975,7 +975,8 @@ def test_a_turn_is_taken_from_the_hosts_transcript_verbatim_and_names_are_the_ro
             {"type": "assistant", "uuid": "a1", "timestamp": "t2", "message": {"id": "m1", "model": "claude-x", "content": [{"type": "text", "text": "So: one list, newest first."}]}},
             {"type": "assistant", "uuid": "a2", "timestamp": "t2", "message": {"id": "m1", "model": "claude-x", "content": [{"type": "text", "text": "Is that right?"}]}},
             {"type": "assistant", "uuid": "a3", "timestamp": "t3", "message": {"id": "m2", "model": "claude-x", "content": [{"type": "tool_use", "id": "q1", "name": "AskUserQuestion", "input": {"questions": [{"question": "Times in UTC?"}]}}]}},
-            {"type": "user", "uuid": "u2", "timestamp": "t4", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "q1", "content": "answered: Times in UTC?=reader's local"}]}},
+            {"type": "user", "uuid": "u2", "timestamp": "t4", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "q1", "content": "Your questions have been answered: \"Times in UTC?\"=\"reader's local\". You can now continue with these answers in mind."}]},
+             "toolUseResult": {"questions": [{"question": "Times in UTC?"}], "answers": {"Times in UTC?": "reader's local"}}},
             {"type": "user", "uuid": "u3", "timestamp": "t5", "message": {"role": "user", "content": "<task-notification>done</task-notification>"}},
         ]
         write(tr, "\n".join(json.dumps(x) for x in lines) + "\n")
@@ -1754,6 +1755,106 @@ def test_judge_request_out_is_a_directory_and_says_where_the_packet_is():
         code, out = run("judge", "request", "--out", d, "--target", pj.dir)
         assert code == 0 and "packet:   %s" % os.path.join(d, "judge-request.json") in out and "response: %s" % os.path.join(d, "judge-response.json") in out, out
         assert "judge_worker.py --request" in out and "judge consume --response" in out, out
+
+
+def test_files_deleted_on_purpose_retire_as_one_with_one_reason():
+    """guin-site, 2026-10-12: a contract retired /admin, /api, the D1 scripts and db/ — files deleted on purpose — and 28
+    relations stood broken with no route but retiring each by hand with the same reason. `impact` groups the broken
+    relations by the deleted file and says the one command; `retire --gone FILE.. --why` retires every relation on those
+    files (each kept with the reason and the file gone), unregisters them, and names the concepts that now owe a re-read.
+    A path still in the tree is refused; a gone directory names the files under it."""
+    with Project() as pj:
+        legacy = "def legacy(store):\n    return 1\n\n\ndef older(store):\n    return 2\n"
+        write(os.path.join(pj.dir, "old", "legacy.py"), legacy)
+        write(os.path.join(pj.dir, "old", "schema.sql"), "CREATE TABLE memos (id INTEGER);\n")
+        assert run("register", "plan/PLAN.md", "memo.py", "old/legacy.py", "old/schema.sql", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "a memo is appended and its id printed", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"),
+                          rel("old/legacy.py:legacy", "realizes", "concept:adding", "a memo is appended"),
+                          rel("old/legacy.py:older", "realizes", "concept:adding", "a memo is appended"),
+                          rel("old/schema.sql:memos", "realizes", "concept:adding", "a memo is appended"),
+                          rel("plan/PLAN.md#Q1 add", "documents", "old/legacy.py:legacy"))[0] == 0
+        shutil.rmtree(os.path.join(pj.dir, "old"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and "gone    old/legacy.py — deleted from the tree; 3 broken relation(s)" in out, out
+        assert "gone    old/schema.sql" in out and "  broken  " not in out, out   # grouped, not one line each
+        assert "`retire --gone old/legacy.py old/schema.sql --why \"WHY\"`" in out, out
+        code, out = run("impact", "--findings", "--target", pj.dir)
+        assert "old/legacy.py is gone from the tree" in out, out
+        # refused: a file that is there, a path the net never knew
+        code, out = run("retire", "--gone", "memo.py", "--why", "x", "--target", pj.dir)
+        assert code != 0 and "still in the tree" in out, out
+        code, out = run("retire", "--gone", "nowhere.py", "--why", "x", "--target", pj.dir)
+        assert code != 0 and "nothing for the net to retire" in out, out
+        assert run("retire", "R-00000000", "--gone", "old", "--why", "x", "--target", pj.dir)[0] != 0
+        assert len(os.listdir(os.path.join(pj.dir, "mangsang", "relations"))) == 5, "a refusal changes nothing"
+        # the directory names both files; one reason for all
+        code, out = run("retire", "--deleted", "old", "--why", "the contract retired the old backend", "--target", pj.dir)
+        assert code == 0 and "4 relation(s) retired" in out and "2 file(s) unregistered: old/legacy.py, old/schema.sql" in out, out
+        assert "concept adding lost a projection: its sentence owes a re-read" in out, out
+        d = mangsang.decl(pj.dir)
+        assert {e["path"] for e in d["registry"]} == {"plan/PLAN.md", "memo.py"}, d["registry"]
+        assert len(d["relations"]) == 1 and len(d["retired"]) == 4, d
+        assert all(r["retired"] == {"why": "the contract retired the old backend", "gone": [r["src"].split(":")[0] if r["src"].startswith("old/") else r["dst"].split(":")[0]]}
+                   for r in d["retired"]), d["retired"]
+        owes = next(c for c in d["concepts"] if c["name"] == "adding")["owes"]
+        assert len(owes) == 3, owes   # every projection that went with the files: the same-file rule does not excuse a file that is gone
+        assert run("impact", "--target", pj.dir)[0] == 0
+        # a single retire still works, and still owes
+        assert run("retire", d["relations"][0]["id"], "--why", "done", "--target", pj.dir)[0] == 0
+
+
+def test_an_answer_from_a_question_form_is_the_persons_choice_not_the_tools_wrapper():
+    """guin-site, 2026-10-12 (source at-62, 1.17.0): `source add --from-transcript … --kind answer` kept the tool's wrapper —
+    "Your questions have been answered: "Q1"="A1", "Q2"="A2", … You can now continue with these answers in mind." — as the
+    owner's words. The person said only what they picked (or typed). Each question of a form is its own answer turn,
+    `ID#k` when there are several; its text is the choice and the person's note, the question it answers is named in the
+    locator, and the answer replies to the question's source when that is kept."""
+    with Project() as pj:
+        tr = os.path.join(pj.dir, "s.jsonl")
+        qs = [{"question": "백업을 어떻게 바꿀까요?", "header": "백업", "options": [{"label": "PDS 백업 (추천)"}, {"label": "백업 끄기"}]},
+              {"question": "예전 D1을 어떻게 할까요?", "header": "D1", "options": [{"label": "옮기고 삭제 (추천)"}, {"label": "그대로"}]}]
+        wrapper = ('Your questions have been answered: "백업을 어떻게 바꿀까요?"="PDS 백업 (추천)", "예전 D1을 어떻게 할까요?"="옮기고 삭제 (추천)". '
+                   'You can now continue with these answers in mind.')
+        lines = [{"type": "assistant", "uuid": "a1", "timestamp": "t1", "message": {"id": "m1", "model": "claude-x", "content": [
+                     {"type": "tool_use", "id": "q1", "name": "AskUserQuestion", "input": {"questions": qs}}]}},
+                 {"type": "user", "uuid": "u1", "timestamp": "t2", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "q1", "content": wrapper}]},
+                  "toolUseResult": {"questions": qs, "answers": {"백업을 어떻게 바꿀까요?": "PDS 백업 (추천)", "예전 D1을 어떻게 할까요?": "옮기고 삭제 (추천)"},
+                                    "annotations": {"예전 D1을 어떻게 할까요?": {"notes": "erasures는 꼭 옮겨", "preview": "+--+"}}}},
+                 # an older record with no structured answers: read out of the text for the questions asked
+                 {"type": "assistant", "uuid": "a2", "timestamp": "t3", "message": {"id": "m2", "model": "claude-x", "content": [
+                     {"type": "tool_use", "id": "q2", "name": "AskUserQuestion", "input": {"questions": [{"question": "배포할까요?"}]}}]}},
+                 {"type": "user", "uuid": "u2", "timestamp": "t4", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "q2",
+                     "content": 'User has answered your questions: "배포할까요?"="커밋 후 배포". You can now continue with the user\'s answers in mind.'}]}},
+                 # a form declined: nothing the person said
+                 {"type": "assistant", "uuid": "a3", "timestamp": "t5", "message": {"id": "m3", "model": "claude-x", "content": [
+                     {"type": "tool_use", "id": "q3", "name": "AskUserQuestion", "input": {"questions": [{"question": "지울까요?"}]}}]}},
+                 {"type": "user", "uuid": "u3", "timestamp": "t6", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "q3", "is_error": True,
+                     "content": "The user doesn't want to proceed with this tool use."}]}},
+                 # the host's summary of a compacted session is filed as a user record: no one said it
+                 {"type": "user", "uuid": "u4", "timestamp": "t7", "isCompactSummary": True, "message": {"role": "user", "content":
+                     "This session is being continued from a previous conversation. The user picked 옮기고 삭제."}}]
+        write(tr, "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines))
+        assert run("source", "add", "Q", "--from-transcript", tr, "--match", "예전 D1을", "--kind", "question", "--target", pj.dir)[0] == 0
+        code, out = run("source", "add", "A", "--from-transcript", tr, "--match", "옮기고 삭제", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)
+        assert code == 0, out
+        a = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "A.json"))
+        assert a["text"] == "옮기고 삭제 (추천)\nerasures는 꼭 옮겨", a   # the choice and the person's note; not the agent's preview
+        assert "answered" not in a["text"] and "continue" not in a["text"] and "예전 D1을" not in a["text"], a
+        assert a["locator"] == 'session s, answer u1#2 at t2, answering question a1: "예전 D1을 어떻게 할까요?"', a
+        assert a["replies-to"] == "Q", a   # the question form was kept: the answer replies to it
+        # the record's id names both answers; each is its own turn
+        code, out = run("source", "add", "X", "--from-transcript", tr, "--turn", "u1", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)
+        assert code != 0 and "found 2 turn(s)" in out and "answer u1#1" in out and "answer u1#2" in out, out
+        assert run("source", "add", "B", "--from-transcript", tr, "--turn", "u1#1", "--speaker", "lee", "--target", pj.dir)[0] == 0
+        assert mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "B.json"))["text"] == "PDS 백업 (추천)"
+        # text only: read out of the wrapper for the question asked, the wrapper left behind
+        assert run("source", "add", "C", "--from-transcript", tr, "--match", "커밋 후", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)[0] == 0
+        c = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "C.json"))
+        assert c["text"] == "커밋 후 배포" and "answering question a2" in c["locator"] and "replies-to" not in c, c
+        # a declined form holds no answer: the miss says it is a tool's output, not something said
+        code, out = run("source", "add", "D", "--from-transcript", tr, "--match", "doesn't want", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)
+        assert code != 0 and "found in no turn" in out and "a tool's output" in out, out
 
 
 if __name__ == "__main__":
