@@ -10,8 +10,10 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 .env files, nested keys dotted — see anchors.py for the one rule behind them)
   source add ID --file F|- --speaker WHO [--locator L] [--replies-to ID]
   source add ID --from-transcript JSONL --match PHRASE|--turn ID [--kind person|agent|question|answer]
-                                (a typed reply right after the agent's turn is a person turn and an answer both; a miss says which turns
-                                are there, or where in the record the phrase is, and the ids to name one by)
+                                (a typed reply right after the agent's turn is a person turn and an answer both; a choice picked in a
+                                question form is only what the person picked or typed, one turn per question (ID#k), its locator naming
+                                the question — never the tool's wrapper; a miss says which turns are there, or where in the record the
+                                phrase is, and the ids to name one by)
                                 keep what was said or written, verbatim and unchangeable, as the anchor `source:ID` — a concept
                                 grounded in a conversation relates to it like to any projection, with a quote as evidence. Both
                                 sides of a conversation are sources: "yes, both" means nothing without the question it answers
@@ -24,7 +26,7 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 store relations after checking: anchors exist, predicate is in the vocabulary, no duplicates
   observe [--reset [--at REV]]  this machine's change list: --reset takes a baseline (from git at REV if given), otherwise prints what moved since it
   impact [--findings] [--only ANCHOR-PREFIX...]
-                                observe, then events x relations -> stale / broken. exit 1 when anything is unresolved (usable as a check);
+                                observe, then events x relations -> stale / broken (grouped by file when the file is gone). exit 1 when anything is unresolved (usable as a check);
                                 --only judges only relations touching those anchors (a slice's check); --findings prints `dwitbuk/findings@1`
   judge request --out DIR [--ids ID...]   the stale relations as a packet: the possibly-stale text, the changed text, the quote confirmed.
                                 DIR is a directory (an existing one is used as is): the packet is DIR/judge-request.json, its path printed
@@ -43,6 +45,10 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 the sources; a Mermaid graph. Markdown, or --html: one self-contained file whose graph draws in any
                                 browser with no network (mermaid is vendored and inlined). Read-only — derived, not committed
   retire <id> --why WHY         drop a relation, keeping it (and why) in `retired`
+  retire --gone FILE.. --why WHY
+                                files deleted on purpose (or a directory): every relation on them retired with that one reason, the
+                                files unregistered, the concepts that lost a projection owing a re-read; a path still in the tree is
+                                refused. `impact` groups broken relations by a deleted file and prints this command
   lookup <path>                 before touching a file: the confirmed relations standing on it, grouped by concept (its meaning once),
                                 each with its quote, its confirmer and fresh/stale now; or which of not registered / registered with
                                 nothing on it / not in the tree (read-only) — size the edit as code + relations. Also an anchor
@@ -569,6 +575,29 @@ def unread_by_a_person(sig):
     return None
 
 
+def homes_of(files, anchor):
+    """The registered files of the same kind, other than its own, that have a dead `file:symbol` / `file#heading`'s key now —
+    where `move` would take it (a Python symbol moves to a Python file, a YAML key to a YAML file: `:name` in package.json
+    is no home for a `def name`)."""
+    f, key = split_anchor(anchor)
+    if not key or f in ("concept", "source"):
+        return []
+    return sorted(c for c, keys in files.items() if c != f and key in keys and anchors.kind_of(c) == anchors.kind_of(f))
+
+
+def gone_groups(target, d, broken, files):
+    """{deleted file: [broken relation ids on it]} — a broken relation whose dead anchor's file is no longer in the tree,
+    grouped under the first such file. Not one whose dead symbol or section is in another registered file now: that is a
+    rename or a split — `move`'s, or a person's choice between homes — not a deletion."""
+    out = {}
+    for b in broken:
+        f = next((file_of(a) for a in b["dead"] if gone_from_tree(target, file_of(a))), None)
+        if f is None or any(homes_of(files, a) for a in b["dead"]):
+            continue
+        out.setdefault(f, []).append(b["id"])
+    return out
+
+
 def cmd_impact(args):
     d = decl(args.target)
     stale, broken, unjudged, files = compute_impact(args.target, d, args.only)   # answers and leaves nothing behind: the verdict is what it prints
@@ -577,7 +606,9 @@ def cmd_impact(args):
                                    for r in d["relations"] if r["id"] == x["id"] for a in (r["src"], r["dst"])
                                    if a.startswith("concept:") and drift_of(d, a[len("concept:"):])), "")
         findings = [{"kind": "stale", "where": "%s %s" % (x["id"], x["stale"]), "text": "stale because %s changed since it was confirmed%s" % (x["because"], on_drift(x))} for x in stale]
-        findings += [{"kind": "broken", "where": "%s %s" % (x["id"], ", ".join(x["dead"])), "text": "dead anchor(s): the relation points at nothing"} for x in broken]
+        findings += [{"kind": "broken", "where": "%s %s" % (x["id"], ", ".join(x["dead"])), "text": "dead anchor(s): the relation points at nothing%s" % (
+                         "; %s is gone from the tree" % ", ".join(sorted({file_of(a) for a in x["dead"] if gone_from_tree(args.target, file_of(a))}))
+                         if any(gone_from_tree(args.target, file_of(a)) for a in x["dead"]) else "")} for x in broken]
         # no person read these: a delegation, a judge's verdict applied, an agent's own re-read — observations of the record
         findings += [{"kind": "delegated", "where": "%s %s %s %s" % (r["id"], r["src"], r["predicate"], r["dst"]), "text": "re-confirmed %s" % unread_by_a_person(r["confirmed"])}
                      for r in d["relations"] if isinstance(r.get("confirmed"), dict) and unread_by_a_person(r["confirmed"])]
@@ -603,8 +634,18 @@ def cmd_impact(args):
             for end in x.get("changed") or [x["because"]]:
                 diff = what_changed(args.target, rel, end) if rel else None
                 print("\n".join("      " + l for l in (diff or "(%s: no earlier text in git to compare against — the relation was not committed when it was confirmed, or the anchor is a source, which never changes; the change is known by its fingerprint)" % end).rstrip().split("\n")))
+    gone = gone_groups(args.target, d, broken, files)
     for b in broken:
-        print("  broken  %s  dead anchors %s" % (b["id"], b["dead"]))
+        if not any(b["id"] in ids for ids in gone.values()):
+            print("  broken  %s  dead anchors %s" % (b["id"], b["dead"]))
+    for f, ids in sorted(gone.items()):
+        # a file deleted on purpose: its relations are one fact, not N — and `retire --gone` disposes of them as one
+        print("  gone    %s — deleted from the tree; %d broken relation(s) on it: %s" % (f, len(ids), ", ".join(ids)))
+    if gone:
+        import shlex
+        print("  deleted on purpose? `retire --gone %s --why \"WHY\"` retires every relation on them with that one reason "
+              "(kept in retired/), unregisters the files and says which concepts owe a re-read — after `move` takes what has a new home"
+              % " ".join(shlex.quote(f) for f in sorted(gone)))
     if unjudged:
         print("  unjudged %d relation(s) confirmed before `seen` existed, and this machine has no baseline: %s — `observe --reset --at REV` to judge them from REV"
               % (len(unjudged), ", ".join(unjudged)))
@@ -1289,35 +1330,104 @@ def cq_declare(args):
     raise SystemExit("cq [run|add|revise|retire]")
 
 
+def owe_for(d, r):
+    """The concept that owes a re-read now that `r` is retired — its id added to the concept's `owes` — or None.
+    A projection of a concept retired: what the concept's sentence was affirmed over has changed, and reconfirming the
+    projections that remain answers only whether each still realizes it — not whether the sentence still says what the
+    project does (guin-site, 2026-09-30: a deploy moved, three projections retired, three added, nine reconfirmed, and the
+    sentence still named the old deploy). The concept owes a re-read until `concept revise` or `concept reaffirm`.
+    Owes nothing: adding a projection; a `move`; a projection that is still there in another form — the same file (an
+    anchor narrowed to a symbol) or the same name in another file (a refactoring done by hand: retire, re-propose) — and a
+    source (grounding, not a projection of what the project does). Measured on guin-site's history: 73 retired projections,
+    15 debts in 3 commits — the Workers deploy, the rewrite from Python to Astro, tags leaving the post header.
+    `d["relations"]` must no longer hold `r` (nor anything retired with it)."""
+    rf, rk = split_anchor(r["src"])
+    still = [x for x in d["relations"] if x["predicate"] == "realizes" and x["dst"] == r["dst"]
+             and (split_anchor(x["src"])[0] == rf or (rk and split_anchor(x["src"])[1] == rk))]
+    if r["predicate"] != "realizes" or not r["dst"].startswith("concept:") or r["src"].startswith("source:") or still:
+        return None
+    owed = next((c for c in d["concepts"] if c["name"] == r["dst"][len("concept:"):]), None)
+    if owed is not None and r["id"] not in owed.setdefault("owes", []):
+        owed["owes"].append(r["id"])
+    return owed
+
+
+def owes_line(c):
+    return ("  concept %s lost a projection: its sentence owes a re-read (%s) — `concept revise %s --means \"...\"` if it no longer holds, "
+            "`concept reaffirm %s --by|--delegated` if it does; until then the questions it answers fail"
+            % (c["name"], ", ".join(c["owes"]), c["name"], c["name"]))
+
+
 def cmd_retire(args):
+    if args.gone:
+        if args.id:
+            raise SystemExit("retire takes a relation id or --gone FILE.., not both")
+        return retire_gone(args)
+    if not args.id:
+        raise SystemExit("retire <id> --why WHY, or retire --gone FILE.. --why WHY (every relation on files deleted on purpose)")
     d = decl(args.target)
     r = next((x for x in d["relations"] if x["id"] == args.id), None)
     if not r:
         raise SystemExit("no relation %s" % args.id)
     d["relations"].remove(r)
     d["retired"].append({**r, "retired": {"why": args.why}})
-    # a projection of a concept retired: what the concept's sentence was affirmed over has changed, and reconfirming the
-    # projections that remain answers only whether each still realizes it — not whether the sentence still says what the
-    # project does (guin-site, 2026-09-30: a deploy moved, three projections retired, three added, nine reconfirmed, and the
-    # sentence still named the old deploy). The concept owes a re-read until `concept revise` or `concept reaffirm`.
-    # Owes nothing: adding a projection; a `move`; a projection that is still there in another form — the same file (an
-    # anchor narrowed to a symbol) or the same name in another file (a refactoring done by hand: retire, re-propose) — and a
-    # source (grounding, not a projection of what the project does). Measured on guin-site's history: 73 retired projections,
-    # 15 debts in 3 commits — the Workers deploy, the rewrite from Python to Astro, tags leaving the post header.
-    owed = None
-    rf, rk = split_anchor(r["src"])
-    still = [x for x in d["relations"] if x["predicate"] == "realizes" and x["dst"] == r["dst"]
-             and (split_anchor(x["src"])[0] == rf or (rk and split_anchor(x["src"])[1] == rk))]
-    if r["predicate"] == "realizes" and r["dst"].startswith("concept:") and not r["src"].startswith("source:") and not still:
-        owed = next((c for c in d["concepts"] if c["name"] == r["dst"][len("concept:"):]), None)
-        if owed is not None and r["id"] not in owed.setdefault("owes", []):
-            owed["owes"].append(r["id"])
+    owed = owe_for(d, r)
     save_decl(args.target, d)
     print("retired %s (%s %s %s) — kept in `retired`" % (r["id"], r["src"], r["predicate"], r["dst"]))
     if owed is not None:
-        print("  concept %s lost a projection: its sentence owes a re-read (%s) — `concept revise %s --means \"...\"` if it no longer holds, "
-              "`concept reaffirm %s --by|--delegated` if it does; until then the questions it answers fail"
-              % (owed["name"], ", ".join(owed["owes"]), owed["name"], owed["name"]))
+        print(owes_line(owed))
+    return 0
+
+
+def file_of(anchor):
+    """The tree file an anchor is in, or None for the net's own (`concept:`, `source:`)."""
+    f = split_anchor(anchor)[0]
+    return None if f in ("concept", "source") else f
+
+
+def gone_from_tree(target, f):
+    return f is not None and not os.path.exists(os.path.join(target, f))
+
+
+def retire_gone(args):
+    """Files deleted on purpose (a contract retired a backend, its routes, its scripts): every relation with an anchor in
+    them is broken, and none has a home for `move` to find. Retiring them one by one — twenty-eight on guin-site, each with
+    the same reason — is the session's afternoon; this is one command and one reason. Each is kept in `retired/` with the
+    why and the file(s) gone; the files leave the registry; the concepts whose projections went with them owe a re-read
+    (the `owes` rule, as for one retire). A path still in the tree is refused: what is there is not gone. A directory that
+    is gone names every file under it the net knew."""
+    d = decl(args.target)
+    norm = lambda p: os.path.normpath(p.replace(os.sep, "/")).replace(os.sep, "/")
+    known = {e["path"] for e in d["registry"]} | {f for r in d["relations"] for f in map(file_of, (r["src"], r["dst"])) if f}
+    files = set()
+    for p in args.gone:
+        q = norm(p)
+        if os.path.exists(os.path.join(args.target, q)):
+            raise SystemExit("%s is still in the tree — `--gone` is for files deleted on purpose; a relation on a file that is there is "
+                             "retired by its id (or moved: `move`)" % q)
+        under = {f for f in known if f == q or f.startswith(q.rstrip("/") + "/")}
+        if not under:
+            raise SystemExit("%s: not registered, and no relation stands on it — nothing for the net to retire" % q)
+        files |= under
+    hits = [r for r in d["relations"] if any(file_of(a) in files for a in (r["src"], r["dst"]))]
+    for r in hits:
+        d["relations"].remove(r)
+    owed = {}
+    for r in hits:
+        d["retired"].append({**r, "retired": {"why": args.why, "gone": sorted({file_of(a) for a in (r["src"], r["dst"]) if file_of(a) in files})}})
+    for r in hits:
+        c = owe_for(d, r)
+        if c is not None:
+            owed[c["name"]] = c
+    before = len(d["registry"])
+    d["registry"] = [e for e in d["registry"] if e["path"] not in files]
+    save_decl(args.target, d)
+    for r in hits:
+        print("  retired %s (%s %s %s)" % (r["id"], r["src"], r["predicate"], r["dst"]))
+    print("%d relation(s) retired — kept in `retired` with why: %s; %d file(s) unregistered: %s"
+          % (len(hits), args.why, before - len(d["registry"]), ", ".join(sorted(files))))
+    for name in sorted(owed):
+        print(owes_line(owed[name]))
     return 0
 
 
@@ -1628,11 +1738,6 @@ def cmd_move(args):
     d = decl(args.target)
     _, broken, _, files = compute_impact(args.target, d, persist=False)
     wanted = set(args.ids or [])
-    homes = {}   # key (":symbol" / "#heading") -> [files that have it now]
-    for f, keys in files.items():
-        for k in keys:
-            if k:
-                homes.setdefault(k, []).append(f)
     moved, refused = [], []
     for b in broken:
         r = next((x for x in d["relations"] if x["id"] == b["id"]), None)
@@ -1647,9 +1752,8 @@ def cmd_move(args):
             if not key or f in ("concept", "source"):
                 why = "%s is not a moved symbol or section" % r[end]
                 break
-            # a home is a file of the same kind: a Python symbol moves to a Python file, a YAML key to a YAML file — `:name` in
-            # package.json is no home for a `def name` (config keys as anchors made every common key ambiguous)
-            cands = sorted(c for c in set(homes.get(key, [])) - {f} if anchors.kind_of(c) == anchors.kind_of(f))
+            # a home is a file of the same kind (config keys as anchors made every common key ambiguous): `homes_of`
+            cands = homes_of(files, r[end])
             if len(cands) != 1:
                 why = "%s: %s" % (r[end], "no registered file has %s now" % key if not cands else "%s is in %s — say which" % (key, ", ".join(cands)))
                 break
@@ -1706,8 +1810,8 @@ def transcript_turns(path):
     to it (`answers`: that turn's id) — "ㄱㄱ" and "1번" are answers as much as a choice picked in a question is."""
     turns, agent, n = [], {}, -1
     for n, d in enumerate(transcript_records(path)):
-        if d.get("isSidechain"):
-            continue
+        if d.get("isSidechain") or d.get("isCompactSummary"):
+            continue   # a subagent's side talk; the host's summary of a compacted session, filed as a user record — no one said either
         for t in turns[::-1]:   # each turn knows its record's place, so a phrase found elsewhere can be shown among its neighbours
             if "n" in t:
                 break
@@ -1721,9 +1825,14 @@ def transcript_turns(path):
                 if isinstance(x, dict) and x.get("type") == "text" and not d.get("isMeta"):
                     turns.append({"kind": "person", "text": x.get("text", ""), "uuid": uid, "at": when})
                 if isinstance(x, dict) and x.get("type") == "tool_result" and x.get("tool_use_id") in agent.get("asks", {}):
-                    body = x.get("content")
-                    body = "\n".join(b.get("text", "") for b in body if isinstance(b, dict)) if isinstance(body, list) else str(body)
-                    turns.append({"kind": "answer", "text": body, "uuid": uid, "at": when})
+                    ask = agent["asks"][x["tool_use_id"]]
+                    got = picked_answers(d, x, ask["questions"])
+                    for i, (q, a) in enumerate(got):
+                        # one turn per question answered, its text only what the person picked or typed: the tool's
+                        # wrapper ("Your questions have been answered: "Q"="A", … You can now continue…") is the host
+                        # talking to the agent, not the person; the question it answers is named, not quoted into it
+                        turns.append({"kind": "answer", "text": a, "uuid": uid if len(got) == 1 else "%s#%d" % (uid, i + 1), "at": when,
+                                      "answers": ask["uuid"], "question": q})
         elif d.get("type") == "assistant" and isinstance(c, list):
             mid = msg.get("id") or uid
             for x in c:
@@ -1736,7 +1845,8 @@ def transcript_turns(path):
                     else:
                         turns.append({"kind": "agent", "text": x.get("text", ""), "uuid": uid, "at": when, "message": mid, "model": msg.get("model")})
                 elif x.get("type") == "tool_use" and x.get("name") == "AskUserQuestion":
-                    agent.setdefault("asks", {})[x.get("id")] = True
+                    agent.setdefault("asks", {})[x.get("id")] = {"uuid": uid, "questions": [
+                        q.get("question", "") for q in ((x.get("input") or {}).get("questions") or []) if isinstance(q, dict)]}
                     turns.append({"kind": "question", "text": json.dumps(x.get("input"), ensure_ascii=False, indent=1), "uuid": uid, "at": when,
                                   "model": msg.get("model")})
     for t in turns[::-1]:
@@ -1749,6 +1859,41 @@ def transcript_turns(path):
         if t["kind"] == "person" and before and before["kind"] in ("agent", "question"):
             t["answers"] = before["uuid"]
     return turns
+
+
+def picked_answers(record, result, questions):
+    """[(question, what the person picked or typed)] from one AskUserQuestion result, in the questions' order. The host's
+    structured record (`toolUseResult.answers`, keyed by question) when it is there; otherwise read out of the tool's
+    text, `"QUESTION"="ANSWER"`, for the questions the agent asked. A note the person typed beside a choice
+    (`annotations[Q].notes`) is theirs and kept under the answer; a preview the agent drew is not. Nothing that can be
+    read out (a question declined, a shape this does not know) -> [] — never the wrapper in the person's mouth."""
+    tr = record.get("toolUseResult")
+    if isinstance(tr, dict) and isinstance(tr.get("answers"), dict):
+        notes = tr.get("annotations") if isinstance(tr.get("annotations"), dict) else {}
+        order = [q for q in questions if q in tr["answers"]] + [q for q in tr["answers"] if q not in questions]
+        out = []
+        for q in order:
+            a = tr["answers"][q]
+            a = ", ".join(map(str, a)) if isinstance(a, list) else str(a)
+            note = (notes.get(q) or {}).get("notes") if isinstance(notes.get(q), dict) else None
+            out.append((q, a + ("\n" + note if isinstance(note, str) and note.strip() else "")))
+        return [(q, a) for q, a in out if a.strip()]
+    if result.get("is_error"):
+        return []
+    body = result.get("content")
+    body = "\n".join(b.get("text", "") for b in body if isinstance(b, dict)) if isinstance(body, list) else str(body or "")
+    out = []
+    for q in questions:
+        m = re.search(re.escape('"%s"="' % q) + r'((?:[^"\\]|\\.)*)"', body)
+        if m and m.group(1).strip():
+            out.append((q, m.group(1).replace('\\"', '"')))
+    return out
+
+
+def turn_named(t, turn_id):
+    """--turn ID: the host's id for the record — which names every answer in it when one question form asked several
+    (`ID#1`, `ID#2`, …: each its own turn; the listing shows them) — or one of those."""
+    return t["uuid"] == turn_id or t["uuid"].split("#")[0] == turn_id
 
 
 def turn_is(t, kind):
@@ -1796,7 +1941,7 @@ def why_no_turn(path, turns, match, turn_id, kind):
     is in (thinking, a tool call) and the turns around it — and how to name one. "found 0 turn(s)" said none of this."""
     out = []
     asked = ("--match %r" % match if match else "") + (" --turn %s" % turn_id if turn_id else "") + (" --kind %s" % kind if kind else "")
-    near = [t for t in turns if (not match or match in t["text"]) and (not turn_id or t["uuid"] == turn_id)]
+    near = [t for t in turns if (not match or match in t["text"]) and (not turn_id or turn_named(t, turn_id))]
     if near:
         out.append("%s: no %s turn — the turn(s) there are of another kind; name one with --kind KIND or --turn ID:" % (asked.strip(), kind))
         out += [turn_line(t) for t in near[-5:]]
@@ -1892,7 +2037,7 @@ def cmd_source(args):
         if not (args.match or args.turn):
             raise SystemExit("--from-transcript needs --match \"a phrase from the turn\" (or --turn ID) — the one turn that contains it is kept, whole")
         turns = transcript_turns(args.from_transcript)
-        hits = [t for t in turns if (not args.match or args.match in t["text"]) and (not args.turn or t["uuid"] == args.turn) and turn_is(t, args.kind)]
+        hits = [t for t in turns if (not args.match or args.match in t["text"]) and (not args.turn or turn_named(t, args.turn)) and turn_is(t, args.kind)]
         if not hits:
             raise SystemExit(why_no_turn(args.from_transcript, turns, args.match, args.turn, args.kind))
         if len(hits) != 1:
@@ -1906,7 +2051,13 @@ def cmd_source(args):
             raise SystemExit("this turn is the person's: --speaker says who they are (the name they gave, not one read from the account)")
         session = os.path.splitext(os.path.basename(args.from_transcript))[0]
         args.locator = args.locator or "session %s, %s %s at %s%s" % (session, turn["kind"], turn["uuid"], turn["at"],
-                                                                      ", answering %s" % turn["answers"] if turn.get("answers") and args.kind == "answer" else "")
+                                                                      ", answering %s" % turn["answers"] if turn.get("answers") and args.kind == "answer" and not turn.get("question") else
+                                                                      ", answering question %s: \"%s\"" % (turn["answers"], turn["question"]) if turn.get("question") else "")
+        if turn.get("question") and not args.replies_to:
+            # the question form kept as a source already: the answer replies to it, as a typed reply would be told to
+            asked = next((y for y in d["sources"] if ", question %s at " % turn["answers"] in (y.get("locator") or "")), None)
+            if asked:
+                args.replies_to = asked["id"]
         args.file = None
         text = turn["text"].replace("\r\n", "\n")
         if args.excerpt:
@@ -2374,8 +2525,11 @@ def main(argv=None):
             p.add_argument("--reset", action="store_true")
             p.add_argument("--at", default=None, help="with --reset: take the baseline from git at this revision (e.g. the merge base)")
         if name == "retire":
-            p.add_argument("id")
+            p.add_argument("id", nargs="?", default=None)
             p.add_argument("--why", required=True)
+            p.add_argument("--gone", "--deleted", nargs="+", default=None, metavar="FILE",
+                           help="files (or a directory) deleted on purpose: retire every relation with an anchor in them, with the one --why, "
+                                "and unregister them; refused for a path still in the tree")
         if name == "reconfirm":
             p.add_argument("ids", nargs="+")
             signing(p)
@@ -2399,8 +2553,8 @@ def main(argv=None):
             p.add_argument("--locator", default=None, help="where they were said: a meeting, a transcript, a URL")
             p.add_argument("--from-transcript", default=None, help="a host session transcript (Claude Code JSONL): take the turn from it, verbatim, instead of --file")
             p.add_argument("--match", default=None, help="with --from-transcript: a phrase only the wanted turn contains")
-            p.add_argument("--turn", default=None, help="with --from-transcript: the host's id for the turn (listed when --match finds several)")
-            p.add_argument("--kind", default=None, choices=["person", "agent", "question", "answer"], help="with --from-transcript: only turns of this kind — `answer` is a choice picked in a question or a reply the person typed right after the agent's turn (that one is `person` too)")
+            p.add_argument("--turn", default=None, help="with --from-transcript: the host's id for the turn (listed when --match finds several); ID#k for one answer of a question form that asked several")
+            p.add_argument("--kind", default=None, choices=["person", "agent", "question", "answer"], help="with --from-transcript: only turns of this kind — `answer` is a choice picked in a question (only what was picked or typed, one turn per question: ID#k) or a reply the person typed right after the agent's turn (that one is `person` too)")
             p.add_argument("--excerpt", action="append", default=None, help="with --from-transcript: keep only these sentences of the turn (repeatable), verbatim and whole — when the turn clearly splits into what the record needs and what it does not")
         if name == "report":
             p.add_argument("--out", default=None, help="write the Markdown page here (never into mangsang/, .mangsang/ or a registered file); default stdout")

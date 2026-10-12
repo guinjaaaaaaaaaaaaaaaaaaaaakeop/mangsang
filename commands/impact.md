@@ -1,5 +1,5 @@
 ---
-description: Report stale and broken relations; exit 1 when anything is unresolved. --only ANCHOR-PREFIX.. for a slice's check, --findings for a reviewer
+description: Report stale and broken relations (grouped by a deleted file, with the one `retire --gone` for them); exit 1 when anything is unresolved. --only ANCHOR-PREFIX.. for a slice's check, --findings for a reviewer
 ---
 !`python3 "${CLAUDE_PLUGIN_ROOT}/mangsang.py" impact --target .`
 
