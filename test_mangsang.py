@@ -358,9 +358,21 @@ def test_a_retired_projection_leaves_its_concept_owing_a_re_read():
         write(os.path.join(pj.dir, "plan", "PLAN.md"), PLAN.replace("appends and prints", "appends and prints; deploys on Workers"))
         for x in mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir))[0]:
             assert run("reconfirm", x["id"], "--delegated", "matches site-build's new meaning", "--target", pj.dir)[0] == 0
-        assert run("impact", "--target", pj.dir)[0] == 0   # every relation fresh...
+        # every relation fresh, and the sentence still owed: `impact` counts it (it said 0 while cq failed — guin-site, 10-12)
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and "  stale   " not in out and ("owed    concept:site-build lost projection(s) %s (pages.yml)" % old) in out, out
+        assert "`concept reaffirm site-build --by NAME|--delegated WHY`" in out and "`concept revise site-build" in out, out
+        assert "unresolved_total = 1 (0 stale or broken relation(s), 1 concept(s) owing a re-read)" in out, out
+        code, out = run("impact", "--findings", "--target", pj.dir)
+        assert code == 1 and [f["where"] for f in json.loads(out)["findings"] if f["kind"] == "owed-reread"] == ["concept:site-build"], out
+        assert run("impact", "--only", "memo.py", "--target", pj.dir)[0] == 0, "a slice that does not touch it is not charged with it"
+        assert run("impact", "--only", "pages.yml", "--target", pj.dir)[0] == 1, "the slice that lost the projection is"
+        code, out = run("check", "--target", pj.dir)
+        assert "owed" in out and "1 concept(s) owe a re-read: `cq` fails" in out, out   # not an invariant — but never "holds" alone
+        code, out = run("concept", "list", "--brief", "--target", pj.dir)
+        assert "1 concept(s) owe a re-read" in out, out
         code, out = run("cq", "--target", pj.dir)
-        assert code == 1 and "FAILED" in out and ("site-build lost projection(s) %s (pages.yml) since its sentence was affirmed" % old) in out, out   # ...and the sentence still owed
+        assert code == 1 and "FAILED" in out and ("site-build lost projection(s) %s (pages.yml) since its sentence was affirmed" % old) in out, out
         code, out = run("concept", "list", "--target", pj.dir)
         assert "owes a re-read: lost %s" % old in out, out
         # reaffirm: a judgment, signed, kept with what it answered; then the question is answered again
@@ -369,6 +381,8 @@ def test_a_retired_projection_leaves_its_concept_owing_a_re_read():
         c = next(c for c in mangsang.decl(pj.dir)["concepts"] if c["name"] == "site-build")
         assert "owes" not in c and c["history"][-1]["owed"] == [old] and c["history"][-1]["reaffirmed"]["by"] == "kim", c
         assert run("cq", "--target", pj.dir)[0] == 0
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 0 and "unresolved_total = 0" in out and "owed" not in out, out
         assert run("concept", "reaffirm", "site-build", "--by", "kim", "--target", pj.dir)[0] != 0, "nothing owed, nothing to reaffirm"
         # a projection still there in another form owes nothing: the same name in another file (a refactoring by hand), or the
         # same file under a narrower anchor
@@ -1345,7 +1359,15 @@ def test_confirm_checks_anchors_vocabulary_evidence_and_duplicates_and_stores_on
         d = mangsang.decl(pj.dir)
         assert len(d["relations"]) == 1 and d["relations"][0]["confirmed"] == {"by": "kim"}
         assert sorted(os.listdir(os.path.join(pj.dir, "mangsang", "relations"))) == [d["relations"][0]["id"] + ".json"]
-        assert not os.path.exists(os.path.join(pj.dir, "proposals.json")), "a proposal is consumed"
+        # the rejected stay in the proposals file, each with why; the confirmed one left it (guin-site, 10-12: "rejected 6 (proposals
+        # file consumed)", five of them on a plan document that was not registered)
+        assert "the rejected kept in" in out and "run `confirm" in out and "proposals file consumed" not in out, out
+        left = mangsang.load(os.path.join(pj.dir, "proposals.json"))["relations"]
+        assert len(left) == 5 and all(x.get("rejected") for x in left) and not any(x.get("predicate") == "documents" and x["src"] == "plan/PLAN.md#Q1 add"
+                                                                                  and "duplicate" not in x["rejected"] for x in left), left
+        assert run("confirm", os.path.join(pj.dir, "proposals.json"), "--by", "kim", "--target", pj.dir)[0] == 1   # re-run: the same five, the same reasons
+        assert len(mangsang.load(os.path.join(pj.dir, "proposals.json"))["relations"]) == 5
+        os.remove(os.path.join(pj.dir, "proposals.json"))
         rid = d["relations"][0]["id"]
         assert rid == mangsang.rel_id(d["relations"][0]) and rid.startswith("R-")
         assert run("retire", rid, "--why", "test", "--target", pj.dir)[0] == 0
@@ -1710,6 +1732,9 @@ def test_a_judge_round_is_signed_by_the_judge_and_applied_by_whoever_applied_it(
         # with the source where the owner read the verdicts, the owner's name may stand as who applied them
         write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 3"))
         assert run("judge", "request", "--out", d, "--target", pj.dir)[0] == 0
+        assert not os.path.exists(resp)   # the earlier round's verdicts moved aside; this round's are written anew
+        write(resp, {"artifact-type": "mangsang/judgment@1", "non-claims": [], "worker": {"host": "claude-code", "model": "claude-j"}, "items": [
+            {"relation": rid, "verdict": "still-true", "quote": "", "evidence": "add still appends"}]})
         write(os.path.join(pj.dir, "read.txt"), "판정 읽었어, 적용해")
         assert run("source", "add", "R1", "--file", os.path.join(pj.dir, "read.txt"), "--speaker", "lee", "--target", pj.dir)[0] == 0
         code, out = run_as_agent("judge", "consume", "--response", resp, "--by", "lee", "--approved-in", "source:R1", "--target", pj.dir)
@@ -1799,6 +1824,9 @@ def test_files_deleted_on_purpose_retire_as_one_with_one_reason():
                    for r in d["retired"]), d["retired"]
         owes = next(c for c in d["concepts"] if c["name"] == "adding")["owes"]
         assert len(owes) == 3, owes   # every projection that went with the files: the same-file rule does not excuse a file that is gone
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and "owed    concept:adding" in out and "unresolved_total = 1" in out, out   # nothing broken now; the re-read is owed
+        assert run("concept", "reaffirm", "adding", "--by", "kim", "--target", pj.dir)[0] == 0
         assert run("impact", "--target", pj.dir)[0] == 0
         # a single retire still works, and still owes
         assert run("retire", d["relations"][0]["id"], "--why", "done", "--target", pj.dir)[0] == 0
@@ -1855,6 +1883,268 @@ def test_an_answer_from_a_question_form_is_the_persons_choice_not_the_tools_wrap
         # a declined form holds no answer: the miss says it is a tool's output, not something said
         code, out = run("source", "add", "D", "--from-transcript", tr, "--match", "doesn't want", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)
         assert code != 0 and "found in no turn" in out and "a tool's output" in out, out
+
+
+def test_a_typescript_function_whose_types_hold_braces_reaches_its_body():
+    """guin-site, 10-12: `write/src/backup.ts:backupRows` — `export async function backupRows(env: Env): Promise<{ draft: unknown[];
+    … }> { …body… }` — was cut at the `{` inside its return type: the anchor was the signature, the body was neither
+    fingerprinted nor quotable ("evidence is not a quote from either anchor"). Generics, parameter types and return types
+    may hold braces of their own; the body is the `{` after them. Arrow functions, methods, classes and interfaces too."""
+    ts = ('import { Env } from "./env";\n\n'
+          "export async function backupRows(env: Env): Promise<{ draft: unknown[]; erasure: unknown[]; d1_erasure: unknown[] }> {\n"
+          '  const draft = await env.DB.prepare("SELECT * FROM draft").all();\n'
+          "  return { draft: draft.results, erasure: [], d1_erasure: [] };\n}\n\n"
+          "export function pick<T extends { id: string }>(xs: T[], o: { limit: number } = { limit: 1 }): { first: T | undefined } | null {\n"
+          "  return { first: xs[0] };\n}\n\n"
+          "function maker(): () => { a: 1 } {\n  return () => ({ a: 1 });\n}\n\n"
+          "declare function shape(x: { a: 1 }): { b: 2 };\n\n"
+          "export const arrow = async (env: { db: string }): Promise<{ rows: number }> => {\n  return { rows: env.db.length };\n};\n\n"
+          "export class Store extends Base<{ k: string }> implements I<{ z: 1 }> {\n"
+          "  async load(key: string): Promise<{ value: string }> {\n    return { value: key };\n  }\n}\n\n"
+          "interface Shape<T extends { a: 1 }> extends Other<{ b: 2 }> { c: number }\n\n"
+          "function after() { return 1 }\n")
+    t = mangsang.anchor_texts("backup.ts", ts)
+    assert set(t) == {"", ":backupRows", ":pick", ":maker", ":shape", ":arrow", ":Store", ":Shape", ":after"}, set(t)
+    assert t[":backupRows"].endswith("erasure: [], d1_erasure: [] };\n}") and 'prepare("SELECT * FROM draft")' in t[":backupRows"], t[":backupRows"]
+    assert t[":pick"].endswith("return { first: xs[0] };\n}"), t[":pick"]
+    assert t[":maker"].endswith("return () => ({ a: 1 });\n}"), t[":maker"]
+    assert t[":shape"] == "declare function shape(x: { a: 1 }): { b: 2 };", t[":shape"]
+    assert t[":arrow"].endswith("return { rows: env.db.length };\n};"), t[":arrow"]
+    assert t[":Store"].endswith("return { value: key };\n  }\n}"), t[":Store"]
+    assert t[":Shape"].endswith("{ c: number }") and t[":after"] == "function after() { return 1 }", (t[":Shape"], t[":after"])
+    base = mangsang.anchors_of("backup.ts", ts)
+    assert mangsang.anchors_of("backup.ts", ts.replace("FROM draft", "FROM drafts"))[":backupRows"] != base[":backupRows"], "the body is fingerprinted"
+    with Project() as pj:
+        write(os.path.join(pj.dir, "backup.ts"), ts)
+        assert run("register", "backup.ts", "plan/PLAN.md", "--target", pj.dir)[0] == 0
+        code, out = pj.propose(rel("backup.ts:backupRows", "documents", "plan/PLAN.md#Q1 add", ev="return { draft: draft.results, erasure: [], d1_erasure: [] };"))
+        assert code == 0, out   # a quote from the body is a quote from the anchor
+
+
+def test_confirm_keeps_what_it_rejected_with_why_and_says_how_to_register():
+    """guin-site, 10-12: "confirmed 7 / rejected 6 (proposals file consumed)" — five on plan/ATPROTO.md, which was not
+    registered. The rejected now stay in the proposals file, each with its reason; a file that is in the tree and not
+    registered is named with the `register` command, and the line says to run the same `confirm` again."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "--target", pj.dir)[0] == 0
+        code, out = pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"),
+                               rel("test_memo.py:test_Q1_add", "verifies", "memo.py:add", ev="def test_Q1_add"))
+        assert code == 1 and "confirmed 1 / rejected 1" in out and "the rejected kept in" in out, out
+        assert "file not registered — `register test_memo.py` first" in out and "  not registered: `register test_memo.py`" in out, out
+        left = mangsang.load(os.path.join(pj.dir, "proposals.json"))["relations"]
+        assert [x["src"] for x in left] == ["test_memo.py:test_Q1_add"] and "register test_memo.py" in left[0]["rejected"], left
+        assert run("register", "test_memo.py", "--target", pj.dir)[0] == 0
+        code, out = run("confirm", os.path.join(pj.dir, "proposals.json"), "--by", "kim", "--target", pj.dir)
+        assert code == 0 and "confirmed 1 / rejected 0 (proposals file consumed)" in out, out
+        assert not os.path.exists(os.path.join(pj.dir, "proposals.json"))
+        r = next(r for r in mangsang.decl(pj.dir)["relations"] if r["src"] == "test_memo.py:test_Q1_add")
+        assert "rejected" not in r and "why" not in r, r   # the reason it was once refused is not part of the relation
+
+
+def test_an_agent_speaker_is_named_by_its_model_and_a_roster_entry_that_names_nobody_is_said():
+    """guin-site, 10-12: `source add at-64 --from-transcript … --kind question --speaker Claude` was refused ("'Claude' is not
+    in mangsang/people.json — ask the person which name they sign…"), and the answer that replied to it failed after it.
+    The roster's `"agents": ["Claude ("]` is a prefix, not a broken name: an agent's turn is kept as `Claude (<model>)`. The
+    refusal now says the fix — drop --speaker, the record names the model. An entry that names nobody (empty, not a
+    string) is left out and said: an empty prefix would have admitted every speaker."""
+    with Project() as pj:
+        write(os.path.join(pj.dir, "mangsang", "people.json"), {"people": ["lee"], "agents": ["Claude ("]})
+        tr = os.path.join(pj.dir, "s.jsonl")
+        lines = [{"type": "assistant", "uuid": "a1", "timestamp": "t1", "message": {"id": "m1", "model": "claude-x", "content": [
+                     {"type": "tool_use", "id": "q1", "name": "AskUserQuestion", "input": {"questions": [{"question": "확정할까요?", "options": [{"label": "확정"}]}]}}]}},
+                 {"type": "user", "uuid": "u1", "timestamp": "t2", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "q1",
+                     "content": 'Your questions have been answered: "확정할까요?"="확정". You can now continue with these answers in mind.'}]},
+                  "toolUseResult": {"answers": {"확정할까요?": "확정"}, "annotations": {}}}]
+        write(tr, "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines))
+        code, out = run("source", "add", "Q", "--from-transcript", tr, "--match", "확정할까요", "--kind", "question", "--speaker", "Claude", "--target", pj.dir)
+        assert code != 0 and "Drop `--speaker Claude`" in out and "'Claude (claude-x)'" in out and "ask the person" not in out, out
+        assert run("source", "add", "Q", "--from-transcript", tr, "--match", "확정할까요", "--kind", "question", "--target", pj.dir)[0] == 0
+        assert mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "Q.json"))["speaker"] == "Claude (claude-x)"
+        code, out = run("source", "add", "A", "--from-transcript", tr, "--match", "확정", "--kind", "answer", "--speaker", "lee", "--replies-to", "Q", "--target", pj.dir)
+        assert code == 0, out
+        # a file of the agent's words, under a bare name: the form the roster admits is said
+        write(os.path.join(pj.dir, "words.txt"), "제안합니다.\n")
+        code, out = run("source", "add", "W", "--file", os.path.join(pj.dir, "words.txt"), "--speaker", "Claude", "--target", pj.dir)
+        assert code != 0 and '`--speaker "Claude (<model id>)"`' in out, out
+        # a person not on the roster is still asked for, as before
+        code, out = run("source", "add", "W", "--file", os.path.join(pj.dir, "words.txt"), "--speaker", "kim", "--target", pj.dir)
+        assert code != 0 and "ask the person which name" in out, out
+        # an entry naming nobody: left out and said, never an empty prefix admitting anyone
+        write(os.path.join(pj.dir, "mangsang", "people.json"), {"people": ["lee", ""], "agents": ["", "Claude (", 3]})
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert mangsang.people(pj.dir) == {"people": ["lee"], "agents": ["Claude ("]}
+            code, out = run("source", "add", "W", "--file", os.path.join(pj.dir, "words.txt"), "--speaker", "kim", "--target", pj.dir)
+        assert code != 0, out
+        assert 'agents holds "", 3, which name nobody — left out; remove them from the file' in err.getvalue(), err.getvalue()
+
+
+def test_concept_show_is_one_concept_whole():
+    """guin-site, 10-12: `mangsang concept show site-build` — "invalid choice". It prints the concept's meaning and signer,
+    every relation on it (in and out, with its state now and its quote: `lookup concept:NAME`'s lines), what it owes, the
+    questions that it answers or that ask about it, and the sources that ground it."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "adding", "--means", "a memo is appended and its id printed", "--by", "kim", "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, "said.txt"), "a memo is appended, then its id is printed\n")
+        assert run("source", "add", "s1", "--file", os.path.join(pj.dir, "said.txt"), "--speaker", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "realizes", "concept:adding"), rel("memo.py:add", "realizes", "concept:adding", ev="def add"),
+                          rel("source:s1", "realizes", "concept:adding", ev="a memo is appended"))[0] == 0
+        assert run("cq", "add", "how-add", "--text", "What does adding do?", "--verify", '{"kind": "answered-by", "concepts": ["adding"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run("cq", "add", "undo", "--text", "Can an add be undone?", "--verify", '{"kind": "open", "about": ["adding"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("concept", "show", "adding", "--target", pj.dir)
+        assert code == 0 and "concept:adding — means: a memo is appended and its id printed" in out and "declared by kim" in out, out
+        assert "[concept:adding]" in out and "memo.py:add realizes [concept:adding] — fresh" in out and '"def add" — by kim' in out, out
+        assert "answered  how-add  What does adding do?" in out and "OPEN      undo  Can an add be undone?" in out, out
+        assert 'source:s1 — kim: "a memo is appended, then its id is printed"' in out, out
+        rid = next(r["id"] for r in mangsang.decl(pj.dir)["relations"] if r["src"] == "memo.py:add")
+        assert run("retire", rid, "--why", "gone", "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, "plan", "PLAN.md"), PLAN.replace("appends and prints", "appends and prints twice"))
+        code, out = run("concept", "show", "adding", "--target", pj.dir)
+        assert "STALE now" in out and "OWES: concept:adding lost projection(s) %s (memo.py:add)" % rid in out and "FAILED    how-add" in out, out
+        code, out = run("concept", "show", "add", "--target", pj.dir)
+        assert code != 0 and "no concept add — did you mean adding?" in out, out
+
+
+def test_a_question_form_answer_seen_on_guin_site_is_the_choice_alone():
+    """The wrapper 1.18 left behind, as the host wrote it on guin-site (session a63fdef2, 2026-10-12T09:23Z, source at-64 kept by
+    1.17.0): "Your questions have been answered: "Q"="넷 다 확정 (추천)" selected preview:\\n<the agent's preview>.. You can now
+    continue with these answers in mind." — the option's preview (the agent's drawing) appended to the choice, the structured
+    record's `annotations` holding that preview and no note. And the older wording, "The user answered: "Q"="A". Read the
+    answers carefully…", with a question that holds quotes of its own. Each keeps the person's choice and nothing else, from
+    the structured record or, without one, from the text."""
+    q1 = "망상 개념 넷의 뜻을 지금 구조로 이렇게 고치려 합니다. 그대로 확정할까요? (각 개념의 이전 문장은 history에 남습니다)"
+    preview = "site-build:\n글과 기록의 원본은 PDS에 있다.\n\naccess:\n쓰기 앱에는 계정 하나만 들어온다."
+    q2 = '이름은 지금 "guin.com 쓰기"인데, 어떻게 고칠까요?'
+    for structured in (True, False):
+        with Project() as pj:
+            tr = os.path.join(pj.dir, "a63fdef2.jsonl")
+            form = lambda q, label: {"questions": [{"question": q, "header": "개념 개정", "options": [{"label": label, "description": "미리보기의 문장으로", "preview": preview},
+                                                                                                    {"label": "고칠 곳 있음", "description": "메모에"}], "multiSelect": False}]}
+            lines = [{"type": "assistant", "uuid": "a1", "timestamp": "2026-10-12T09:22:00.000Z", "message": {"id": "m1", "model": "claude-opus-x", "content": [
+                         {"type": "tool_use", "id": "toolu_1", "name": "AskUserQuestion", "input": form(q1, "넷 다 확정 (추천)")}]}},
+                     {"type": "user", "uuid": "4e7e8465", "timestamp": "2026-10-12T09:23:03.924Z", "message": {"role": "user", "content": [
+                         {"type": "tool_result", "tool_use_id": "toolu_1", "content": 'Your questions have been answered: "%s"="넷 다 확정 (추천)" selected preview:\n%s.. '
+                          'You can now continue with these answers in mind.' % (q1, preview)}]},
+                      **({"toolUseResult": {**form(q1, "넷 다 확정 (추천)"), "answers": {q1: "넷 다 확정 (추천)"}, "annotations": {q1: {"preview": preview}}}} if structured else {})},
+                     {"type": "assistant", "uuid": "a2", "timestamp": "2026-10-12T09:30:00.000Z", "message": {"id": "m2", "model": "claude-opus-x", "content": [
+                         {"type": "tool_use", "id": "toolu_2", "name": "AskUserQuestion", "input": form(q2, "줄이기")}]}},
+                     {"type": "user", "uuid": "1db07ca1", "timestamp": "2026-10-12T09:31:00.000Z", "message": {"role": "user", "content": [
+                         {"type": "tool_result", "tool_use_id": "toolu_2", "content": 'The user answered: "%s"="그냥 무시하고 넘어가자". Read the answers carefully — they may '
+                          'request clarification, changes, or that you not proceed — and follow what they actually say.' % q2}]},
+                      **({"toolUseResult": {**form(q2, "줄이기"), "answers": {q2: "그냥 무시하고 넘어가자"}, "annotations": {}}} if structured else {})}]
+            write(tr, "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines))
+            code, out = run("source", "add", "at-64", "--from-transcript", tr, "--match", "넷 다 확정", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)
+            assert code == 0, (structured, out)
+            a = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "at-64.json"))
+            assert a["text"] == "넷 다 확정 (추천)", (structured, a)   # not the wrapper, not the agent's preview
+            assert a["locator"] == 'session a63fdef2, answer 4e7e8465 at 2026-10-12T09:23:03.924Z, answering question a1: "%s"' % q1, a
+            assert run("source", "add", "at-60", "--from-transcript", tr, "--match", "무시하고", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)[0] == 0
+            assert mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "at-60.json"))["text"] == "그냥 무시하고 넘어가자", structured
+
+
+def test_judge_request_moves_an_earlier_rounds_files_aside_and_consume_refuses_an_older_response():
+    """guin-site, 10-15: `judge request --out judge1` reused a directory that still held 10-12's judge-response.json (and its
+    transcript); the printed `next: … consume --response …/judge-response.json` pointed at the 3-day-old verdicts. The earlier
+    round's files are moved aside, named by their time, and said; a response older than the request beside it is refused."""
+    with Project() as pj:
+        run("register", "plan/PLAN.md", "memo.py", "--target", pj.dir)
+        pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"))
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        d = os.path.join(pj.dir, "judge1")
+        old = {"artifact-type": "mangsang/judgment@1", "worker": {"host": "claude-code", "model": "claude-j"}, "items": []}
+        write(os.path.join(d, "judge-response.json"), old)
+        write(os.path.join(d, "judge-response.transcript.jsonl"), "{}\n")
+        write(os.path.join(d, "judge-request.json"), {"artifact-type": "mangsang/judge-request@1", "items": []})
+        then = 1760261438   # 2025-10-12T09:30:38Z
+        for name in ("judge-response.json", "judge-response.transcript.jsonl", "judge-request.json"):
+            os.utime(os.path.join(d, name), (then, then))
+        code, out = run("judge", "request", "--out", d, "--target", pj.dir)
+        assert code == 0, out
+        names = sorted(os.listdir(d))
+        assert names == ["judge-request.20251012T093038Z.json", "judge-request.json", "judge-response.20251012T093038Z.json",
+                         "judge-response.20251012T093038Z.transcript.jsonl"], names
+        assert "moved aside: judge-response.json -> judge-response.20251012T093038Z.json" in out, out
+        nxt = out[out.index("next:"):]
+        assert os.path.join(d, "judge-response.json") in nxt and not os.path.exists(os.path.join(d, "judge-response.json")), out
+        # a third round leaves the already-aside files alone
+        assert run("judge", "request", "--out", d, "--target", pj.dir)[0] == 0
+        assert len([n for n in os.listdir(d) if n.startswith("judge-response.2025")]) == 2, os.listdir(d)
+        # a response older than its request: an earlier round's, refused
+        resp = os.path.join(d, "judge-response.json")
+        write(resp, old)
+        os.utime(resp, (then, then))
+        code, out = run("judge", "consume", "--response", resp, "--by", "kim", "--target", pj.dir)
+        assert code != 0 and "older than the judge-request.json beside it" in out, out
+
+
+def test_an_agent_text_turn_that_asks_is_a_question_and_the_persons_turn_is_the_rosters_one_person():
+    """guin-site, 10-15: `source add at-67 --match "…이대로 확정할까요" --kind question` on the agent's plain text turn was refused
+    "no question turn" (a question was only a question-form call), and the agent kept it as `--turn ID --kind agent`; then the
+    owner's "ㅇㅇ ㄱㄱㄱ" needed `--speaker`, and the agent passed the account name — the one the refusal warns against."""
+    with Project() as pj:
+        tr = os.path.join(pj.dir, "s.jsonl")
+        lines = [{"type": "assistant", "uuid": "e3db4215", "timestamp": "2026-10-15T06:35:24.156Z", "message": {"id": "m1", "model": "claude-x", "content": [
+                     {"type": "text", "text": "전수조사를 마쳤습니다.\n\n개념 문장(위 1번)을 이대로 확정할까요?"}]}},
+                 {"type": "assistant", "uuid": "a2", "timestamp": "2026-10-15T06:36:00Z", "message": {"id": "m2", "model": "claude-x", "content": [
+                     {"type": "text", "text": "확정 문장을 정리했습니다."}]}},
+                 {"type": "user", "uuid": "b183bd94", "timestamp": "2026-10-15T06:39:00Z", "message": {"role": "user", "content": "ㅇㅇ ㄱㄱㄱ"}}]
+        write(tr, "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines))
+        code, out = run("source", "add", "at-67", "--from-transcript", tr, "--match", "이대로 확정할까요", "--kind", "question", "--target", pj.dir)
+        assert code == 0 and "Claude (claude-x)" in out, out
+        assert "agent e3db4215" in mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "at-67.json"))["locator"]
+        # a turn that asks nothing is no question
+        code, out = run("source", "add", "X", "--from-transcript", tr, "--match", "정리했습니다", "--kind", "question", "--target", pj.dir)
+        assert code != 0 and "no question turn" in out, out
+        # no roster: the person's turn still needs --speaker
+        code, out = run("source", "add", "at-68", "--from-transcript", tr, "--match", "ㅇㅇ ㄱㄱㄱ", "--replies-to", "at-67", "--target", pj.dir)
+        assert code != 0 and "--speaker" in out, out
+        # two people: which one is not guessed, and the roster's names are said
+        write(os.path.join(pj.dir, "mangsang", "people.json"), {"people": ["lee", "kim"], "agents": ["Claude ("]})
+        code, out = run("source", "add", "at-68", "--from-transcript", tr, "--match", "ㅇㅇ ㄱㄱㄱ", "--replies-to", "at-67", "--target", pj.dir)
+        assert code != 0 and "--speaker" in out and "lee, kim" in out, out
+        # one person: it is theirs, and the line says so
+        write(os.path.join(pj.dir, "mangsang", "people.json"), {"people": ["lee"], "agents": ["Claude ("]})
+        code, out = run("source", "add", "at-68", "--from-transcript", tr, "--match", "ㅇㅇ ㄱㄱㄱ", "--replies-to", "at-67", "--target", pj.dir)
+        assert code == 0 and "speaker: lee — the one person in mangsang/people.json" in out, out
+        src = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "at-68.json"))
+        assert src["speaker"] == "lee" and src["replies-to"] == "at-67", src
+
+
+def test_an_agent_applying_a_judge_round_is_named_by_its_sessions_model():
+    """guin-site, 10-15: `judge consume` printed "applied by Claude Code" — no model, while the agent's turns are kept as
+    `Claude (<model>)`. The session's model is read from the host's record of the session (CLAUDE_CODE_SESSION_ID)."""
+    with Project() as pj:
+        home = os.path.join(pj.dir, "claude-home")
+        write(os.path.join(home, "projects", "-some-project", "sess-1.jsonl"), "".join(json.dumps(x) + "\n" for x in (
+            {"type": "assistant", "message": {"model": "claude-opus-5-5", "content": []}},
+            {"type": "assistant", "message": {"model": "<synthetic>", "content": []}},
+            {"type": "user", "message": {"content": "ok"}})))
+        run("register", "plan/PLAN.md", "memo.py", "--target", pj.dir)
+        pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"))
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        d = os.path.join(pj.dir, "judge")
+        assert run("judge", "request", "--out", d, "--target", pj.dir)[0] == 0
+        rid = json.load(open(os.path.join(d, "judge-request.json"), encoding="utf-8"))["items"][0]["relation"]
+        resp = os.path.join(d, "judge-response.json")
+        write(resp, {"artifact-type": "mangsang/judgment@1", "worker": {"host": "claude-code", "model": "claude-j"}, "items": [
+            {"relation": rid, "verdict": "still-true", "quote": "", "evidence": "add still appends"}]})
+        os.environ.update(CLAUDE_CONFIG_DIR=home, CLAUDE_CODE_SESSION_ID="sess-1")
+        try:
+            os.environ["CLAUDECODE"] = "1"
+            assert mangsang.running_agent() == "Claude (claude-opus-5-5)", mangsang.running_agent()
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = mangsang.main(["judge", "consume", "--response", resp, "--target", pj.dir])
+            assert code == 0 and "judged by claude-code claude-j, applied by Claude (claude-opus-5-5)" in out.getvalue(), out.getvalue()
+            r = next(x for x in mangsang.decl(pj.dir)["relations"] if x["id"] == rid)
+            assert r["confirmed"]["applied-by"] == "Claude (claude-opus-5-5)", r["confirmed"]
+            # no record of the session where the host keeps them: the host's name, as before
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "sess-unknown"
+            assert mangsang.running_agent() == "Claude Code"
+        finally:
+            for k in ("CLAUDE_CONFIG_DIR", "CLAUDE_CODE_SESSION_ID", "CLAUDECODE"):
+                os.environ.pop(k, None)
 
 
 if __name__ == "__main__":

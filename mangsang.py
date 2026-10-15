@@ -10,26 +10,32 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 .env files, nested keys dotted — see anchors.py for the one rule behind them)
   source add ID --file F|- --speaker WHO [--locator L] [--replies-to ID]
   source add ID --from-transcript JSONL --match PHRASE|--turn ID [--kind person|agent|question|answer]
-                                (a typed reply right after the agent's turn is a person turn and an answer both; a choice picked in a
+                                (a typed reply right after the agent's turn is a person turn and an answer both, an agent's text turn
+                                asking the person an agent turn and a question both; the person's turn is the roster's one person
+                                when people.json lists one; a choice picked in a
                                 question form is only what the person picked or typed, one turn per question (ID#k), its locator naming
                                 the question — never the tool's wrapper; a miss says which turns are there, or where in the record the
                                 phrase is, and the ids to name one by)
                                 keep what was said or written, verbatim and unchangeable, as the anchor `source:ID` — a concept
                                 grounded in a conversation relates to it like to any projection, with a quote as evidence. Both
                                 sides of a conversation are sources: "yes, both" means nothing without the question it answers
-  concept [add|revise|reaffirm|drift|rename|list] declare/change the net's own nodes; `concept:NAME` anchors relations; revising `means` stales every
+  concept [add|revise|reaffirm|drift|rename|list|show] declare/change the net's own nodes (`show NAME`: one concept whole — meaning, relations
+                                in and out with their state, what it owes, its questions, its sources); `concept:NAME` anchors relations; revising `means` stales every
                                 projection; retiring a projection leaves the concept owing a re-read (`owes`) until `revise` or `reaffirm`;
                                 `drift NAME --why` marks a sentence known wrong whose revision waits: cq DRIFTED, its relations not re-confirmed
   concept list --brief          the net as a map in a line or two: `N concept(s): a, b, … ; M open question(s)` (names cut to fit ~300
                                 characters), then how many relations are stale or broken when any are; an empty net prints nothing
   confirm <proposals.json> --by NAME | --delegated WHY
-                                store relations after checking: anchors exist, predicate is in the vocabulary, no duplicates
+                                store relations after checking: anchors exist, predicate is in the vocabulary, no duplicates; the
+                                rejected stay in the file, each with why (a file not registered: its `register` command) — fix, run again
   observe [--reset [--at REV]]  this machine's change list: --reset takes a baseline (from git at REV if given), otherwise prints what moved since it
   impact [--findings] [--only ANCHOR-PREFIX...]
-                                observe, then events x relations -> stale / broken (grouped by file when the file is gone). exit 1 when anything is unresolved (usable as a check);
+                                observe, then events x relations -> stale / broken (grouped by file when the file is gone), and the concepts
+                                owing a re-read (`owed`; cq fails them). exit 1 when anything is unresolved (usable as a check);
                                 --only judges only relations touching those anchors (a slice's check); --findings prints `dwitbuk/findings@1`
   judge request --out DIR [--ids ID...]   the stale relations as a packet: the possibly-stale text, the changed text, the quote confirmed.
-                                DIR is a directory (an existing one is used as is): the packet is DIR/judge-request.json, its path printed
+                                DIR is a directory (an existing one is used as is): the packet is DIR/judge-request.json, its path printed;
+                                an earlier round's request and response there are moved aside, named by their time
   judge consume --response FILE [--by WHO [--approved-in source:ID]] [--judge "HOST MODEL"]
                                 the judge's verdicts: still-true -> re-confirmed as `{judge: "<host> <model>", applied-by: ...}` — the
                                 judge from the response's worker record, the applier the agent running this unless --by names one; a
@@ -88,14 +94,47 @@ DELEGATION_REF = re.compile(r"^D-[0-9a-f]+$")
 
 APPROVED_IN = None   # set by main when an agent signs in a person's name: the source where that person approved
 APPROVAL_OF = None   # and, when that approval answers an agent's own words (a proposal), the source it answers
-AGENT_ENV = ("CLAUDECODE", "CODEX_THREAD_ID", "AGENT_WORKER")
+AGENT_ENV = ("CLAUDECODE", "CODEX_THREAD_ID", "AGENT_WORKER", "CLAUDE_CODE_SESSION_ID")
+
+
+def session_model():
+    """The model of the Claude Code session running this command, from the host's own record of it (the session's JSONL,
+    found by CLAUDE_CODE_SESSION_ID): the model of its latest agent message. None when the host gives no session or the
+    record is not where it keeps them."""
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not sid or not re.fullmatch(r"[\w-]+", sid):
+        return None
+    root = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude"), "projects")
+    try:
+        paths = [os.path.join(root, x, sid + ".jsonl") for x in os.listdir(root)]
+    except OSError:
+        return None
+    for path in (x for x in paths if os.path.isfile(x)):
+        with io.open(path, "rb") as fh:
+            fh.seek(0, 2)
+            fh.seek(max(0, fh.tell() - (1 << 20)))   # the latest megabyte: the latest agent message is near the end
+            lines = fh.read().decode("utf-8", "replace").splitlines()
+        for line in reversed(lines):
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            model = isinstance(d, dict) and d.get("type") == "assistant" and (d.get("message") or {}).get("model")
+            if model and isinstance(model, str) and not model.startswith("<"):   # "<synthetic>": the host's own note
+                return model
+    return None
+
+
 def running_agent():
     """The agent running this command, named from its host's env (None at a person's terminal). Not a person's name: what an
-    agent does on its own is signed as the agent's, so it stops wearing the person's."""
+    agent does on its own is signed as the agent's, so it stops wearing the person's. A Claude Code session is named by its
+    model, as its turns are kept (`Claude (<model>)`) — guin-site, 10-15: `judge consume` printed "applied by Claude Code",
+    which says no model; "Claude Code" only when the host's record of the session is not found."""
     if os.environ.get("CODEX_THREAD_ID"):
         return "Codex (thread %s)" % os.environ["CODEX_THREAD_ID"]
     if os.environ.get("CLAUDECODE"):
-        return "Claude Code"
+        model = session_model()
+        return "Claude (%s)" % model if model else "Claude Code"
     if os.environ.get("AGENT_WORKER"):
         return "an agent worker"
     return None
@@ -385,7 +424,9 @@ def cmd_confirm(args):
         for end in ("src", "dst"):
             f, key = split_anchor(p.get(end, ""))
             if f not in files or key not in files[f]:
-                why = why or "%s anchor %r does not resolve (%s)" % (end, p.get(end), "file not registered" if f not in files else "no such heading/symbol")
+                why = why or "%s anchor %r does not resolve (%s)" % (end, p.get(end), "file not registered — `register %s` first" % f
+                                                                        if f not in files and f not in ("concept", "source") and os.path.exists(os.path.join(args.target, f))
+                                                                        else "file not registered" if f not in files else "no such heading/symbol")
         held = drifted_end(d, p.get("src", ""), p.get("dst", ""))
         if held:
             why = why or drift_refusal(d, held)   # the same hazard reconfirm refuses: a new relation quoting the false sentence
@@ -407,10 +448,24 @@ def cmd_confirm(args):
                      "confirmed": signature(args.by, args.delegated)})
     d["relations"] += kept
     save_decl(args.target, d)
-    os.remove(args.proposals)   # a proposal is consumed; what survived is in mangsang.json, what did not is printed
-    print("confirmed %d / rejected %d (proposals file consumed)" % (len(kept), len(rejected)))
+    # what was confirmed is in relations/; what was rejected stays in the proposals file, each entry with why, so fixing it and
+    # running the same command again is the route — the file used to be consumed whole, and guin-site's six rejected
+    # proposals (five on a plan document nobody had registered) were left only as printed lines
+    if rejected:
+        save(args.proposals, {"relations": [{**{k: v for k, v in r.items() if k != "why"}, "rejected": r["why"]} for r in rejected]})
+    else:
+        os.remove(args.proposals)
+    print("confirmed %d / rejected %d (%s)" % (len(kept), len(rejected), "the rejected kept in %s, each with why" % args.proposals if rejected else "proposals file consumed"))
     for r in rejected:
         print("  rejected %s %s %s — %s" % (r.get("src"), r.get("predicate"), r.get("dst"), r["why"]))
+    if rejected:
+        import shlex
+        unreg = sorted({f for r in rejected for f in (split_anchor(r.get("src", ""))[0], split_anchor(r.get("dst", ""))[0])
+                        if f and f not in files and f not in ("concept", "source") and os.path.exists(os.path.join(args.target, f))})
+        if unreg:
+            print("  not registered: `register %s`" % " ".join(shlex.quote(f) for f in unreg))
+        print("  fix them (or delete the ones that were wrong) and run `confirm %s --by NAME|--delegated WHY` again — the confirmed ones are not in it any more"
+              % shlex.quote(args.proposals))
     return 1 if rejected else 0
 
 
@@ -598,9 +653,32 @@ def gone_groups(target, d, broken, files):
     return out
 
 
+def owed_rereads(d, only=None):
+    """[(concept, [(retired id, the projection it was)])] — the concepts that lost a projection and owe a re-read (`owes`):
+    `cq` fails every question they answer until `concept revise` or `concept reaffirm`. Not a relation's state, so `impact`
+    used to leave them out — guin-site, 10-12: two retires printed the debt, `impact` said `unresolved_total = 0`, `check`
+    held, and it surfaced 22 hours later as two cq-failed objections in review. With `only`, the concepts those prefixes
+    name, or whose lost projection was on them."""
+    gone = {r["id"]: r["src"] for r in d.get("retired", [])}
+    out = []
+    for c in sorted((c for c in d["concepts"] if c.get("owes")), key=lambda c: c["name"]):
+        lost = [(i, gone.get(i, "?")) for i in c["owes"]]
+        if only and not ("concept:" + c["name"]).startswith(tuple(only)) and not any(src.startswith(tuple(only)) for _, src in lost):
+            continue
+        out.append((c, lost))
+    return out
+
+
+def owed_text(c, lost):
+    return ("concept:%s lost projection(s) %s since its sentence was affirmed — the questions it answers FAIL in `cq` until "
+            "`concept revise %s --means \"...\"` (it no longer holds) or `concept reaffirm %s --by NAME|--delegated WHY` (it does); "
+            "reconfirming what remains does not answer it" % (c["name"], ", ".join("%s (%s)" % x for x in lost), c["name"], c["name"]))
+
+
 def cmd_impact(args):
     d = decl(args.target)
     stale, broken, unjudged, files = compute_impact(args.target, d, args.only)   # answers and leaves nothing behind: the verdict is what it prints
+    owed = owed_rereads(d, args.only)
     if args.findings:
         on_drift = lambda x: next(("; concept:%s is marked drifted — %s" % (a[len("concept:"):], drift_line(drift_of(d, a[len("concept:"):])))
                                    for r in d["relations"] if r["id"] == x["id"] for a in (r["src"], r["dst"])
@@ -612,8 +690,9 @@ def cmd_impact(args):
         # no person read these: a delegation, a judge's verdict applied, an agent's own re-read — observations of the record
         findings += [{"kind": "delegated", "where": "%s %s %s %s" % (r["id"], r["src"], r["predicate"], r["dst"]), "text": "re-confirmed %s" % unread_by_a_person(r["confirmed"])}
                      for r in d["relations"] if isinstance(r.get("confirmed"), dict) and unread_by_a_person(r["confirmed"])]
+        findings += [{"kind": "owed-reread", "where": "concept:" + c["name"], "text": owed_text(c, lost)} for c, lost in owed]
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "standing": True, "findings": findings}, ensure_ascii=False, indent=1))
-        return 1 if stale or broken else 0
+        return 1 if stale or broken or owed else 0
     held = {}
     for x in stale:
         rel = next((r for r in d["relations"] if r["id"] == x["id"]), None) or {}
@@ -649,8 +728,13 @@ def cmd_impact(args):
     if unjudged:
         print("  unjudged %d relation(s) confirmed before `seen` existed, and this machine has no baseline: %s — `observe --reset --at REV` to judge them from REV"
               % (len(unjudged), ", ".join(unjudged)))
-    print("unresolved_total = %d%s" % (len(stale) + len(broken), " (only %s)" % ", ".join(args.only) if args.only else ""))
-    return 1 if stale or broken else 0
+    for c, lost in owed:
+        # not a relation's state, and still the session's to act on: every question the concept answers fails until it is read
+        print("  owed    " + owed_text(c, lost))
+    parts = [x for x in ("only %s" % ", ".join(args.only) if args.only else "",
+                         "%d stale or broken relation(s), %d concept(s) owing a re-read" % (len(stale) + len(broken), len(owed)) if owed else "") if x]
+    print("unresolved_total = %d%s" % (len(stale) + len(broken) + len(owed), " (%s)" % "; ".join(parts) if parts else ""))
+    return 1 if stale or broken or owed else 0
 
 
 JUDGE_REQUEST, JUDGMENT = "mangsang/judge-request@1", "mangsang/judgment@1"
@@ -717,6 +801,16 @@ def cmd_judge(args):
                                    "Judge only the relations in the request. Similar names are not evidence. Read files under target if you must. Change no files.")}
         os.makedirs(args.out, exist_ok=True)
         packet_path, response_path = os.path.join(args.out, "judge-request.json"), os.path.join(args.out, "judge-response.json")
+        # an earlier round's files in the same directory are moved aside, named by their time: guin-site, 10-15, reused a
+        # directory that still held 10-12's judge-response.json, and the `next:` line pointed consume at the 3-day-old verdicts
+        for name in sorted(os.listdir(args.out)):
+            base = next((b for b in ("judge-request", "judge-response") if name.startswith(b + ".")), None)
+            path = os.path.join(args.out, name)
+            if base and os.path.isfile(path) and not re.match(r"\.\d{8}T\d{6}Z\.", name[len(base):]):
+                stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(os.path.getmtime(path)))
+                aside = os.path.join(args.out, "%s.%s%s" % (base, stamp, name[len(base):]))
+                os.replace(path, aside)
+                print("moved aside: %s -> %s (an earlier round's, %s)" % (name, os.path.basename(aside), stamp))
         save(packet_path, packet)
         print("judge packet: %d stale relation(s)\n  packet:   %s\n  response: %s (judge_worker.py writes it there; consume reads the packet beside it)\n"
               "next: python3 %s --request %s --response %s\n      mangsang judge consume --response %s"
@@ -727,7 +821,13 @@ def cmd_judge(args):
     if not args.response:
         raise SystemExit("judge consume --response FILE: the judgment judge_worker.py wrote (beside its judge-request.json)")
     resp = load(args.response)
-    req = load(os.path.join(os.path.dirname(os.path.abspath(args.response)), "judge-request.json"))
+    req_path = os.path.join(os.path.dirname(os.path.abspath(args.response)), "judge-request.json")
+    req = load(req_path)
+    if req and os.path.isfile(args.response) and os.path.getmtime(args.response) < os.path.getmtime(req_path):
+        # verdicts written before the packet beside them are an earlier round's — never applied to this one
+        raise SystemExit("judge consume: %s is older than the judge-request.json beside it — an earlier round's verdicts, not this "
+                         "request's; run the judge on this request (judge_worker.py --request %s --response FILE) and consume that"
+                         % (args.response, req_path))
     if resp.get("artifact-type") != JUDGMENT or not isinstance(resp.get("items"), list) or not req:
         raise SystemExit("a judgment is %s with `items`, next to its judge-request.json" % JUDGMENT)
     # the judgment's author is the judge — the model that read the texts, from the worker's own record of the call; who
@@ -1180,10 +1280,19 @@ def cmd_check(args):
         say("  %-12s %d declaration(s) signed in a person's name on their yes to the agent's proposal: %s" % ("proposed", len(proposed), ", ".join(proposed)))
         findings.append({"kind": "agent-proposed", "layer": "observation", "where": ", ".join(proposed), "source": "mangsang",
                          "text": "%d declaration(s) stand on a person's approval of the agent's own proposal (approval-of), not on the person's words" % len(proposed)})
+    # not an invariant, so it fails no `check`: but a session reading "holds" must not take the net for clean while a concept
+    # owes a re-read and `cq` fails the questions it answers (guin-site, 10-12: found 22 hours later, in review)
+    owed = owed_rereads(d)
+    for c, lost in owed:
+        say("  %-12s %s" % ("owed", owed_text(c, lost)))
+    if owed:
+        findings.append({"kind": "owed-reread", "layer": "observation", "where": ", ".join("concept:" + c["name"] for c, _ in owed), "source": "mangsang",
+                         "text": "%d concept(s) lost a projection and owe a re-read; `cq` fails the questions they answer (`impact` counts them)" % len(owed)})
     if getattr(args, "findings", False):
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "standing": True, "findings": findings}, ensure_ascii=False, indent=1))
-    say("invariants %d · holds %d · failed %d · unaskable %d · unwatched %d"
-          % (len(active), len(active) - failed - unaskable, failed, unaskable, len(unwatched)))
+    say("invariants %d · holds %d · failed %d · unaskable %d · unwatched %d%s"
+          % (len(active), len(active) - failed - unaskable, failed, unaskable, len(unwatched),
+             " — and %d concept(s) owe a re-read: `cq` fails until each is revised or reaffirmed" % len(owed) if owed else ""))
     return 1 if failed or unaskable or unwatched else 0
 
 
@@ -1717,11 +1826,12 @@ def concept_map(args, d):
         shown.append(n)
     listed = ", ".join(shown) + (", … (+%d)" % (len(names) - len(shown)) if len(shown) < len(names) else "")
     print(head + (listed or "none declared") + tail)
-    if d["relations"]:
-        stale, broken, _, _ = compute_impact(args.target, d, persist=False)
-        if stale or broken:
-            print("%d relation(s); %s — `mangsang impact` lists them" % (len(d["relations"]), "; ".join(
-                x for x in ("%d stale" % len(stale) if stale else "", "%d broken" % len(broken) if broken else "") if x)))
+    stale, broken, _, _ = compute_impact(args.target, d, persist=False) if d["relations"] else ([], [], [], [])
+    owed = owed_rereads(d)
+    if stale or broken or owed:
+        print("%d relation(s); %s — `mangsang impact` lists them" % (len(d["relations"]), "; ".join(
+            x for x in ("%d stale" % len(stale) if stale else "", "%d broken" % len(broken) if broken else "",
+                        "%d concept(s) owe a re-read" % len(owed) if owed else "") if x)))
     return 0
 
 
@@ -1897,8 +2007,11 @@ def turn_named(t, turn_id):
 
 
 def turn_is(t, kind):
-    """--kind KIND: a typed reply right after the agent's turn is a `person` turn and an `answer` both."""
-    return not kind or t["kind"] == kind or (kind == "answer" and t["kind"] == "person" and bool(t.get("answers")))
+    """--kind KIND: a typed reply right after the agent's turn is a `person` turn and an `answer` both; an agent's text turn
+    that asks the person (a line of it ends with a question mark) is an `agent` turn and a `question` both — guin-site, 10-15:
+    "…이대로 확정할까요?" was refused as "no question turn", a question being only a question-form tool call."""
+    return (not kind or t["kind"] == kind or (kind == "answer" and t["kind"] == "person" and bool(t.get("answers")))
+            or (kind == "question" and t["kind"] == "agent" and bool(re.search(r"[?？]\s*$", t["text"], re.M))))
 
 
 def record_place(d):
@@ -1967,19 +2080,62 @@ def why_no_turn(path, turns, match, turn_id, kind):
     return "\n".join(out)
 
 
+AGENT_NAMES = ("Claude", "Claude Code", "Codex")   # how a host agent is called when it is not named by its model
+_ROSTER_SAID = set()
+
+
 def people(target):
     """`mangsang/people.json` — who may sign and speak here: {"people": [names], "agents": [speaker prefixes]}. Absent, any
     name is taken (the old behavior); present, a name that is not on it is refused, so a signature cannot be made up from
-    an account or an email."""
-    return load(os.path.join(target, DECL, "people.json"), None)
+    an account or an email. mangsang never writes it — a person (or an agent, on their word) does — so it is read
+    tolerantly: an entry that is no name (not a string, empty, only spaces — an empty prefix would admit every speaker) is
+    left out, and said on stderr with the repair. `"Claude ("` is a prefix, not a broken name: it admits what an agent's
+    turn is kept under, `Claude (<model>)`."""
+    path = os.path.join(target, DECL, "people.json")
+    if not os.path.exists(path):
+        return None
+    roster = load(path)
+    if not isinstance(roster, dict):
+        sys.stderr.write("mangsang/people.json is not an object — write it as {\"people\": [names], \"agents\": [speaker prefixes]}; read as absent\n")
+        return None
+    out = {}
+    for field in ("people", "agents"):
+        v = roster.get(field) or []
+        v = v if isinstance(v, list) else [v]
+        good = [x.strip() if field == "people" else x for x in v if isinstance(x, str) and x.strip()]
+        bad = [x for x in v if not (isinstance(x, str) and x.strip())]
+        if bad and (target, field) not in _ROSTER_SAID:
+            _ROSTER_SAID.add((target, field))   # said once per command, not at every check
+            sys.stderr.write("mangsang/people.json: %s holds %s, which name%s nobody — left out; remove %s from the file\n"
+                             % (field, ", ".join(json.dumps(x, ensure_ascii=False) for x in bad), "" if len(bad) > 1 else "s", "them" if len(bad) > 1 else "it"))
+        out[field] = good
+    return {**roster, **out}
 
 
-def check_person(target, name, as_speaker=False):
+def check_person(target, name, as_speaker=False, agent_turn=None):
+    """A name may sign (`people`) or speak (`people`, or an `agents` prefix). `agent_turn`: the name the host's record gives
+    the turn being kept (`Claude (<model>)`), when it is an agent's — the fix to name when a bare agent name is refused."""
     roster = people(target)
     if not roster or name is None:
         return
-    if name in roster.get("people", []) or (as_speaker and any(name.startswith(a) for a in roster.get("agents", []))):
+    agents = roster.get("agents", [])
+    if name in roster.get("people", []) or (as_speaker and any(name.startswith(a) for a in agents)):
         return
+    near = [a for a in agents if a.rstrip(" (").strip() == name.strip() or (a.startswith(name) and len(name) >= 3)]
+    if as_speaker and (agent_turn or near or name in AGENT_NAMES):
+        # an agent named without its model (guin-site, 10-12: `--speaker Claude` on a question turn, refused with advice to ask the
+        # person for a name, and the answer that replied to it failed after it)
+        if agent_turn and any(agent_turn.startswith(a) for a in agents):
+            raise SystemExit("--speaker %s: this turn is the agent's, and the roster's agents are speaker prefixes (%s) — an agent speaks under "
+                             "its model's name. Drop `--speaker %s`: the turn is kept as %r, which the roster admits"
+                             % (name, ", ".join(json.dumps(a, ensure_ascii=False) for a in agents), name, agent_turn))
+        if agents:
+            raise SystemExit("--speaker %s: people.json's agents are speaker prefixes (%s), and %r starts with none — an agent speaks under its "
+                             "model's name: `--speaker \"%s<model id>)\"` (or `--from-transcript … --kind agent|question` without --speaker, "
+                             "which names it from the record)" % (name, ", ".join(json.dumps(a, ensure_ascii=False) for a in agents), name,
+                                                                   near[0] if near and near[0].endswith("(") else "Claude ("))
+        raise SystemExit("--speaker %s: mangsang/people.json lists no agents — an agent's turn is kept as `Claude (<model id>)`; to let agents "
+                         "speak, add the prefix: `\"agents\": [\"Claude (\"]`" % name)
     raise SystemExit("%r is not in mangsang/people.json — ask the person which name they sign and speak under and add it there; "
                      "never derive one from an account, an email or session metadata" % name)
 
@@ -2048,7 +2204,14 @@ def cmd_source(args):
         if turn["kind"] in ("agent", "question"):
             args.speaker = args.speaker or "Claude (%s)" % (turn.get("model") or "unknown model")
         elif not args.speaker:
-            raise SystemExit("this turn is the person's: --speaker says who they are (the name they gave, not one read from the account)")
+            # the person's turn: with one person on the roster, it is theirs (guin-site, 10-15: the refusal sent the agent to pass
+            # the account name, the very thing it warns against — it was the roster's one name, but by luck)
+            listed = (people(args.target) or {}).get("people") or []
+            if len(listed) != 1:
+                raise SystemExit("this turn is the person's: --speaker says who they are (the name they gave, not one read from the account)"
+                                 + ("; mangsang/people.json lists %s" % ", ".join(listed) if listed else ""))
+            args.speaker = listed[0]
+            print("speaker: %s — the one person in mangsang/people.json (--speaker NAME, when another said it)" % listed[0])
         session = os.path.splitext(os.path.basename(args.from_transcript))[0]
         args.locator = args.locator or "session %s, %s %s at %s%s" % (session, turn["kind"], turn["uuid"], turn["at"],
                                                                       ", answering %s" % turn["answers"] if turn.get("answers") and args.kind == "answer" and not turn.get("question") else
@@ -2069,7 +2232,8 @@ def cmd_source(args):
         if not (args.file and args.speaker):
             raise SystemExit("--file (the words, verbatim; `-` reads stdin) or --from-transcript, and --speaker (who said them) — a source without both is hearsay")
         text = (sys.stdin.read() if args.file == "-" else io.open(args.file, encoding="utf-8").read()).replace("\r\n", "\n")
-    check_person(args.target, args.speaker, as_speaker=True)
+    check_person(args.target, args.speaker, as_speaker=True,
+                 agent_turn="Claude (%s)" % (turn.get("model") or "unknown model") if args.from_transcript and turn["kind"] in ("agent", "question") else None)
     if not text.strip():
         raise SystemExit("%s is empty" % ("stdin" if args.file == "-" else args.file))
     if args.replies_to and not any(y["id"] == args.replies_to for y in d["sources"]):
@@ -2436,6 +2600,8 @@ def cmd_concept(args):
         print("concept %s -> %s: %d relation(s) and %d question(s) moved with it — the name is the identity, so the rename is one command, not a retirement"
               % (args.name, args.new, moved, asked))
         return 0
+    if args.mode == "show":
+        return concept_show(args, d)
     # list
     if getattr(args, "brief", False):
         return concept_map(args, d)
@@ -2455,6 +2621,55 @@ def cmd_concept(args):
         if c.get("drift"):
             print("      DRIFTED: %s — the sentence is known not to hold; `concept revise %s` owed" % (drift_line(c["drift"]), c["name"]))
     return 0
+
+
+def concept_show(args, d):
+    """`concept show NAME`: one concept whole — its meaning, who declared it and what it owes, every relation on it (in and out,
+    with its state now, its quote and its signer: `lookup concept:NAME`'s lines), the questions it answers or that ask about
+    it, and the sources that ground it. An agent typed `concept show site-build` (guin-site, 10-12) and got "invalid choice"."""
+    c = next((c for c in d["concepts"] if c["name"] == args.name), None) if args.name else None
+    if c is None:
+        names = sorted(x["name"] for x in d["concepts"])
+        near = [n for n in names if args.name and (args.name in n or n in args.name)]
+        raise SystemExit("concept show NAME: %s — %s" % ("no concept %s" % args.name if args.name else "which one?",
+                         "did you mean %s?" % ", ".join(near) if near else "`concept list` names them"))
+    a = "concept:" + c["name"]
+    code = cmd_lookup(argparse.Namespace(target=args.target, path=a, brief=False))
+    print("declared %s%s" % (who_signed(c.get("declared")), "; revised %d time(s)" % sum(1 for h in c.get("history", []) if "means" in h)
+                             if any("means" in h for h in c.get("history", [])) else ""))
+    owed = owed_rereads(d, [a])
+    for oc, lost in owed:
+        print("  OWES: " + owed_text(oc, lost))
+    asked = [q for q in cq_active(d) if c["name"] in ((q.get("verify") or {}).get("concepts") or [])
+             or c["name"] in ((q.get("verify") or {}).get("about") or [])]
+    if asked:
+        stale, broken, _, _ = compute_impact(args.target, d, persist=False)
+        moved = {x["id"]: "stale" for x in stale}
+        moved.update({x["id"]: "broken" for x in broken})
+    print("questions (%d):" % len(asked) if asked else "questions: none names it — `cq add ID --text \"...\" --verify '{\"kind\": \"answered-by\", \"concepts\": [\"%s\"]}'`" % c["name"])
+    for q in asked:
+        v = q.get("verify") or {}
+        if v.get("kind") == "open":
+            print("  OPEN      %s  %s — asked about it, not yet answered" % (q["id"], q["text"]))
+            continue
+        names = v.get("concepts") or []
+        problems, reached = answer_health(d, names, moved)
+        drifts = drifts_reached(d, names, reached)
+        print("  %-9s %s  %s%s" % ("answered" if not problems and not drifts else "DRIFTED" if drifts else "FAILED", q["id"], q["text"],
+                                   "" if names == [c["name"]] else " (answered by %s)" % ", ".join(names)))
+        for m in problems:
+            print("      " + m)
+    grounds = sorted({r["src" if r["src"].startswith("source:") else "dst"][len("source:"):] for r in d["relations"]
+                      if a in (r["src"], r["dst"]) and "source:" in (r["src"][:7], r["dst"][:7])})
+    if grounds:
+        print("sources (%d):" % len(grounds))
+    for i in grounds:
+        x = next((y for y in d["sources"] if y["id"] == i), None)
+        if x is None:
+            print("  source:%s — not kept" % i)
+            continue
+        print("  source:%s — %s%s: \"%s\"" % (i, x.get("speaker", "?"), " (%s)" % x["locator"] if x.get("locator") else "", first_sentence(x.get("text", ""))))
+    return code
 
 
 def signing(p):
@@ -2561,7 +2776,7 @@ def main(argv=None):
             p.add_argument("--html", default=None, help="write one self-contained HTML page here: the graph draws in any browser, offline")
             p.add_argument("--check", default=None, help="a page written earlier with --out: exit 0 when it is what the record renders now, 1 when it is behind (for a page kept in git)")
         if name == "concept":
-            p.add_argument("mode", nargs="?", default="list", choices=["add", "revise", "reaffirm", "drift", "rename", "list"])
+            p.add_argument("mode", nargs="?", default="list", choices=["add", "revise", "reaffirm", "drift", "rename", "list", "show"])
             p.add_argument("name", nargs="?", default=None)
             p.add_argument("new", nargs="?", default=None, help="rename: the new name")
             p.add_argument("--means", default=None, help="one sentence: what this name means in this project")
