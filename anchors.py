@@ -466,6 +466,89 @@ def _js_body_end(toks, j):
     return n
 
 
+def _js_group_end(toks, k):
+    """toks[k] opens a bracket (`(`, `[`, `{`, `${`): the index after the one that closes it."""
+    n, depth = len(toks), 0
+    while k < n:
+        v = toks[k].value
+        if v in _OPEN:
+            depth += 1
+        elif v in _CLOSE:
+            depth -= 1
+            if depth <= 0:
+                return k + 1
+        k += 1
+    return n
+
+
+def _js_angles_end(toks, k):
+    """toks[k] is the `<` of type arguments or parameters (`<T extends { a: 1 }>`, `Promise<Array<X>>`): the index after its `>`."""
+    n, depth = len(toks), 0
+    while k < n:
+        v = toks[k].value
+        if v in _OPEN:
+            k = _js_group_end(toks, k)
+            continue
+        depth += {"<": 1, ">": -1, ">>": -2, ">>>": -3}.get(v, 0)
+        k += 1
+        if depth <= 0 or v in (";",) or v in _CLOSE:
+            return k
+    return n
+
+
+_TYPE_OPERATORS = {"keyof", "typeof", "infer", "is", "asserts", "extends", "readonly", "unique", "new", "abstract"}
+
+
+def _js_type_end(toks, k):
+    """k just after a `:` that types a function's return: the index where the type ends — at the body's `{`, a `;` or
+    anything closing. A `{` where a type can stand (`: { a: T }`, `| { b: U }`, `Promise<{ … }>`) is an object type, not
+    the body: before 1.19 the first `{` was taken for the body, and `function f(): Promise<{ a: T[] }> { … }` was cut to
+    its signature, its body neither fingerprinted nor quotable."""
+    n, operand = len(toks), True
+    while k < n:
+        t = toks[k]
+        v = t.value
+        if t.type == "punct":
+            if v == "{" and not operand:
+                return k
+            if v in _OPEN:
+                k = _js_group_end(toks, k)
+                operand = False
+                continue
+            if v == "<":
+                k = _js_angles_end(toks, k)
+                operand = False
+                continue
+            if v in (";", "=") or v in _CLOSE:
+                return k
+            operand = v != "!"   # `|`, `&`, `?`, `:`, `.`, `,`, `=>` (a function type's result) — a type follows
+            k += 1
+            continue
+        operand = t.type == "id" and v in _TYPE_OPERATORS
+        k += 1
+    return n
+
+
+def _js_head_end(toks, k, function):
+    """From the token after `function` / `class` / `interface`: the index of the body's `{` (or of a `;` that ends a body-less
+    declaration) — skipping generics (`<T extends { a: 1 }>`), `extends Base<{ … }>`, the parameters (`(env: { x: 1 })`) and a
+    return type (`: Promise<{ … }>`), each of which may hold braces of its own."""
+    n = len(toks)
+    while k < n and toks[k].value not in ("{", ";") and not (function and toks[k].value == "("):
+        v = toks[k].value
+        if v == "<":
+            k = _js_angles_end(toks, k)
+        elif v in _OPEN:
+            k = _js_group_end(toks, k)
+        else:
+            k += 1
+    if function and k < n and toks[k].value == "(":
+        k = _js_group_end(toks, k)
+        if k < n and toks[k].value == ":":
+            k = _js_type_end(toks, k + 1)
+    return k
+
+
 def _js_pattern_names(toks, j, end):
     """Names bound by a destructuring pattern starting at j (`{a, b: c, ...d}` / `[x, y]`), up to `end`."""
     names, depth, k = [], 0, j
@@ -627,18 +710,18 @@ def scan_js(text):
                 names = [toks[k].value]
             elif "default" in mods:
                 names = ["default"]
-            end = _js_body_end(toks, k)
+            end = _js_body_end(toks, _js_head_end(toks, k, True))
         elif v == "class" or (v == "abstract" and nxt and nxt.value == "class"):
             k = j + 1 if v == "class" else j + 2
             if k < n and toks[k].type == "id" and toks[k].value not in ("extends", "implements", "{"):
                 names = [toks[k].value]
             elif "default" in mods:
                 names = ["default"]
-            end = _js_body_end(toks, k)
+            end = _js_body_end(toks, _js_head_end(toks, k, False))
         elif v in ("interface", "enum") and nxt and nxt.type == "id" or (v == "const" and nxt and nxt.value == "enum"):
             k = j + 2 if v == "const" else j + 1
             names = [toks[k].value]
-            end = _js_body_end(toks, k)
+            end = _js_body_end(toks, _js_head_end(toks, k, False))
         elif v in ("namespace", "module") and nxt and nxt.type in ("id", "str") and j + 2 < n and toks[j + 2].value in ("{", "."):
             names = [nxt.value if nxt.type == "id" else nxt.value[1:-1]]
             end = _js_body_end(toks, j + 1)

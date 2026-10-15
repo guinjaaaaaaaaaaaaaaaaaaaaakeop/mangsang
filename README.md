@@ -40,7 +40,9 @@ verbatim, the agent's turn under its model's name, the locator filled in; `--tur
 a phrase cannot — a short approval recurs — and the ids are listed, latest last, when `--match` finds several). An
 answer is the person's turn after the agent's turn it replies to: a choice picked in a question, or a reply typed
 ("ㄱㄱ", "1번") — a typed reply right after the agent's turn matches `--kind person` and `--kind answer` both, and its
-locator names the turn it answers. A choice picked in a question form is only what the person picked or typed (and
+locator names the turn it answers; an agent's text turn that asks the person (a line of it ends with `?`) matches
+`--kind agent` and `--kind question` both — a question is not only a question-form call. The person's turn needs no
+`--speaker` when `people.json` lists exactly one person: it is theirs, and the line says so. A choice picked in a question form is only what the person picked or typed (and
 a note they typed beside it) — never the tool's wrapper ("Your questions have been answered: …"): each question of a
 form is its own answer turn (`ID#1`, `ID#2`, … when the form asked several; `--turn ID` lists them), its locator names
 the question it answers, and it replies to the form's source when that is kept. When nothing matches, the error says what is there: turns of another kind that
@@ -58,14 +60,18 @@ The net's own nodes: `add NAME --means "..."` declares one (with `--by` or `--de
 meaning and stales every projection; `reaffirm` says the sentence still holds after a projection of it was retired
 (or after it was marked drifted); `drift NAME --why "..."` marks a sentence known not to hold whose revision waits;
 `rename` moves the name under every relation and every question that names it, in one command; `list` shows each
-concept with its projections, and what it owes; `list --brief` is the net as a map in a line or two — `N concept(s):
-a, b, … ; M open question(s)` (names cut to fit ~300 characters), then how many relations are stale or broken when any
-are — what a reader (jokbo) shows an agent at session start; an empty net prints nothing
+concept with its projections, and what it owes; `show NAME` is one concept whole — its meaning and signer, every
+relation on it in and out with its state now, quote and signer (`lookup concept:NAME`'s lines), what it owes, the
+questions it answers or that ask about it (with their state) and the sources that ground it; `list --brief` is the net as a map in a line or two — `N concept(s):
+a, b, … ; M open question(s)` (names cut to fit ~300 characters), then how many relations are stale or broken, and how
+many concepts owe a re-read, when any do — what a reader (jokbo) shows an agent at session start; an empty net prints nothing
 
 A concept's sentence is affirmed over the projections it had. Retiring one leaves the concept owing a re-read (`owes`):
 the questions it answers are FAILED until `revise` gives it a new sentence or `reaffirm` (signed) says the old one still
 holds — reconfirming the projections that remain does not answer it, since each reconfirm asks only "does this still
-realize the concept?". Nothing is owed for adding a projection, for a `move`, for a projection still there in another
+realize the concept?". `impact` counts each such concept in `unresolved_total` (an `owed` line with both commands; exit 1),
+and `check` says it beside its invariants — on guin-site two retires printed the debt, `impact` said 0, `check` held, and
+it surfaced 22 hours later as two failed questions in review. Nothing is owed for adding a projection, for a `move`, for a projection still there in another
 form (the same file under a narrower anchor, the same name in another file — a refactoring done by hand), or for a
 source. Measured on one project's history (guin-site): 73 retired projections, 15 debts in 3 commits — a deploy that
 moved from GitHub Pages to Workers while the sentence still said Pages, a rewrite from Python to Astro, tags leaving the
@@ -82,7 +88,9 @@ re-confirmed "to be revised at stage 5" and two questions answered green with a 
 ### `/mangsang:confirm`
 
 Store proposed relations after checking anchors, vocabulary, evidence (a quote that appears in one anchor's text —
-paraphrase is rejected) and duplicates
+paraphrase is rejected) and duplicates. The confirmed leave the proposals file; the rejected stay in it, each with
+`rejected: <why>` — a file in the tree that is not registered named with its `register` command — so the route is to fix
+them and run the same `confirm` again (the file is removed when nothing was rejected)
 
 ### `/mangsang:observe`
 
@@ -90,11 +98,12 @@ Fingerprint every anchor; `--reset` takes a new baseline, `--reset --at REV` tak
 
 ### `/mangsang:impact`
 
-Report stale and broken relations; exit 1 when anything is unresolved. Broken relations whose file is gone from the
+Report stale and broken relations, and the concepts that owe a re-read (`owed`: a projection retired, every question
+the concept answers failing in `cq` until `concept revise` or `concept reaffirm`); exit 1 when anything is unresolved. Broken relations whose file is gone from the
 tree (and whose symbol or section is in no other registered file) are grouped by that file, with the one `retire --gone
 FILE.. --why WHY` that disposes of them. `--only ANCHOR-PREFIX..` judges only the
 relations touching those anchors — a slice's check; the whole-tree invariant belongs to the merge and goal checks.
-`--findings` prints `dwitbuk/findings@1` (stale, broken, and — as `delegated`, an observation — relations re-confirmed
+`--findings` prints `dwitbuk/findings@1` (stale, broken, `owed-reread`, and — as `delegated`, an observation — relations re-confirmed
 with no person reading them: by delegation, by a judge's verdict applied, or by an agent on its own). `--show` prints,
 for each stale relation, what changed: the anchor's text as it was when the relation was confirmed (from git, the
 commit that last wrote the relation) against now; `reconfirm` prints the same before it records
@@ -107,7 +116,10 @@ now — a function stale because its constant moved shows the constant, not two 
 when the stale side is a concept, the item is marked and the sentence under judgment is the concept's whole meaning, the
 quote only context. `--out DIR` is a directory (an existing one is used as is; a name ending in `.json` is refused, since
 the packet is written into it): the packet is `DIR/judge-request.json`, and `request` prints its path, the response's,
-and the two commands to run next. `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
+and the two commands to run next. An earlier round's `judge-request.*` and `judge-response.*` there are moved aside first,
+named by their time (`judge-response.20261012T093038Z.json`), and said — so the `next:` line never points at an older
+round's verdicts (guin-site reused a directory holding a 3-day-old response) — and `consume` refuses a response older than
+the request beside it. `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
 quote the stale text verbatim) and applies only still-true, recorded on the relation as
 `{"judge": "<host> <model>", "applied-by": "<who>", "why": "<the judge's evidence>"}` and reported to the reviewer. The
 judgment's author is the judge — the model, from the response's worker record (`--judge "<host> <model>"` when there is
@@ -228,7 +240,10 @@ a `revise` replaced; retired questions keep the record
 Committed: yes.
 
 optional roster: `{"people": [names], "agents": [speaker prefixes]}` — when present, a `--by` or `--speaker` not on it
-is refused. Run by an agent (Claude Code, Codex, a worker), `--by NAME` also needs `--approved-in source:ID` — a
+is refused. mangsang never writes it. `"Claude ("` is a prefix, the usual one: it admits `Claude (<model>)`, the name an
+agent's turn is kept under; an agent's bare name (`--speaker Claude`) is refused with that fix — drop `--speaker` on a
+transcript turn, whose record names the model. An entry that names nobody (empty, not a string — an empty prefix would
+admit every speaker) is left out and said, with the repair. Run by an agent (Claude Code, Codex, a worker), `--by NAME` also needs `--approved-in source:ID` — a
 source NAME spoke, where they approved — and records it; otherwise the agent signs `--delegated`
 
 ### `mangsang/sources/<id>.json`
@@ -277,6 +292,10 @@ One rule cuts every kind of file (`anchors.py` holds it, one scanner per kind):
   them, not anchors of their own. A name declared twice (an `if`/`else` pair, a table and its ALTERs, a selector and
   its `@media` branch) is one anchor holding both texts. `@import`/`@use`, `export { a as b }`, an `INSERT`,
   `console.log("…")` declare nothing and fall to the file anchor.
+- **Its extent runs to its body's end**: in JS/TS a function's body is the `{` after its generics, parameters and return
+  type, any of which may hold braces of their own (`function f(env: Env): Promise<{ rows: unknown[] }> { … }` — before
+  1.19 cut at the return type's `{`, so the body was neither fingerprinted nor quotable; a relation confirmed on such a
+  function then reads stale once, its body now in the fingerprint); a class's or interface's after `<…>` and `extends Base<{ … }>`.
 - **Its extent starts at its first attachment**: a decorator, `export`/`async`/`declare`, the comment lines above an
   env key. `@require_admin` is what the function does before its body does anything; a fingerprint of the `def` lines
   alone read its removal as nothing. A registration's extent is the statement — the route and its handler, the `it`
@@ -307,7 +326,8 @@ propagates both ways (a revised meaning stales the projection; a changed project
 `references` propagates nothing.
 A relation id is the hash of (src, predicate, dst); the same relation proposed twice is a duplicate.
 Every judgment (`confirm`, `reconfirm`, `concept`, `cq`) carries `--by` or `--delegated` — except a `reconfirm` an agent
-runs with neither, which is the agent's own re-read and is signed as such (`{"agent": "Claude Code"}`), so an agent that
+runs with neither, which is the agent's own re-read and is signed as such (`{"agent": "Claude (<model>)"}`, the model from the host's record of the session; `Claude Code` when that
+record is not found — the same name a judge round's `applied-by` takes), so an agent that
 read the change itself does not sign in the person's name; a `--delegated` value that
 is a delegation id (`D-xxxx`, chongdae's `delegate`) is stored as `{delegated: {ref}}` — machine-readable, declared
 once, never a pasted paragraph — though mangsang does not resolve it (whose delegation it is stays the record
