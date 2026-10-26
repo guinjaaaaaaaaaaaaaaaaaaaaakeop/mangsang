@@ -45,7 +45,9 @@ locator names the turn it answers; an agent's text turn that asks the person (a 
 `--speaker` when `people.json` lists exactly one person: it is theirs, and the line says so. A choice picked in a question form is only what the person picked or typed (and
 a note they typed beside it) — never the tool's wrapper ("Your questions have been answered: …"): each question of a
 form is its own answer turn (`ID#1`, `ID#2`, … when the form asked several; `--turn ID` lists them), its locator names
-the question it answers, and it replies to the form's source when that is kept. When nothing matches, the error says what is there: turns of another kind that
+the question it answers, and it replies to the form's source when that is kept. `--kind answer` finds an answer by what
+it answers too: a phrase of its question (`--match "1/6"`), or the form's own id (`--turn` the question's id) — sagoforce
+10-26: both were refused as "no answer turn", and the agent read the transcript by hand for the result's id. When nothing matches, the error says what is there: turns of another kind that
 contain the phrase, or where in the record it is (the agent's thinking, a tool call, a tool's output — none of it said)
 and the turns around it, each with the id to pass as `--turn`. Both sides of a conversation are sources,
 and an answer is kept with the turn it answers. `--excerpt "sentence"` (repeatable) keeps only those sentences of the turn —

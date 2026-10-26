@@ -2169,6 +2169,16 @@ def turn_named(t, turn_id):
     return t["uuid"] == turn_id or t["uuid"].split("#")[0] == turn_id
 
 
+def turn_hit(t, match, turn_id, kind):
+    """Is `t` the turn `--match`/`--turn`/`--kind` ask for? An answer picked in a question form is found by what it answers
+    too: a phrase of its question, or the question form's id (each answer `ID#k` is then its own turn). sagoforce 10-26:
+    `--match "1/6" --kind answer` (the phrase was the question's, the answer "맞다") and `--turn <the form's id> --kind
+    answer` were both refused as "no answer turn", and the agent read the transcript by hand for the result's id."""
+    asked = kind == "answer" and t.get("question") is not None
+    return ((not match or match in t["text"] or (asked and match in t["question"]))
+            and (not turn_id or turn_named(t, turn_id) or (asked and t.get("answers") == turn_id)) and turn_is(t, kind))
+
+
 def turn_is(t, kind):
     """--kind KIND: a typed reply right after the agent's turn is a `person` turn and an `answer` both; an agent's text turn
     that asks the person (a line of it ends with a question mark) is an `agent` turn and a `question` both — guin-site, 10-15:
@@ -2356,7 +2366,7 @@ def cmd_source(args):
         if not (args.match or args.turn):
             raise SystemExit("--from-transcript needs --match \"a phrase from the turn\" (or --turn ID) — the one turn that contains it is kept, whole")
         turns = transcript_turns(args.from_transcript)
-        hits = [t for t in turns if (not args.match or args.match in t["text"]) and (not args.turn or turn_named(t, args.turn)) and turn_is(t, args.kind)]
+        hits = [t for t in turns if turn_hit(t, args.match, args.turn, args.kind)]
         if not hits:
             raise SystemExit(why_no_turn(args.from_transcript, turns, args.match, args.turn, args.kind))
         if len(hits) != 1:

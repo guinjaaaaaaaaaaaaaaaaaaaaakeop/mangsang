@@ -2050,6 +2050,13 @@ def test_an_answer_from_a_question_form_is_the_persons_choice_not_the_tools_wrap
         assert code != 0 and "found 2 turn(s)" in out and "answer u1#1" in out and "answer u1#2" in out, out
         assert run("source", "add", "B", "--from-transcript", tr, "--turn", "u1#1", "--speaker", "lee", "--target", pj.dir)[0] == 0
         assert mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "B.json"))["text"] == "PDS 백업 (추천)"
+        # sagoforce 10-26: the answer is found by what it answers too — a phrase of its question, or the form's id
+        assert run("source", "add", "E", "--from-transcript", tr, "--match", "백업을 어떻게", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)[0] == 0
+        assert mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "E.json"))["text"] == "PDS 백업 (추천)"
+        code, out = run("source", "add", "F", "--from-transcript", tr, "--turn", "a1", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)
+        assert code != 0 and "found 2 turn(s)" in out and "answer u1#1" in out, out
+        code, out = run("source", "add", "F", "--from-transcript", tr, "--turn", "a1", "--match", "예전 D1", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)
+        assert code == 0 and mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "F.json"))["text"].startswith("옮기고 삭제"), out
         # text only: read out of the wrapper for the question asked, the wrapper left behind
         assert run("source", "add", "C", "--from-transcript", tr, "--match", "커밋 후", "--kind", "answer", "--speaker", "lee", "--target", pj.dir)[0] == 0
         c = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", "C.json"))
