@@ -64,7 +64,11 @@ concept with its projections, and what it owes; `show NAME` is one concept whole
 relation on it in and out with its state now, quote and signer (`lookup concept:NAME`'s lines), what it owes, the
 questions it answers or that ask about it (with their state) and the sources that ground it; `list --brief` is the net as a map in a line or two — `N concept(s):
 a, b, … ; M open question(s)` (names cut to fit ~300 characters), then how many relations are stale or broken, and how
-many concepts owe a re-read, when any do — what a reader (jokbo) shows an agent at session start; an empty net prints nothing
+many concepts owe a re-read, when any do, and how many tracked files the net cannot see — `64 tracked file(s) unseen
+(plan/ 2 changed after the net, lexicons/ 8 changed after the net, write/* 1, … +13)`, the recently changed first, as
+`check` groups them — and how many registered files nothing relates to (`23 registered file(s) nothing relates to
+(lexicons/com/…/ 8 changed after the net, …)`) — what a reader (jokbo) shows an agent at session start; an empty net
+prints nothing
 
 A concept's sentence is affirmed over the projections it had. Retiring one leaves the concept owing a re-read (`owes`):
 the questions it answers are FAILED until `revise` gives it a new sentence or `reaffirm` (signed) says the old one still
@@ -342,7 +346,14 @@ formatting out; strings, regexes and template literals in — Python by token *n
 numeric token types were renumbered), CSS and SQL and schema blocks their comment-free whitespace-collapsed text, HTML
 its comment-free collapsed text, JSON anchors the canonical value (key order and spacing are not content),
 YAML/TOML/INI/env/Dockerfile anchors their comment-free stripped lines, Markdown and unknown files their text: in prose,
-wording *is* the content — a Markdown section without its trailing blank lines, which belong to the layout of what follows. An anchor that reads other declarations hashes its parts' fingerprints together. Older `seen`
+wording *is* the content — a Markdown section without its trailing blank lines, which belong to the layout of what follows.
+Spacing and comment marks *inside* content stay in all of them: a YAML block scalar's lines (its blank and `#` lines
+too), TOML multi-line strings, SQL, CSS, Prisma, GraphQL and proto strings and a CSS `url(…)`, an HTML `<pre>` or
+`<textarea>` body, a quoted attribute value; a `<script>` body and a component's frontmatter are read as JS/TS tokens and
+a `<style>` body as CSS, so their strings are content and their formatting is not — 1.15–1.19.0 collapsed or stripped
+all of these, so a changed string could hash the same and its relations stayed fresh. A file with none of
+these hashes as before; one with any comes up stale once after the upgrade, its bytes unchanged — read it and
+`reconfirm`. An anchor that reads other declarations hashes its parts' fingerprints together. Older `seen`
 shapes — a text hash, a numeric-token hash, an own-tokens-only hash — are still answered for compatibility (unchanged
 bytes are not stale) and never written; such a record cannot see what its anchor reads until a `reconfirm` upgrades it.
 
@@ -365,7 +376,23 @@ and — invariant or not — each directory of tracked code or config that holds
 (guin-site's write app and its schemas were new top-level directories the first observation never looked in; markdown and
 text there are content; hidden directories, lockfiles, the records `record-paths` in hunsu.lock.json declares and what a
 `registered` invariant's `except` globs leave out are left out; files directly in a directory whose registered files are
-all deeper are said as `dir/*`; the root's own files are not — every project's manifests; six are named, the rest counted);
+all deeper are said as `dir/*`; the root's own files are not — every project's manifests; six are named, the rest counted).
+Both are grouped by directory, and a group changed since the net's record (`mangsang/`) last changed — or in the last 20
+commits, in a history longer than that — is said first, with when (`lexicons/ 8 file(s) [changed 11 commits ago, after
+the net's last change]`). Then `next`: why once (a file nothing relates to is invisible to impact), the exact `register`
+for each directory nothing is registered in and each recently changed group beside registered files (three at most, the
+recent first), and the step after it — relate what they carry (`realizes concept:NAME` with a quote) in a proposals.json,
+show the person, `confirm`. A statement, never a stop: `check`'s exit is what its invariants say. guin-site, 10-16 → 10-19:
+`lexicons/` became a published atproto contract after the net last changed, `check` said it only as `lexicons/ 8 file(s)`
+among the unseen, and three runs finished without touching the net. **unrelated** — a registered file no relation stands
+on is as invisible to impact (an edit there makes nothing stale): said the same way, by directory, the recent first, and
+`next` names its files to relate — so a group registered from `next` moves from unseen to unrelated instead of going
+quiet. Left out, as registered on purpose or already asked: a file gone from the tree (`impact`'s), a document citing a
+kept source by id (`source:ID` — registered as the evidence `ungrounded` reads) and a file a `coverage` invariant's
+anchors reach (that invariant says FAILED itself). On guin-site: 26 registered files with nothing on them, 11 of them gone
+from the tree — 15 said. **gone** — those registry entries: a registered file gone from the tree that no relation stands on
+(`impact` says a gone file only through the relations broken on it, and keeps doing so), one grouped line with the exact
+`mangsang retire --gone FILE.. --why "..."` that drops them (it unregisters a file with no relation as well); guin-site: 11;
 **ungrounded** — a person's words kept as a source that no relation uses, no signature cites (`approved-in`,
 `approval-of`) and no registered document cites by id: a decision the model does not carry yet. Measured there: 73 of
 the owner's sources, 37 related to nothing, 32 of those cited by the plan; the 5 left included the backend's two
@@ -424,6 +451,9 @@ what they mean; it reads their `propagates`, the same rule `impact` judges stale
   matching — enough to name declarations and their extents in files written by people and formatters; a minified sheet
   or a `$$` body with a `;` inside a string may be cut wrong, never lost (the file anchor holds it all). Tailwind classes
   and CSS-in-JS live inside the component's tokens: the component anchor moves, no rule anchor exists for them.
+- Content inside a string or block is known by its syntax alone: an `.env` value quoted across lines, a Dockerfile
+  heredoc, a delimiter inside a trailing comment or escaped, an element made `white-space: pre` by CSS elsewhere, and
+  `.a :hover` against `.a:hover` are still read as formatting; a `<script>` of a template type is read as JS.
 - Not built yet: repair candidates after a rename; methods, keys below depth 3 and object members (`tailwind.config.js`'s
   `theme.colors`) as anchors of their own; languages beyond these (a scanner returning `Scan(texts, deps, hidden)` in
   `anchors.py` is the whole of adding one); reads across files (see above — a relation, today).

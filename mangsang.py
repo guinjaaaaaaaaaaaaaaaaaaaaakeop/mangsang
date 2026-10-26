@@ -24,7 +24,9 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 projection; retiring a projection leaves the concept owing a re-read (`owes`) until `revise` or `reaffirm`;
                                 `drift NAME --why` marks a sentence known wrong whose revision waits: cq DRIFTED, its relations not re-confirmed
   concept list --brief          the net as a map in a line or two: `N concept(s): a, b, … ; M open question(s)` (names cut to fit ~300
-                                characters), then how many relations are stale or broken when any are; an empty net prints nothing
+                                characters), then how many relations are stale or broken when any are, and how many tracked files
+                                are unseen and how many registered ones nothing relates to (by directory, the recently changed
+                                first); an empty net prints nothing
   confirm <proposals.json> --by NAME | --delegated WHY
                                 store relations after checking: anchors exist, predicate is in the vocabulary, no duplicates; the
                                 rejected stay in the file, each with why (a file not registered: its `register` command) — fix, run again
@@ -1001,7 +1003,7 @@ LOCKFILES = {"package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn
              "Cargo.lock", "poetry.lock", "Pipfile.lock", "uv.lock", "Gemfile.lock", "go.sum"}   # a resolver's output: nothing in it is the project's to say
 
 
-def unseen_directories(target, d, covered=(), excepts=()):
+def unseen_directories(target, d, covered=(), excepts=(), with_files=False):
     """Directories holding tracked code or config and no registered file at all, each with its count — the shallowest such
     directory under one that has some. guin-site, 10-10: `write/` (an OAuth Worker, 11 files) and `lexicons/` (8 schemas)
     were new top-level directories; the advice beside registered files never looked there, and the net stayed green. A
@@ -1013,7 +1015,7 @@ def unseen_directories(target, d, covered=(), excepts=()):
     import fnmatch
     got = tracked_files(target)
     if got is None:
-        return []
+        return {} if with_files else []
     have = {e["path"] for e in d["registry"]}
     direct = {p.rsplit("/", 1)[0] + "/" for p in have if "/" in p}
     held = set()
@@ -1032,8 +1034,129 @@ def unseen_directories(target, d, covered=(), excepts=()):
         if not top and "/".join(parts[:-1]) + "/" not in direct:
             top = "/".join(parts[:-1]) + "/*"   # its directory holds registered files only deeper down
         if top:
-            found[top] = found.get(top, 0) + 1
-    return sorted(found.items())
+            found.setdefault(top, []).append(f)
+    return sorted((k, len(v)) for k, v in found.items()) if not with_files else found
+
+
+RECENT_COMMITS = 20   # "changed lately", when the net's record says nothing later: about a working week of commits on guin-site
+
+
+def recent_changes(target):
+    """({path: commits ago}, commits since the net's record last changed or None, whether the history is longer than
+    RECENT_COMMITS) — the files changed in the last RECENT_COMMITS commits or since `mangsang/` last changed, whichever
+    reaches further back (at most 500). guin-site,
+    10-16: `lexicons/` became a published contract six commits after the net last moved, and `check` said it only as one
+    count among the unseen. {}, None, False without git."""
+    import subprocess
+    run = lambda *a: subprocess.run(["git", *a], cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    net = run("log", "-1", "--format=%H", "--", DECL).stdout.strip()
+    since = run("rev-list", "--count", net + "..HEAD").stdout.strip() if net else ""
+    since = int(since) if since.isdigit() else None
+    total = run("rev-list", "--count", "HEAD").stdout.strip()
+    done = run("log", "-n", str(min(500, max(RECENT_COMMITS, since or 0))), "--relative", "--name-only", "--format=%x00", "--", ".")
+    if done.returncode:
+        return {}, None, False
+    ago = {}
+    for i, chunk in enumerate(done.stdout.split("\0")[1:]):
+        for f in chunk.split("\n"):
+            if f.strip():
+                ago.setdefault(f.strip().replace("\\", "/"), i)
+    # a history no longer than the window makes everything "lately", which singles nothing out: the window counts only past it
+    return ago, since, total.isdigit() and int(total) > RECENT_COMMITS
+
+
+def unrelated_files(target, d, active, files=None):
+    """Registered files no live relation stands on — in the registry, so `lookup` says "registered; nothing on it" and
+    `check` said nothing: an edit there makes nothing stale, as invisible to impact as a file never registered. guin-site,
+    10-19: the eight lexicons registered from `check`'s own `next` went quiet the moment they were registered. Left out, as
+    registered on purpose or already asked: a file no longer in the tree (`impact` says it broken or gone), a file that cites
+    a kept source by id (`source:ID` — registered as the evidence that grounds a person's words, which `ungrounded` reads),
+    and a file a `coverage` invariant's `anchors` reach (that invariant is the check: FAILED for what it misses)."""
+    on = {f for r in d["relations"] for f in map(file_of, (r["src"], r["dst"])) if f}
+    if files is None:
+        files, _ = snapshot(target, d["registry"])
+    pats = [re.compile("^" + re.escape(q["verify"]["anchors"]).replace("\\*", ".*") + "$") for q in active
+            if q.get("verify", {}).get("kind") == "coverage" and isinstance(q["verify"].get("anchors"), str)]
+    cite = re.compile(r"source:(%s)(?![\w-])" % "|".join(re.escape(x["id"]) for x in d["sources"])) if d["sources"] else None
+    out = []
+    for e in d["registry"]:
+        p = e["path"]
+        path = os.path.join(target, p)
+        if p in on or not os.path.isfile(path) or p.startswith(record_prefixes(target)):
+            continue
+        if any(pat.match(p + k) for pat in pats for k in files.get(p, {"": None})):
+            continue
+        if cite and cite.search(io.open(path, encoding="utf-8", errors="replace").read()):
+            continue
+        out.append(p)
+    return sorted(out)
+
+
+def unseen_groups(target, d, active, files=None):
+    """What the net cannot see, grouped by directory, the recently changed first: (the registered directories the `beside`
+    advice looked in, the groups beside registered files, the groups in directories nothing is registered in, the groups of
+    registered files no relation stands on — `unrelated_files`). Each group
+    is {group, files, ago, after_net}: `ago` is how many commits back its newest change is when that is recent (since the
+    net's record last changed, or within RECENT_COMMITS), else None. `check` and `concept list --brief` say the same groups."""
+    ago, since, window = recent_changes(target)
+    def group(name, files):
+        n = min((ago[f] for f in files if f in ago), default=None)
+        recent = n is not None and ((window and n < RECENT_COMMITS) or (since is not None and n < since))
+        return {"group": name, "files": sorted(files), "ago": n if recent else None, "after_net": bool(recent and since is not None and n < since)}
+    order = lambda gs: sorted(gs, key=lambda g: (g["ago"] is None, g["ago"] or 0, g["group"]))
+    beside, near = [], []
+    if not any(q.get("verify", {}).get("kind") == "registered" for q in active):
+        beside = sorted({e["path"].rsplit("/", 1)[0] + "/" for e in d["registry"] if "/" in e["path"]})
+        by = {}
+        for f in (unregistered(target, d, beside) if beside else None) or []:
+            by.setdefault(f.rsplit("/", 1)[0] + "/", []).append(f)
+        near = order(group(k, v) for k, v in by.items())
+    asks = [q["verify"] for q in active if q.get("verify", {}).get("kind") == "registered"]
+    covered = beside + [p for v in asks for p in v.get("paths") or []]
+    blind = unseen_directories(target, d, covered, [g for v in asks for g in v.get("except") or []], with_files=True)
+    by = {}
+    for f in unrelated_files(target, d, active, files):
+        by.setdefault(f.rsplit("/", 1)[0] + "/" if "/" in f else "./", []).append(f)
+    return beside, near, order(group(k, v) for k, v in blind.items()), order(group(k, v) for k, v in by.items())
+
+
+def when_text(g):
+    """`changed in the last commit` / `changed 3 commits ago, after the net's last change` — a recent group's change, said."""
+    if g["ago"] is None:
+        return ""
+    return ("changed in the last commit" if g["ago"] == 0 else "changed %d commit%s ago" % (g["ago"], "" if g["ago"] == 1 else "s")) + (", after the net's last change" if g["after_net"] else "")
+
+
+def group_text(g):
+    """One group as the unseen lines name it: a lone file by its path, else `dir/ N file(s)`; a recent one says when."""
+    head = g["files"][0] if len(g["files"]) == 1 and not g["group"].endswith("*") or g["group"] == "./" else "%s %d file(s)" % (g["group"], len(g["files"]))
+    return head + (" [%s]" % when_text(g) if g["ago"] is not None else "")
+
+
+def register_command(g):
+    """The exact `register` for a group: its files, named, up to twenty; past that, what git tracks there."""
+    if len(g["files"]) <= 20:
+        return "mangsang register " + " ".join(g["files"])
+    return "mangsang register $(git ls-files -- '%s')" % g["group"].rstrip("*")
+
+
+def next_steps(groups, say, k=3):
+    """What to do about the unseen and the unrelated groups, said as commands — never a stop: the why once, per group (the
+    recent first, `k` at most) its exact `register`, or for registered files nothing stands on, the files to relate; then the
+    relating. guin-site, 10-16 → 10-19: `lexicons/` (8 published atproto schemas) was said as `lexicons/ 8 file(s)` among the
+    unseen, nothing pointed at relating them, and three runs finished without touching the net."""
+    if not groups:
+        return
+    say("  %-12s a file nothing relates to is invisible to impact — relate them, the recently changed first:" % "next")
+    for g in groups[:k]:
+        when = ", ".join(x for x in ("%d %sfile(s)" % (len(g["files"]), "registered " if g.get("unrelated") else ""), when_text(g)) if x)
+        say("      %s (%s): %s" % (g["group"], when, register_command(g) if not g.get("unrelated") else "relate %s%s — nothing stands on them" % (
+            ", ".join(g["files"][:6]), " +%d" % (len(g["files"]) - 6) if len(g["files"]) > 6 else "")))
+    if len(groups) > k:
+        say("      … and %d more group(s) the same way" % (len(groups) - k))
+    say("      %s what they carry in a proposals.json — each anchor `realizes concept:NAME`, a quote as evidence (`concept add` "
+        "first for an idea the net lacks) — show it to the person, and `mangsang confirm proposals.json --by NAME`"
+        % ("then relate" if any(not g.get("unrelated") for g in groups[:k]) else "relate"))
 
 
 def ungrounded_sources(d, target):
@@ -1245,32 +1368,60 @@ def cmd_check(args):
     proposed = [("concept:" + c["name"]) for c in d["concepts"] if (c.get("declared") or {}).get("approval-of")] + \
                [("cq:" + q["id"]) for q in d["cq_declared"] if (q.get("declared") or {}).get("approval-of")]
     # what the net cannot see, said as advice (never red): tracked files beside the registered ones that nobody registered,
-    # when no `registered` invariant asks — guin-site's whole backend was outside the net and every command was green
-    beside = []
-    if not any(q.get("verify", {}).get("kind") == "registered" for q in active):
-        dirs = beside = sorted({e["path"].rsplit("/", 1)[0] + "/" for e in d["registry"] if "/" in e["path"]})
-        missing = unregistered(args.target, d, dirs) if dirs else []
-        if missing:
-            say("  %-12s %d tracked file(s) beside registered ones are not registered (%s%s) — the net cannot see them; register them, or declare "
-                "`{\"kind\": \"registered\", \"paths\": [...]}` to make it a check" % ("unseen", len(missing), ", ".join(missing[:6]), " …" if len(missing) > 6 else ""))
-            findings.append({"kind": "unregistered", "layer": "observation", "where": ", ".join(missing[:12]), "source": "mangsang",
-                             "text": "%d tracked file(s) in registered directories are not registered; no invariant asks" % len(missing)})
-    # ...and directories nobody registered anything in: the advice above looks beside registered files only, so a new
-    # top-level directory was invisible to it — said per directory, whether or not a `registered` invariant asks elsewhere
-    # (what that invariant or the advice above already names is not said twice)
-    asks = [q["verify"] for q in active if q.get("verify", {}).get("kind") == "registered"]
-    covered = beside + [p for v in asks for p in v.get("paths") or []]
-    blind = unseen_directories(args.target, d, covered, [g for v in asks for g in v.get("except") or []])
+    # when no `registered` invariant asks — guin-site's whole backend was outside the net and every command was green — and
+    # directories nobody registered anything in (the advice beside registered files never looked there: guin-site's write
+    # app and its lexicons), each grouped by directory, the recently changed first, with the commands that relate them
+    _, near, blind, loose_files = unseen_groups(args.target, d, active, files)
+    if near:
+        missing = [f for g in near for f in g["files"]]
+        say("  %-12s %d tracked file(s) beside registered ones are not registered (%s%s) — the net cannot see them; register them, or declare "
+            "`{\"kind\": \"registered\", \"paths\": [...]}` to make it a check" % ("unseen", len(missing), ", ".join(group_text(g) for g in near[:6]),
+                                                                                " … and %d more director%s" % (len(near) - 6, "y" if len(near) == 7 else "ies") if len(near) > 6 else ""))
+        findings.append({"kind": "unregistered", "layer": "observation", "where": ", ".join(missing[:12]), "source": "mangsang",
+                         "text": "%d tracked file(s) in registered directories are not registered; no invariant asks%s" % (len(missing), "".join(
+                             "; %s %s" % (g["group"], when_text(g)) for g in near if g["ago"] is not None))})
     if blind:
         # named up to a few: a monorepo with one package registered has thousands of such directories, and one line naming
         # them all is no line anyone reads
         more = lambda k: " … and %d more" % (len(blind) - k) if len(blind) > k else ""
         say("  %-12s %d director%s with code or config and nothing registered (%s%s) — the net cannot see them; register what in them the "
             "project is about, or exclude it — `except` globs in a `registered` invariant" % ("unseen", len(blind), "y" if len(blind) == 1 else "ies",
-                                                                                         ", ".join("%s %d file(s)" % b for b in blind[:6]), more(6)))
-        findings.append({"kind": "unregistered", "layer": "observation", "where": ", ".join(p for p, _ in blind[:12]), "source": "mangsang",
+                                                                                         ", ".join("%s %d file(s)%s" % (g["group"], len(g["files"]), " [%s]" % when_text(g) if g["ago"] is not None else "")
+                                                                                                   for g in blind[:6]), more(6)))
+        findings.append({"kind": "unregistered", "layer": "observation", "where": ", ".join(g["group"] for g in blind[:12]), "source": "mangsang",
                          "text": "%d director%s of tracked code or config hold no registered file: %s%s" % (len(blind), "y" if len(blind) == 1 else "ies",
-                                                                                                     ", ".join("%s (%d)" % b for b in blind[:12]), more(12))})
+                                                                                                     ", ".join("%s (%d%s)" % (g["group"], len(g["files"]), ", " + when_text(g) if g["ago"] is not None else "")
+                                                                                                               for g in blind[:12]), more(12))})
+    # the next commands, for the groups nothing in them is registered and for the recently changed beside registered ones:
+    # three at most, the recent first — a statement of what to do, never a stop
+    # registered, and nothing stands on them: as invisible to impact as the unseen, said the same way (never red)
+    if loose_files:
+        n = sum(len(g["files"]) for g in loose_files)
+        say("  %-12s %d registered file(s) no relation stands on (%s%s) — the net holds them and sees nothing in them: an edit there "
+            "makes nothing stale" % ("unrelated", n, ", ".join(group_text(g) for g in loose_files[:6]),
+                                     " … and %d more director%s" % (len(loose_files) - 6, "y" if len(loose_files) == 7 else "ies") if len(loose_files) > 6 else ""))
+        findings.append({"kind": "unrelated", "layer": "observation", "where": ", ".join(f for g in loose_files for f in g["files"][:12])[:2000],
+                         "source": "mangsang", "text": "%d registered file(s) no relation stands on: %s" % (n, ", ".join(
+                             "%s (%d%s)" % (g["group"], len(g["files"]), ", " + when_text(g) if g["ago"] is not None else "") for g in loose_files[:12]))})
+    for g in loose_files:
+        g["unrelated"] = True
+    # registry entries for files gone from the tree that nothing stands on: `impact` says a gone file only through the
+    # relations broken on it, so these sat silently (guin-site, 10-19: 11 — src/worker/api.ts, db/schema.sql, scripts/…)
+    stray = sorted(e["path"] for e in d["registry"] if not os.path.exists(os.path.join(args.target, e["path"]))
+                   and not any(file_of(a) == e["path"] for r in d["relations"] for a in (r["src"], r["dst"])))
+    if stray:
+        by = {}
+        for f in stray:
+            by.setdefault(f.rsplit("/", 1)[0] + "/" if "/" in f else "./", []).append(f)
+        gs = sorted(({"group": k, "files": v, "ago": None} for k, v in by.items()), key=lambda g: (-len(g["files"]), g["group"]))
+        say("  %-12s %d registered file(s) gone from the tree, nothing stands on them (%s%s) — the registry still lists them; to drop "
+            "them: `mangsang retire --gone %s --why \"...\"`" % ("gone", len(stray), ", ".join(group_text(g) for g in gs[:6]),
+                                                              " … and %d more director%s" % (len(gs) - 6, "y" if len(gs) == 7 else "ies") if len(gs) > 6 else "",
+                                                              " ".join(stray)))
+        findings.append({"kind": "registered-gone", "layer": "observation", "where": ", ".join(stray[:12]), "source": "mangsang",
+                         "text": "%d registered file(s) are gone from the tree and no relation stands on them; `retire --gone FILE.. --why` drops them" % len(stray)})
+    todo = sorted(blind + [g for g in near if g["ago"] is not None] + loose_files, key=lambda g: (g["ago"] is None, g["ago"] or 0))
+    next_steps(todo, say)
     loose = ungrounded_sources(d, args.target)
     if loose:
         say("  %-12s %d thing(s) a person said ground nothing — no relation uses them, no signature or registered document cites them: %s" % ("ungrounded", len(loose), ", ".join("source:" + i for i in loose)))
@@ -1832,6 +1983,18 @@ def concept_map(args, d):
         print("%d relation(s); %s — `mangsang impact` lists them" % (len(d["relations"]), "; ".join(
             x for x in ("%d stale" % len(stale) if stale else "", "%d broken" % len(broken) if broken else "",
                         "%d concept(s) owe a re-read" % len(owed) if owed else "") if x)))
+    # what the net cannot see, counted, so it reaches the session at its start and not only whoever runs `check`
+    active = [q for q in cq_active(d) if q.get("verify", {}).get("kind") in INVARIANT_KINDS]
+    _, near, blind, loose_files = unseen_groups(args.target, d, active)
+    named = lambda gs: ", ".join("%s %d%s" % (g["group"], len(g["files"]), " changed after the net" if g["after_net"] else " changed lately" if g["ago"] is not None else "")
+                                 for g in gs[:3]) + (", … +%d" % (len(gs) - 3) if len(gs) > 3 else "")
+    groups = sorted(blind + near, key=lambda g: (g["ago"] is None, g["ago"] or 0, g in near, g["group"]))
+    if groups:
+        print("%d tracked file(s) unseen (%s) — a file nothing relates to is invisible to impact; `mangsang check` gives the commands"
+              % (sum(len(g["files"]) for g in groups), named(groups)))
+    if loose_files:
+        print("%d registered file(s) nothing relates to (%s) — an edit there makes nothing stale; `mangsang check` says how to relate them"
+              % (sum(len(g["files"]) for g in loose_files), named(loose_files)))
     return 0
 
 

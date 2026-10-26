@@ -122,7 +122,7 @@ def normalize(path, text):
         toks = python_tokens(text)
         return "\x01".join(toks) if toks is not None else text
     if kind == "js":
-        return "\x01".join("%s\x00%s" % (t.type, t.value) for t in js_tokens(text))
+        return _js_normalize(text)
     if kind == "json":
         for candidate in (text, "{" + text + "}"):
             try:
@@ -130,22 +130,141 @@ def normalize(path, text):
             except ValueError:
                 pass
         return text
-    if kind in ("yaml", "toml", "ini", "env", "dockerfile"):
+    if kind == "yaml":
+        return _yaml_normalize(text)
+    if kind == "toml":
+        return _toml_normalize(text)
+    if kind in ("ini", "env", "dockerfile"):
         comment = ("#", ";") if kind == "ini" else ("#",)
+        # ponytail: an env value quoted across lines and a Dockerfile heredoc are still read as lines here
         return "\n".join(l.rstrip() for l in text.split("\n") if l.strip() and not l.lstrip().startswith(comment))
     if kind == "css":
         return _css_normalize(text)
     if kind == "sql":
-        return " ".join(_sql_strip_comments(text).split())
+        return _squash(_sql_strip_comments(text), _SQL_LITERAL)
     if kind == "block":
-        return " ".join(re.sub(r"//[^\n]*|#[^\n]*|/\*.*?\*/", " ", text, flags=re.S).split())
+        return _squash(_BLOCK_SKIP.sub(lambda m: " " if m.group("comment") else m.group(0), text), _BLOCK_STRING)
     if kind in ("html", "component"):
-        return " ".join(re.sub(r"<!--.*?-->", " ", text, flags=re.S).split())
+        return _html_normalize(text, kind)
     if kind == "markdown":
         # a section runs to the next heading, so its blank lines before that heading are the layout of what follows: the last
         # section of a file ended at one newline, and adding a section after it staled it with no word changed (2026-09-30)
         return text.rstrip() + "\n"
     return text
+
+
+# ---------------------------------------------------------------- meaningful spacing
+# Formatting out, content in: whitespace is collapsed and comments dropped only where they are formatting. Inside a
+# string, a block scalar or a preformatted element they are the content — 1.15-1.19 hashed `SELECT 'a  b'` and
+# `SELECT 'a b'`, a YAML `|` block with and without its blank line, `<pre>a  b</pre>` and `<pre>a b</pre>` the same
+# (2026-10-05). Text with none of these normalizes exactly as before.
+
+def _ws(s):
+    return re.sub(r"\s+", " ", s)
+
+
+def _js_normalize(text):
+    return "\x01".join("%s\x00%s" % (t.type, t.value) for t in js_tokens(text))
+
+
+def _squash(text, keep, fn=_ws, kept=lambda m: m.group(0)):
+    """`fn` (whitespace collapsed) applied outside the matches of `keep`, which stay as `kept` makes them."""
+    out, i = [], 0
+    for m in keep.finditer(text):
+        out += [fn(text[i:m.start()]), kept(m)]
+        i = m.end()
+    out.append(fn(text[i:]))
+    return "".join(out).strip()
+
+
+_SQL_LITERAL = re.compile(r"""[eE]'(?:[^'\\]|\\.|'')*'|'(?:[^']|'')*'|"(?:[^"]|"")*"|(\$(?:[A-Za-z_]\w*)?\$).*?\1""", re.S)
+_SQL_SKIP = re.compile(r"(?P<lit>%s)|(?P<comment>/\*.*?\*/|--[^\n]*)" % _SQL_LITERAL.pattern.replace(r"\1", r"\2"), re.S)
+_BLOCK_STRING = re.compile(r'"""(?:[^"\\]|\\.|"(?!""))*"""|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'')
+_BLOCK_SKIP = re.compile(r"%s|(?P<comment>//[^\n]*|#[^\n]*|/\*.*?\*/)" % _BLOCK_STRING.pattern, re.S)
+_YAML_BLOCK_HEAD = re.compile(r"(?:^\s*|:\s+|-\s+)(?:[!&]\S*\s+)*[|>](?:[1-9][+-]?|[+-][1-9]?)?(?:\s+#.*)?$")
+_TOML_MULTI = re.compile(r'"""|\'\'\'')
+
+
+def _yaml_normalize(text):
+    """Comment-free stripped lines — but a block scalar's lines (`key: |`, `- >-`), blank or starting with `#`, are its
+    string. A block runs while lines are blank or deeper than the line that opened it (that line's own indent: over-
+    includes a `- key: |` item's next key, which only keeps it as written); trailing blank lines count only under `+`."""
+    out, block = [], None   # [indent, keep, lines]
+
+    def flush():
+        lines = block[2]
+        while lines and not block[1] and not lines[-1].strip():
+            lines.pop()
+        out.extend(lines)
+    for line in text.split("\n"):
+        if block is not None:
+            if not line.strip() or len(line) - len(line.lstrip(" ")) > block[0]:
+                block[2].append(line)
+                continue
+            flush()
+            block = None
+        if line.strip() and not line.lstrip().startswith("#"):
+            out.append(line.rstrip())
+            m = _YAML_BLOCK_HEAD.search(line)
+            if m:
+                block = [len(line) - len(line.lstrip(" ")), "+" in m.group(0).split("#")[0], []]
+    if block is not None:
+        flush()
+    return "\n".join(out)
+
+
+def _toml_normalize(text):
+    """Comment-free stripped lines, except inside a multi-line string (`\"\"\"`, `'''`), whose lines are its content.
+    ponytail: a delimiter inside a trailing comment or escaped (`\\\"\"\"`) is read as one."""
+    out, quote = [], None
+    for line in text.split("\n"):
+        was = quote
+        if was is None and line.lstrip().startswith("#"):
+            continue
+        for q in _TOML_MULTI.findall(line):
+            quote = q if quote is None else (None if q == quote else quote)
+        if was or quote:
+            out.append(line)
+        elif line.strip():
+            out.append(line.rstrip())
+    return "\n".join(out)
+
+
+_CSS_STRING = r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\''
+_CSS_SKIP = re.compile(r"%s|url\([^)]*\)|(?P<comment>/\*.*?\*/|//[^\n]*)" % _CSS_STRING, re.S | re.I)
+_CSS_LITERAL = re.compile(_CSS_STRING)
+_HTML_RAW = r"pre|textarea|script|style|listing|xmp|plaintext"
+_HTML_TAG = r"""<[A-Za-z/!?](?:"[^"]*"|'[^']*'|[^'">])*>"""
+_HTML_SKIP = re.compile(r"(?P<comment><!--.*?-->)|<(%s)\b(?:\"[^\"]*\"|'[^']*'|[^'\">])*>.*?</\2\s*>|%s" % (_HTML_RAW, _HTML_TAG), re.S | re.I)
+_HTML_KEEP = re.compile(r"(?P<raw>(?P<open><(?P<tag>%s)\b(?:\"[^\"]*\"|'[^']*'|[^'\">])*>)(?P<body>.*?)</(?P=tag)\s*>)|%s"
+                        % (_HTML_RAW, _HTML_TAG), re.S | re.I)
+_HTML_FRONTMATTER = re.compile(r"\A\s*---\n(.*?)\n---", re.S)
+_QUOTED = re.compile(r"\"[^\"]*\"|'[^']*'")
+
+
+def _html_kept(m):
+    """A tag with its quoted values as written; a `<script>` body read as JS and a `<style>` body as CSS — their strings
+    kept, their formatting not (kept as written, a reindented script staled its component); other raw elements as written."""
+    if not m.group("raw"):
+        return _squash(m.group(0), _QUOTED)
+    tag = m.group("tag").lower()
+    if tag not in ("script", "style"):
+        return m.group(0)
+    body = _js_normalize(m.group("body")) if tag == "script" else _css_normalize(m.group("body"))
+    return "%s%s</%s>" % (_squash(m.group("open"), _QUOTED), body, tag)
+
+
+def _html_normalize(text, kind):
+    """Comment-free collapsed text — except a whitespace-preserving element (`<pre>`, `<textarea>`) and an attribute's
+    quoted value, kept as written; `<script>` and `<style>` bodies and a component's frontmatter are code, read as such.
+    ponytail: CSS `white-space: pre` on any other element is not seen; a `<script>` of a template type is read as JS."""
+    head = ""
+    if kind == "component":
+        m = _HTML_FRONTMATTER.match(text)
+        if m:
+            head, text = "---\n%s\n---\n" % _js_normalize(m.group(1)), text[m.end():]
+    text = _HTML_SKIP.sub(lambda m: " " if m.group("comment") else m.group(0), text)
+    return head + _squash(text, _HTML_KEEP, kept=_html_kept)
 
 
 # ---------------------------------------------------------------- Markdown
@@ -1020,13 +1139,14 @@ _CSS_READS = re.compile(r"var\(\s*(--[\w-]+)|(\$[\w-]+)|@include\s+([\w-]+)|@ext
 
 
 def _css_strip_comments(text):
-    text = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), text, flags=re.S)   # same length: offsets stay valid
-    return re.sub(r"(?m)//[^\n]*", lambda m: " " * len(m.group(0)), text) if "//" in text else text
+    """Comments blanked to the same length (offsets stay valid) — not inside a string or `url(...)`, where `//` is a URL."""
+    return _CSS_SKIP.sub(lambda m: " " * len(m.group(0)) if m.group("comment") else m.group(0), text)
 
 
 def _css_normalize(text):
-    t = " ".join(_css_strip_comments(text).split())
-    return re.sub(r"\s*([{}:;,()>+~])\s*", r"\1", t).replace(";}", "}")
+    # ponytail: `.a :hover` (descendant) and `.a:hover` still hash the same — space before `:` is formatting in a declaration
+    return _squash(_css_strip_comments(text), _CSS_LITERAL,
+                   lambda s: re.sub(r"\s*([{}:;,()>+~])\s*", r"\1", _ws(s)).replace(";}", "}"))
 
 
 def _css_selectors(prelude):
@@ -1247,8 +1367,8 @@ _SQL_READS = re.compile(r"\bREFERENCES\s+(\"[^\"]+\"|[\w.]+)|\bON\s+(?:ONLY\s+)?
 
 
 def _sql_strip_comments(text):
-    text = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), text, flags=re.S)
-    return re.sub(r"(?m)--[^\n]*", lambda m: " " * len(m.group(0)), text)
+    """Comments blanked to the same length — not inside a string, where `--` and `/*` are text."""
+    return _SQL_SKIP.sub(lambda m: " " * len(m.group(0)) if m.group("comment") else m.group(0), text)
 
 
 def _sql_statements(text):

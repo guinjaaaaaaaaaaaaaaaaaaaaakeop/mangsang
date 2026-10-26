@@ -202,6 +202,51 @@ def test_config_files_anchor_their_top_level_keys():
         assert len(stale) == 1 and stale[0]["because"] == "package.json:scripts" and not broken, (stale, broken)
 
 
+def test_spacing_and_comment_marks_inside_strings_and_blocks_are_content():
+    """Formatting out, content in — and a string's spacing, a block scalar's blank or `#` line, a `<pre>`'s text are
+    content. 1.15-1.19 hashed each pair below the same, so a relation confirmed on the first stayed fresh after the
+    second (2026-10-05, a downstream regression report): both properties are tried, and the stale verdict end to end."""
+    differ = [("t.yaml", "text: |\n  first\n\n  last\n", "text: |\n  first\n  last\n"),
+              ("t.yaml", "text: |\n  first\n  # meaningful text\n  last\n", "text: |\n  first\n  last\n"),
+              ("t.yaml", "- |\n  a\n\n  b\n", "- |\n  a\n  b\n"),
+              ("t.sql", "SELECT 'a  b';", "SELECT 'a b';"),
+              ("t.sql", "SELECT '--a';", "SELECT '--b';"),
+              ("t.html", "<pre>a  b</pre>", "<pre>a b</pre>"),
+              ("t.html", '<input value="a  b">', '<input value="a b">'),
+              ("t.prisma", 'model A {\n  c String @default("#fff")\n}', 'model A {\n  c String @default("#000")\n}'),
+              ("t.css", ".a { background: url(http://a.com/x.png) }", ".a { background: url(http://b.com/x.png) }"),
+              ("t.css", '.a::before { content: "a  b" }', '.a::before { content: "a b" }'),
+              ("t.toml", 'd = """\nfirst\n\n# kept\nlast\n"""', 'd = """\nfirst\nlast\n"""'),
+              ("t.html", "<script>s = 'a  b'</script>", "<script>s = 'a b'</script>"),
+              ("C.vue", "<script>\nconst s = 'a  b'\n</script>\n", "<script>\nconst s = 'a b'\n</script>\n"),
+              ("P.astro", '---\nconst t = "a  b";\n---\n<h1>{t}</h1>\n', '---\nconst t = "a b";\n---\n<h1>{t}</h1>\n')]
+    for path, a, b in differ:
+        assert mangsang.fp(a, path) != mangsang.fp(b, path), (path, a)
+        assert mangsang.anchors_of(path, a)[""] != mangsang.anchors_of(path, b)[""], (path, a)
+    same = [("t.yaml", "text: |\n  first\n  last\n\n\nnext: 1\n", "text: |\n  first\n  last\nnext: 1\n"),
+            ("t.sql", "SELECT  'a  b'  -- c\nFROM t;", "SELECT 'a  b' FROM t;"),
+            ("t.css", ".a { background: url(http://a.com/x.png) } /* c */", ".a{background:url(http://a.com/x.png)}"),
+            ("t.graphql", "type Q {\n  # c\n  a: String\n}", "type Q { a: String }"),
+            ("t.html", '<p>a\n   b</p>  <!-- c -->\n<div  id="x">y</div>', '<p>a b</p> <div id="x">y</div>'),
+            ("t.toml", 'a = 1\n\n# c\nb = """x"""   ', 'a = 1\nb = """x"""'),
+            # a script or style body is code and a component's frontmatter too: its formatting is not content
+            ("C.vue", "<script>\nexport default {\n  data() { return { x: 1 } } // c\n}\n</script>\n",
+             "<script>\nexport default {\n    data() {\n        return { x: 1 }\n    }\n}\n</script>\n"),
+            ("t.html", "<style>.a { color: red }</style><p>x</p>", "<style>\n  .a {\n    color: red;\n  }\n</style><p>x</p>"),
+            ("P.astro", '---\nconst t = "Hi";\n---\n<h1>{t}</h1>\n', '---\nconst   t = "Hi";  // c\n\n---\n<h1>{t}</h1>\n')]
+    for path, a, b in same:
+        assert mangsang.fp(a, path) == mangsang.fp(b, path), (path, a)
+    for path, a, b in differ[:1] + differ[3:4] + differ[5:6]:
+        with Project() as pj:
+            write(os.path.join(pj.dir, path), a)
+            assert run("register", path, "plan/PLAN.md", "--target", pj.dir)[0] == 0
+            code, out = pj.propose(rel("plan/PLAN.md#Q2 list", "documents", path, ev=a.strip().split("\n")[0]))
+            assert code == 0, out
+            write(os.path.join(pj.dir, path), b)
+            stale, broken, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
+            assert len(stale) == 1 and not broken, (path, stale, broken)
+
+
 def test_a_web_page_and_an_api_server_have_anchors_where_their_intent_lives():
     """Design intent hangs on CSS rules and tokens; an API's shape on routes, an OpenAPI path, a table, a schema block; a
     deployment's on a Dockerfile line; a JS test suite's names are strings in `describe`/`it` calls. Each is a declaration
@@ -533,6 +578,131 @@ def test_a_directory_nobody_registered_anything_in_is_said_too():
         assert "director" not in run("check", "--target", pj.dir)[1]
 
 
+def test_an_unseen_group_says_the_next_commands_and_the_recent_one_first():
+    """guin-site, 10-16 → 10-19: `lexicons/` (8 atproto lexicons) became a published contract after the net last changed;
+    `check` said `lexicons/ 8 file(s)` among the unseen, nothing pointed at relating them, and three runs finished without
+    touching the net. Now each unseen group is said by directory, the recently changed first (since the net's record last
+    changed, or within the last RECENT_COMMITS), with its exact `register` and the relating step after it — and the
+    session-start map counts the unseen. A statement, never a stop: `check` still exits 0."""
+    import subprocess
+    with Project() as pj:
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+        write(os.path.join(pj.dir, "src", "site.py"), "def build():\n    return 1\n")
+        write(os.path.join(pj.dir, "src", "old.py"), "def old():\n    return 1\n")
+        write(os.path.join(pj.dir, "app", "legacy.py"), "def legacy():\n    return 1\n")
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run("register", "plan/PLAN.md", "memo.py", "src/site.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "alpha", "--means", "alpha means something.", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("memo.py:add", "realizes", "concept:alpha", ev="def add(store, text):"),
+                          rel("src/site.py:build", "realizes", "concept:alpha", ev="def build():"),
+                          rel("plan/PLAN.md#Q1 add", "realizes", "concept:alpha"))[0] == 0
+        git("add", "-A"); git("commit", "-qm", "the net")
+        write(os.path.join(pj.dir, "lexicons", "com", "x", "post.json"), '{"lexicon": 1}\n')
+        write(os.path.join(pj.dir, "lexicons", "com", "x", "tag.json"), '{"lexicon": 1}\n')
+        git("add", "-A"); git("commit", "-qm", "lexicons")
+        write(os.path.join(pj.dir, "memo.py"), CODE + "\n# later\n")
+        git("add", "-A"); git("commit", "-qm", "later")
+        saved = mangsang.RECENT_COMMITS
+        mangsang.RECENT_COMMITS = 1   # three commits back is "lately" no more; the net's own last change still marks what came after it
+        try:
+            code, out = run("check", "--target", pj.dir)
+            red = code   # UNWATCHED (no projection invariant) is its only red; the unseen add none
+            assert "unrelated" not in out, "every registered file has a relation on it"
+            line = next(l for l in out.split("\n") if "director" in l and "unseen" in l)
+            assert line.index("lexicons/ 2 file(s) [changed 1 commit ago, after the net's last change]") < line.index("app/ 1 file(s)"), line   # recent first, not alphabetical
+            beside = next(l for l in out.split("\n") if "beside registered" in l)
+            assert "src/old.py" in beside and "[changed" not in beside, beside   # one file by its path; changed before the net did
+            assert "a file nothing relates to is invisible to impact" in out, out
+            cmd = "mangsang register lexicons/com/x/post.json lexicons/com/x/tag.json"
+            assert cmd in out and out.index(cmd) < out.index("mangsang register app/legacy.py"), out
+            assert "src/old.py (" not in out.split("next", 1)[1], "an old beside group is said, not commanded"
+            assert "`mangsang confirm proposals.json --by NAME`" in out and out.count("then relate") == 1, out
+            doc = json.loads(run("check", "--findings", "--target", pj.dir)[1])
+            assert any("lexicons/ (2, changed 1 commit ago" in f["text"] for f in doc["findings"] if f["kind"] == "unregistered"), doc
+            # the session-start map says it compactly, the recent first
+            lines = [l for l in run("concept", "list", "--brief", "--target", pj.dir)[1].splitlines() if "unseen" in l]
+            assert lines[-1].startswith("4 tracked file(s) unseen (lexicons/ 2 changed after the net, app/ 1, src/ 1)"), lines
+            assert "invisible to impact" in lines[-1] and len(lines[-1]) < 200, lines
+            # the printed command is the one that works — and a registered file nothing stands on does not go quiet: it moves
+            # from unseen to unrelated, still first, and `next` says to relate it
+            assert run("register", *cmd.split()[2:], "--target", pj.dir)[0] == 0
+            code, out = run("check", "--target", pj.dir)
+            assert code == red and "lexicons/ 2 file(s)" not in out and "mangsang register app/legacy.py" in out, out
+            line = next(l for l in out.split("\n") if l.startswith("  unrelated"))
+            assert "2 registered file(s) no relation stands on (lexicons/com/x/ 2 file(s) [changed 1 commit ago, after the net's last change])" in line, line
+            todo = "relate lexicons/com/x/post.json, lexicons/com/x/tag.json — nothing stands on them"
+            assert todo in out and out.index(todo) < out.index("mangsang register app/legacy.py") and out.count("then relate") == 1, out
+            doc = json.loads(run("check", "--findings", "--target", pj.dir)[1])
+            assert any(f["kind"] == "unrelated" and f["layer"] == "observation" and "lexicons/com/x/post.json" in f["where"] for f in doc["findings"]), doc
+            brief = run("concept", "list", "--brief", "--target", pj.dir)[1]
+            assert "lexicons/" not in brief.split("unseen", 1)[1].split("\n")[0], brief
+            assert "2 registered file(s) nothing relates to (lexicons/com/x/ 2 changed after the net)" in brief, brief
+            # related, it is said nowhere
+            assert pj.propose(rel("lexicons/com/x/post.json", "realizes", "concept:alpha", ev='"lexicon": 1'),
+                              rel("lexicons/com/x/tag.json", "realizes", "concept:alpha", ev='"lexicon": 1'))[0] == 0
+            out = run("check", "--target", pj.dir)[1]
+            assert "lexicons/" not in out and "unrelated" not in out, out
+            assert "lexicons/" not in run("concept", "list", "--brief", "--target", pj.dir)[1]
+        finally:
+            mangsang.RECENT_COMMITS = saved
+        # nothing unseen; registered and unrelated, they are still said — with no `register`, the relating only
+        assert run("register", "app/legacy.py", "src/old.py", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == red, "a statement, never a stop: the same exit with nothing unseen"
+        assert "unseen" not in out and "mangsang register" not in out and "relate app/legacy.py" in out and "\n      relate what they carry" in out, out
+        brief = run("concept", "list", "--brief", "--target", pj.dir)[1]
+        assert "unseen" not in brief and "2 registered file(s) nothing relates to (app/ 1, src/ 1)" in brief, brief
+        # related, nothing is said and no `next`
+        assert pj.propose(rel("app/legacy.py:legacy", "realizes", "concept:alpha", ev="def legacy():"),
+                          rel("src/old.py:old", "realizes", "concept:alpha", ev="def old():"))[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == red and "next " not in out and "unrelated" not in out, out
+
+
+def test_a_registered_file_on_purpose_without_relations_is_not_said_unrelated():
+    """What registered-but-unrelated leaves out, because something already asks for it or it was registered for another
+    reason: a document that cites a kept source by id (registered as the evidence `ungrounded` reads), a file a `coverage`
+    invariant's anchors reach (that invariant says FAILED itself) and a registered file gone from the tree — said on a line of
+    its own, with `retire --gone` to drop it."""
+    import subprocess
+    with Project() as pj:
+        git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+        write(os.path.join(pj.dir, "docs", "decisions.md"), "# decisions\n\nThe owner said so (source:rd-02).\n")
+        write(os.path.join(pj.dir, "docs", "plain.md"), "# plain\n\nnothing cited.\n")
+        write(os.path.join(pj.dir, "gone.py"), "Z = 1\n")
+        write(os.path.join(pj.dir, "said.txt"), "The record lives in D1.")
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run("source", "add", "rd-02", "--file", os.path.join(pj.dir, "said.txt"), "--speaker", "kim", "--target", pj.dir)[0] == 0
+        assert run("register", "docs/decisions.md", "docs/plain.md", "memo.py", "plan/PLAN.md", "gone.py", "--target", pj.dir)[0] == 0
+        assert run("cq", "add", "plan-owned", "--text", "Is every plan section related?", "--verify",
+                   '{"kind": "coverage", "predicate": "documents", "anchors": "plan/PLAN.md#*"}', "--by", "kim", "--target", pj.dir)[0] == 0
+        os.remove(os.path.join(pj.dir, "gone.py"))
+        out = run("check", "--target", pj.dir)[1]
+        line = next(l for l in out.split("\n") if l.startswith("  unrelated"))
+        assert "2 registered file(s)" in line and "docs/plain.md" in line and "memo.py" in line, line
+        assert not any(x in line for x in ("decisions.md", "plan/PLAN.md", "gone.py")), line
+        assert "FAILED" in out and "plan-owned" in out, "the coverage invariant says the plan itself"
+        # a registered file gone with nothing on it is said once, grouped, with the command that drops it; a gone file that
+        # carries a relation stays `impact`'s (broken, `gone FILE`), not this line's
+        write(os.path.join(pj.dir, "old", "a.py"), "def a():\n    return 1\n")
+        assert run("register", "old/a.py", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("old/a.py:a", "documents", "memo.py:add", ev="def a():"))[0] == 0
+        os.remove(os.path.join(pj.dir, "old", "a.py"))
+        code, out = run("check", "--target", pj.dir)
+        line = next(l for l in out.split("\n") if l.startswith("  gone"))
+        assert "1 registered file(s) gone from the tree, nothing stands on them (gone.py)" in line and "old/a.py" not in line, line
+        cmd = 'mangsang retire --gone gone.py --why "..."'
+        assert cmd in line, line
+        assert any(f["kind"] == "registered-gone" and f["layer"] == "observation" for f in json.loads(run("check", "--findings", "--target", pj.dir)[1])["findings"])
+        code_i, out_i = run("impact", "--target", pj.dir)
+        assert code_i == 1 and "old/a.py" in out_i and "gone.py" not in out_i, out_i
+        assert run("retire", "--gone", "gone.py", "--why", "deleted on purpose", "--target", pj.dir)[0] == 0
+        code2, out = run("check", "--target", pj.dir)
+        assert code2 == code and "  gone" not in out and "gone.py" not in out, out   # a statement: dropping it changes no exit
+        assert "old/a.py" in run("impact", "--target", pj.dir)[1]
+
+
+
 def test_lookup_lists_the_relations_standing_on_a_file_before_an_edit():
     """The reverse index: an agent about to touch memo.py sees which confirmed relations its edit can go stale,
     so the edit and the relation update are sized as one piece of work — not discovered later by impact."""
@@ -800,12 +970,16 @@ def test_concept_list_brief_is_the_net_as_a_map_in_a_line_or_two():
             assert run("concept", "add", n, "--means", "%s means something." % n, "--by", "kim", "--target", pj.dir)[0] == 0
         assert pj.propose(rel("memo.py:add", "realizes", "concept:alpha", ev="def add(store, text):"))[0] == 0
         code, out = run("concept", "list", "--brief", "--target", pj.dir)
+        assert code == 0 and out.splitlines() == ["2 concept(s): alpha, beta", "2 registered file(s) nothing relates to (./ 1, plan/ 1) — an edit there "
+                                                  "makes nothing stale; `mangsang check` says how to relate them"], out   # test_memo.py, plan/PLAN.md
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "realizes", "concept:alpha"), rel("test_memo.py:test_Q1_add", "realizes", "concept:alpha", ev="def test_Q1_add"))[0] == 0
+        code, out = run("concept", "list", "--brief", "--target", pj.dir)
         assert code == 0 and out == "2 concept(s): alpha, beta\n", out
         assert run("cq", "add", "q1", "--text", "what is left?", "--verify", '{"kind": "open"}', "--by", "kim", "--target", pj.dir)[0] == 0
         write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
         code, out = run("concept", "list", "--brief", "--target", pj.dir)
         assert out.splitlines() == ["2 concept(s): alpha, beta ; 1 open question(s)",
-                                    "1 relation(s); 1 stale — `mangsang impact` lists them"], out
+                                    "3 relation(s); 1 stale — `mangsang impact` lists them"], out
         for i in range(60):
             assert run("concept", "add", "concept-number-%02d" % i, "--means", "one.", "--by", "kim", "--target", pj.dir)[0] == 0
         first = run("concept", "list", "--brief", "--target", pj.dir)[1].splitlines()[0]
