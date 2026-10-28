@@ -86,6 +86,7 @@ import os
 import re
 import sys
 import time
+import uuid
 
 import anchors   # what in a file can be named, how far it reaches, what it reads — one module per rule, one scanner per language
 
@@ -743,6 +744,24 @@ JUDGE_REQUEST, JUDGMENT = "mangsang/judge-request@1", "mangsang/judgment@1"
 VERDICTS = ("still-true", "drifted", "cannot-tell")
 
 
+def judge_basis(target, d, r, files):
+    """Bind a verdict to its relation, vocabulary and the full anchors read, including dependency fingerprints.
+
+    Keep text as well: token fingerprints intentionally ignore comments, but a judge can read their claims.
+    This is independent of git HEAD and of the packet's display truncation.
+    """
+    ends = (r["src"], r["dst"])
+    reads = {}
+    for a in ends:
+        f, key = split_anchor(a)
+        if f not in ("concept", "source"):
+            reads[a] = (anchor_parts(os.path.join(target, f)) or {}).get(key, [])[1:]
+    basis = {"relation": r, "vocabulary": d["vocabulary"].get(r["predicate"]), "reads": reads,
+             "anchors": {a: files.get(split_anchor(a)[0], {}).get(split_anchor(a)[1]) for a in ends},
+             "texts": {a: (texts_of(target, split_anchor(a)[0]) or {}).get(split_anchor(a)[1]) for a in ends}}
+    return hashlib.sha256(json.dumps(basis, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
 def cmd_judge(args):
     """The judge pattern for staleness: mangsang packs the two texts and the quote; a fresh read-only session says whether the sentence
     still holds; mangsang validates (a drifted verdict quotes the text as it is) and applies only what is safe to apply."""
@@ -776,7 +795,8 @@ def cmd_judge(args):
                 f, key = split_anchor(end)
                 for label, text in ((anchor_parts(os.path.join(args.target, f)) if f not in ("concept", "source") else None) or {}).get(key, [])[1:]:
                     reads["%s%s" % (f, label) if not label.startswith("import ") else "%s: %s" % (f, label)] = text[:args.limit]
-            items.append({"relation": r["id"], "predicate": r["predicate"], "means": d["vocabulary"].get(r["predicate"], {}).get("means"),
+            items.append({"relation": r["id"], "basis": judge_basis(args.target, d, r, files),
+                          "predicate": r["predicate"], "means": d["vocabulary"].get(r["predicate"], {}).get("means"),
                           "stale": x["stale"], "stale_text": texts[x["stale"]][:args.limit],
                           "because": x["because"], "because_text": texts[x["because"]][:args.limit],
                           "because_changed": "\n".join(dd for dd in diffs if dd)[:args.limit * 2] or None,
@@ -790,7 +810,8 @@ def cmd_judge(args):
         if not items:
             print("nothing stale to judge")
             return 0
-        packet = {"artifact-type": JUDGE_REQUEST, "target": os.path.abspath(args.target).replace(os.sep, "/"), "items": items, "verdicts": list(VERDICTS),
+        packet = {"artifact-type": JUDGE_REQUEST, "request-id": uuid.uuid4().hex,
+                  "target": os.path.abspath(args.target).replace(os.sep, "/"), "items": items, "verdicts": list(VERDICTS),
                   "instructions": ("For each item, read stale_text (the side that may be stale) against because_text (the side that changed since the relation "
                                    "was confirmed) and decide whether the sentence in stale_text — the one quote_at_confirm quotes — still holds. "
                                    "because_changed is the change itself, as a diff since the confirmation, when git has it; because_reads are the "
@@ -832,6 +853,10 @@ def cmd_judge(args):
                          % (args.response, req_path))
     if resp.get("artifact-type") != JUDGMENT or not isinstance(resp.get("items"), list) or not req:
         raise SystemExit("a judgment is %s with `items`, next to its judge-request.json" % JUDGMENT)
+    if not req.get("request-id") or resp.get("request-id") != req["request-id"]:
+        raise SystemExit("judge consume: response does not name this request-id — create a fresh request and judge it again")
+    if os.path.realpath(req.get("target") or "") != os.path.realpath(args.target):
+        raise SystemExit("judge consume: request belongs to another target — create a request for this project")
     # the judgment's author is the judge — the model that read the texts, from the worker's own record of the call; who
     # applied it is a second fact. On guin-site 120/120 and 65/65 still-true were applied as `judge <owner>`, rounds the
     # owner never read: a person's name goes on a judgment only with the source where that person read it (--approved-in)
@@ -869,6 +894,9 @@ def cmd_judge(args):
     applied = []
     for it in kept:
         r = rels[it["relation"]]
+        if asked[r["id"]].get("basis") != judge_basis(args.target, d, r, files):
+            rejected.append("%s: relation or source changed since the request — request a fresh judgment" % r["id"])
+            continue
         if it["verdict"] == "still-true" and any(a.startswith("concept:") and drift_of(d, a[len("concept:"):]) for a in (r["src"], r["dst"])):
             rejected.append("%s: still-true, but its concept is marked drifted — `concept revise` first" % r["id"])
         elif it["verdict"] == "still-true":

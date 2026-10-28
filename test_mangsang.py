@@ -1666,7 +1666,7 @@ def test_impact_only_and_the_judge_round():
         req = json.load(open(os.path.join(d, "judge-request.json"), encoding="utf-8"))
         ids = {i["stale"]: i["relation"] for i in req["items"]}
         assert set(ids) == {"plan/PLAN.md#Q1 add", "plan/PLAN.md#Q2 list"} and "return 2" in next(i["because_text"] for i in req["items"] if i["stale"].endswith("Q1 add"))
-        write(os.path.join(d, "judge-response.json"), {"artifact-type": "mangsang/judgment@1", "non-claims": [], "worker": {"host": "claude-code", "model": "claude-test-1"}, "items": [
+        write(os.path.join(d, "judge-response.json"), {"artifact-type": "mangsang/judgment@1", "request-id": mangsang.load(os.path.join(d, "judge-request.json"))["request-id"], "non-claims": [], "worker": {"host": "claude-code", "model": "claude-test-1"}, "items": [
             {"relation": ids["plan/PLAN.md#Q1 add"], "verdict": "still-true", "quote": "", "evidence": "add still appends; the return value changed, not the behavior the sentence names"},
             {"relation": ids["plan/PLAN.md#Q2 list"], "verdict": "drifted", "quote": "lists.", "evidence": "list_ now returns [1] regardless of the store"},
             {"relation": "R-nope", "verdict": "still-true", "quote": "", "evidence": "x"},
@@ -1886,11 +1886,11 @@ def test_a_judge_round_is_signed_by_the_judge_and_applied_by_whoever_applied_it(
         code, out = run("judge", "request", "--out", d, "--target", pj.dir)
         rid = json.load(open(os.path.join(d, "judge-request.json"), encoding="utf-8"))["items"][0]["relation"]
         resp = os.path.join(d, "judge-response.json")
-        write(resp, {"artifact-type": "mangsang/judgment@1", "non-claims": [], "items": [
+        write(resp, {"artifact-type": "mangsang/judgment@1", "request-id": mangsang.load(os.path.join(d, "judge-request.json"))["request-id"], "non-claims": [], "items": [
             {"relation": rid, "verdict": "still-true", "quote": "", "evidence": "add still appends"}]})
         code, out = run_as_agent("judge", "consume", "--response", resp, "--target", pj.dir)
         assert code != 0 and "no worker record" in out and "--judge" in out, out
-        write(resp, {"artifact-type": "mangsang/judgment@1", "non-claims": [], "worker": {"host": "claude-code", "model": "claude-j"}, "items": [
+        write(resp, {"artifact-type": "mangsang/judgment@1", "request-id": mangsang.load(os.path.join(d, "judge-request.json"))["request-id"], "non-claims": [], "worker": {"host": "claude-code", "model": "claude-j"}, "items": [
             {"relation": rid, "verdict": "still-true", "quote": "", "evidence": "add still appends"}]})
         # the owner's name, at an agent's hand, with nothing showing the owner read it: refused, and nothing applied
         code, out = run_as_agent("judge", "consume", "--response", resp, "--by", "lee", "--target", pj.dir)
@@ -1907,7 +1907,7 @@ def test_a_judge_round_is_signed_by_the_judge_and_applied_by_whoever_applied_it(
         write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 3"))
         assert run("judge", "request", "--out", d, "--target", pj.dir)[0] == 0
         assert not os.path.exists(resp)   # the earlier round's verdicts moved aside; this round's are written anew
-        write(resp, {"artifact-type": "mangsang/judgment@1", "non-claims": [], "worker": {"host": "claude-code", "model": "claude-j"}, "items": [
+        write(resp, {"artifact-type": "mangsang/judgment@1", "request-id": mangsang.load(os.path.join(d, "judge-request.json"))["request-id"], "non-claims": [], "worker": {"host": "claude-code", "model": "claude-j"}, "items": [
             {"relation": rid, "verdict": "still-true", "quote": "", "evidence": "add still appends"}]})
         write(os.path.join(pj.dir, "read.txt"), "판정 읽었어, 적용해")
         assert run("source", "add", "R1", "--file", os.path.join(pj.dir, "read.txt"), "--speaker", "lee", "--target", pj.dir)[0] == 0
@@ -2308,7 +2308,7 @@ def test_an_agent_applying_a_judge_round_is_named_by_its_sessions_model():
         assert run("judge", "request", "--out", d, "--target", pj.dir)[0] == 0
         rid = json.load(open(os.path.join(d, "judge-request.json"), encoding="utf-8"))["items"][0]["relation"]
         resp = os.path.join(d, "judge-response.json")
-        write(resp, {"artifact-type": "mangsang/judgment@1", "worker": {"host": "claude-code", "model": "claude-j"}, "items": [
+        write(resp, {"artifact-type": "mangsang/judgment@1", "request-id": mangsang.load(os.path.join(d, "judge-request.json"))["request-id"], "worker": {"host": "claude-code", "model": "claude-j"}, "items": [
             {"relation": rid, "verdict": "still-true", "quote": "", "evidence": "add still appends"}]})
         os.environ.update(CLAUDE_CONFIG_DIR=home, CLAUDE_CODE_SESSION_ID="sess-1")
         try:
@@ -2326,6 +2326,81 @@ def test_an_agent_applying_a_judge_round_is_named_by_its_sessions_model():
         finally:
             for k in ("CLAUDE_CONFIG_DIR", "CLAUDE_CODE_SESSION_ID", "CLAUDECODE"):
                 os.environ.pop(k, None)
+
+
+
+def test_judge_rejects_source_or_relation_changes_after_the_request():
+    """An old still-true result cannot make unseen source fresh, even if its evidence quote survives."""
+    for changed in ("code", "document", "dependency", "dependency-comment", "relation", "vocabulary", "unregistered"):
+        with Project() as pj:
+            code_text = CODE.replace("return 1", "return X") if changed == "dependency" else CODE
+            if changed == "dependency-comment":
+                code_text = CODE.replace("return 1", "return helper()") + "\ndef helper():\n    # requested helper claim\n    return 1\n"
+            write(os.path.join(pj.dir, "memo.py"), code_text)
+            run("register", "plan/PLAN.md", "memo.py", "--target", pj.dir)
+            assert pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"))[0] == 0
+            edited = code_text.replace("X = 1", "X = 2") if changed == "dependency" else code_text.replace("return 1", "return 2")
+            write(os.path.join(pj.dir, "memo.py"), edited)
+            folder = os.path.join(pj.dir, "judge")
+            assert run("judge", "request", "--out", folder, "--limit", "5", "--target", pj.dir)[0] == 0
+            req = mangsang.load(os.path.join(folder, "judge-request.json"))
+            rid = req["items"][0]["relation"]
+            response = os.path.join(folder, "judge-response.json")
+            write(response, {"artifact-type": "mangsang/judgment@1", "request-id": req["request-id"],
+                             "worker": {"host": "fixture", "model": "fixture"}, "items": [
+                                 {"relation": rid, "verdict": "still-true", "evidence": "The requested version still holds."}]})
+            if changed == "code":
+                write(os.path.join(pj.dir, "memo.py"), edited.replace("return 2", "raise RuntimeError('never reviewed')"))
+            elif changed == "document":
+                write(os.path.join(pj.dir, "plan/PLAN.md"), PLAN.replace("more", "more, with an entirely new requirement"))
+            elif changed == "dependency":
+                write(os.path.join(pj.dir, "memo.py"), edited.replace("X = 2", "X = 3"))
+            elif changed == "dependency-comment":
+                before_fp = mangsang.anchors_of(os.path.join(pj.dir, "memo.py"))[":add"]
+                write(os.path.join(pj.dir, "memo.py"), edited.replace("requested helper claim", "different unreviewed helper claim"))
+                assert mangsang.anchors_of(os.path.join(pj.dir, "memo.py"))[":add"] == before_fp
+            else:
+                d = mangsang.decl(pj.dir)
+                if changed == "relation":
+                    d["relations"][0]["confirmed"] = {"delegated": "a different reading"}
+                    mangsang.save(os.path.join(pj.dir, "mangsang", "relations", rid + ".json"), d["relations"][0])
+                elif changed == "vocabulary":
+                    d["vocabulary"]["documents"]["means"] = "a newly defined predicate"
+                else:
+                    d["registry"] = [e for e in d["registry"] if e["path"] != "memo.py"]
+                mangsang.save_decl(pj.dir, d)
+            before = mangsang.load(os.path.join(pj.dir, "mangsang", "relations", rid + ".json"))
+            result, out = run("judge", "consume", "--response", response, "--by", "test", "--target", pj.dir)
+            assert result == 1 and "changed since the request" in out and "still-true applied 0" in out, (changed, out)
+            assert before == mangsang.load(os.path.join(pj.dir, "mangsang", "relations", rid + ".json")), changed
+            assert run("impact", "--target", pj.dir)[0] == 1, changed
+
+
+def test_judge_binds_response_to_request_and_rejects_legacy_packets():
+    with Project() as pj:
+        run("register", "plan/PLAN.md", "memo.py", "--target", pj.dir)
+        pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "memo.py:add"))
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("return 1", "return 2"))
+        folder = os.path.join(pj.dir, "judge")
+        run("judge", "request", "--out", folder, "--target", pj.dir)
+        req = mangsang.load(os.path.join(folder, "judge-request.json"))
+        resp = {"artifact-type": "mangsang/judgment@1", "request-id": req["request-id"],
+                "worker": {"host": "fixture", "model": "fixture"}, "items": [
+                    {"relation": req["items"][0]["relation"], "verdict": "still-true", "evidence": "fixture"}]}
+        # A late response written after the second request passes mtime checks but belongs to the first.
+        run("judge", "request", "--out", folder, "--target", pj.dir)
+        response = os.path.join(folder, "judge-response.json")
+        write(response, resp)
+        result, out = run("judge", "consume", "--response", response, "--by", "test", "--target", pj.dir)
+        assert result != 0 and "request-id" in out, out
+        req2 = mangsang.load(os.path.join(folder, "judge-request.json"))
+        resp["request-id"] = req2["request-id"]
+        req2["items"][0].pop("basis")
+        write(os.path.join(folder, "judge-request.json"), req2)
+        write(response, resp)
+        result, out = run("judge", "consume", "--response", response, "--by", "test", "--target", pj.dir)
+        assert result != 0 and "changed since the request" in out, out
+        assert run("impact", "--target", pj.dir)[0] == 1
 
 
 if __name__ == "__main__":

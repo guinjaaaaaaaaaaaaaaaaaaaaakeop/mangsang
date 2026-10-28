@@ -15,8 +15,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hostcall import run_claude, run_codex, claude_answer, worker_record  # noqa: E402  (vendored: the same file in each plugin of this family)
 
-SCHEMA = {"type": "object", "additionalProperties": False, "required": ["artifact-type", "items", "non-claims"],
+SCHEMA = {"type": "object", "additionalProperties": False, "required": ["artifact-type", "request-id", "items", "non-claims"],
           "properties": {"artifact-type": {"type": "string", "const": "mangsang/judgment@1"},   # codex's structured output refuses a property with no `type`
+                         "request-id": {"type": "string"},
                          "items": {"type": "array", "items": {
                              "type": "object", "additionalProperties": False, "required": ["relation", "verdict", "quote", "evidence"],
                              "properties": {"relation": {"type": "string"}, "verdict": {"enum": ["still-true", "drifted", "cannot-tell"]},
@@ -24,7 +25,7 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["artifac
                          "non-claims": {"type": "array", "items": {"type": "string"}}}}
 PROMPT = ("This is a mangsang judge request. Change no files. Follow the packet's `instructions` exactly: judge only the relations in it; "
           "similar names are not evidence. Read files under `target` if the texts are not enough. "
-          "Output one JSON object only, no prose, no code fence.\n")
+          "Copy the packet's request-id into your answer. Output one JSON object only, no prose, no code fence.\n")
 
 
 def claude(packet, args):
@@ -65,6 +66,7 @@ def main():
         print(PROMPT + json.dumps(packet, ensure_ascii=False) + "\n\n# Answer\n\nYour whole final message is one JSON object, nothing else, matching this schema:\n" + json.dumps(SCHEMA))
         return 0
     out = (claude if args.host == "claude" else codex)(packet, args)
+    out["request-id"] = packet.get("request-id")   # bind to the packet loaded before the call, even if its path was replaced meanwhile
     Path(args.response).parent.mkdir(parents=True, exist_ok=True)
     with open(args.response + ".tmp", "w", encoding="utf-8", newline="\n") as fh:   # LF on every host; the response is diffed and fingerprinted
         fh.write(json.dumps(out, ensure_ascii=False, indent=2) + "\n")

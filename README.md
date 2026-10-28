@@ -125,7 +125,11 @@ the packet is written into it): the packet is `DIR/judge-request.json`, and `req
 and the two commands to run next. An earlier round's `judge-request.*` and `judge-response.*` there are moved aside first,
 named by their time (`judge-response.20261012T093038Z.json`), and said — so the `next:` line never points at an older
 round's verdicts (guin-site reused a directory holding a 3-day-old response) — and `consume` refuses a response older than
-the request beside it. `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
+the request beside it. Each response must copy the packet’s `request-id`; the worker does this automatically, and
+`--prompt-only` asks the host subagent to return it. Consumption also checks the target, relation, predicate definition,
+full anchor and dependency text (including comments), and dependency fingerprints against the request. If any changed, the relation remains stale and needs
+a fresh request and judgment. Older packets without this binding must be regenerated. Git commits alone do not invalidate
+a judgment of unchanged content. `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
 quote the stale text verbatim) and applies only still-true, recorded on the relation as
 `{"judge": "<host> <model>", "applied-by": "<who>", "why": "<the judge's evidence>"}` and reported to the reviewer. The
 judgment's author is the judge — the model, from the response's worker record (`--judge "<host> <model>"` when there is
