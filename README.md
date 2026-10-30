@@ -524,9 +524,9 @@ unchanged.
 **minor**: a new command, skill, field, hook or artifact key; what exists keeps working. **major**: an artifact type,
 lock or
 record that other products read changes shape, or a supported Python or host version is dropped (a raised `engines`
-floor) — an installation that ran yesterday stops running. The `>=3.11` floor in this checkout drops 3.9 and 3.10
-(the released 1.19.3 declared `>=3.9` in `plugin.json` and `.claude-plugin/plugin.json`), so it ships as part of the
-planned 2.0, not as a patch; the manifests and marketplace entries stay at 1.19.3 until that coordinated release.
+floor) — an installation that ran yesterday stops running. 2.0.0 is such a release: it raised the Python floor to
+`>=3.11` in all three manifests, dropping 3.9 and 3.10, which 1.19.3 and earlier declared (`>=3.9` in `plugin.json`
+and `.claude-plugin/plugin.json`).
 hunsu's `check` fails a linked plugin whose source differs from the
 installed
 copy under one version; for a locally linked plugin, `hunsu install --refresh <plugin>` re-snapshots after the bump.

@@ -1,6 +1,6 @@
 {
   "name": "mangsang",
-  "version": "1.19.3",
+  "version": "2.0.0",
   "engines": {
     "python": ">=3.11"
   },
