@@ -129,10 +129,14 @@ def session_model():
 
 
 def running_agent():
-    """Read the host's env now: stripped, case-sensitive AGENT_HOST wins over inherited markers.
-    codex uses its thread or "Codex"; claude-code uses its recorded model or "Claude Code".
-    An unknown host is "an agent worker" with AGENT_WORKER, else "an agent". With no host,
-    infer CODEX_THREAD_ID, then CLAUDECODE, then AGENT_WORKER, else None (a person's terminal)."""
+    """The agent running this command, named from its host's env (None at a person's terminal). Not a person's name: what an
+    agent does on its own is signed as the agent's, so it stops wearing the person's. A Claude Code session is named by its
+    model, as its turns are kept (`Claude (<model>)`) — guin-site, 10-15: `judge consume` printed "applied by Claude Code",
+    which says no model; "Claude Code" only when the host's record of the session is not found.
+    Read the host's env now: stripped, case-sensitive AGENT_HOST wins over inherited markers (a worker host call sets it to
+    the child's host and keeps the parent's CLAUDECODE). codex uses its thread or "Codex"; claude-code uses its recorded
+    model or "Claude Code". An unknown host is "an agent worker" with AGENT_WORKER, else "an agent". With no host,
+    infer CODEX_THREAD_ID, then CLAUDECODE, then AGENT_WORKER, else None."""
     host = os.environ.get("AGENT_HOST", "").strip()
     if host == "codex":
         thread = os.environ.get("CODEX_THREAD_ID")
