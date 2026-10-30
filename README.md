@@ -199,8 +199,8 @@ context went unread (~43k characters in one cycle); a line per fact is read
 
 ### `move` (Python CLI)
 
-There is no `/mangsang:move` command adapter. Use `python3 "/path/to/plugin/mangsang.py" move --target "/path/to/project"`
-(add `--dry-run` to preview). After a refactoring moved symbols or sections: every broken relation whose dead `file:symbol` / `file#heading` has
+There is no `/mangsang:move` command adapter. Use `python3 "/path/to/plugin/mangsang.py" move --by NAME --target "/path/to/project"`
+(or `--delegated WHY` instead of `--by NAME`; `--dry-run` previews and needs neither). After a refactoring moved symbols or sections: every broken relation whose dead `file:symbol` / `file#heading` has
 exactly one new home among the registered files is retired (`why: moved …`) and re-confirmed on the new anchor with
 the same evidence (`moved-from` names the old id) — the evidence must still be a quote there, or that relation is
 left; two homes or none are left too, named. `--dry-run` reports only. A site's refactoring moved 21 relations by hand
