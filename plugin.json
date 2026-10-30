@@ -3,7 +3,7 @@
   "name": "mangsang",
   "version": "1.19.3",
   "engines": {
-    "python": ">=3.9"
+    "python": ">=3.11"
   },
   "records": [
     "mangsang/",

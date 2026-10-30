@@ -13,7 +13,15 @@ answers;
 a concept is grounded in it by a quote, and what the talk asked but did not answer is kept as an open question until
 something does.
 
+Navigation: [Install](#install) · [Shared guidance](#shared-claude-and-codex-guidance) · [Commands](#commands) ·
+[Project records](#files-in-your-project) · [Model rules](#anchors-predicates-quotes) ·
+[Invariants and questions](#invariants-and-competency-questions) · [Limits](#limits) ·
+[Versioning](#versioning) · [Self-check](#self-check)
+
 ## Install
+
+Python **3.11 or later** is required on both hosts. Ensure `python3` on the host's PATH meets this floor;
+the engine, command adapters and hooks use that executable.
 
 ```
 claude plugin marketplace add guinjaaaaaaaaaaaaaaaaaaaaakeop/mangsang
@@ -23,9 +31,24 @@ claude plugin install mangsang@mangsang
 Codex: `codex plugin marketplace add guinjaaaaaaaaaaaaaaaaaaaaakeop/mangsang`, `codex plugin add mangsang@mangsang`
 (the skill is `$mangsang:operate`).
 
+## Shared Claude and Codex guidance
+
+[AGENTS.md](AGENTS.md) is the common guide for maintaining this source checkout. [CLAUDE.md](CLAUDE.md)
+imports that file for Claude compatibility; edit the shared file when a maintenance rule changes.
+Installing this plugin does not automatically load its source-checkout `AGENTS.md` into the consuming project.
+
+The installed workflow for both hosts is [skills/operate/SKILL.md](skills/operate/SKILL.md).
+The host manifests ([Claude](.claude-plugin/plugin.json), [Codex](.codex-plugin/plugin.json)) expose that same
+skill directory. The [Claude command adapters](commands/) retain the individual command behavior described below;
+they are not separate copies of the workflow. Host invocation syntax differs, but both use the same Python engine.
+From a source checkout, inspect its arguments with `python3 mangsang.py --help`; when installed, use
+`python3 "/path/to/plugin/mangsang.py" <command> --target "/path/to/project"` with the real paths and command.
+Consult the shared skill for the operation and this README for command and host details.
+
 ## Commands
 
-Each runs the engine and shows its output. `mangsang.py --help` for arguments.
+The `/mangsang:*` entries below are Claude command adapters; `move` is CLI-only. Both hosts can call every
+engine command through Python. `python3 mangsang.py --help` lists commands; `<command> --help` lists arguments.
 
 ### `/mangsang:register`
 
@@ -54,6 +77,11 @@ and an answer is kept with the turn it answers. `--excerpt "sentence"` (repeatab
 whole sentences, verbatim, a cut mid-sentence refused, parts that sat side by side keeping their spacing — when a turn clearly splits into what the record needs and what
 it does not (an approval followed by a new request); the source says it is an excerpt, and its locator names the whole
 turn. The same id with other text is refused — a correction is a new source.
+`--from-transcript` currently parses Claude Code JSONL only; it does not parse Codex session JSONL.
+Either host can run the importer on a Claude transcript. For a Codex turn, supply the exact original text with
+`--file -`, an explicit roster-admitted `--speaker` (for example `Codex (thread <thread id>)`), and a `--locator`
+identifying the original session and turn. Do not reconstruct missing words or identify a Codex turn as Claude's.
+
 `list` shows what each source grounds
 
 ### `/mangsang:concept`
@@ -169,9 +197,10 @@ K stale)` when any is stale — at most five lines, no ids, no quotes. A tracked
 saying so; registered with nothing on it, or not in the tree, prints nothing. Whole outputs pasted into an agent's
 context went unread (~43k characters in one cycle); a line per fact is read
 
-### `/mangsang:move`
+### `move` (Python CLI)
 
-After a refactoring moved symbols or sections: every broken relation whose dead `file:symbol` / `file#heading` has
+There is no `/mangsang:move` command adapter. Use `python3 "/path/to/plugin/mangsang.py" move --target "/path/to/project"`
+(add `--dry-run` to preview). After a refactoring moved symbols or sections: every broken relation whose dead `file:symbol` / `file#heading` has
 exactly one new home among the registered files is retired (`why: moved …`) and re-confirmed on the new anchor with
 the same evidence (`moved-from` names the old id) — the evidence must still be a quote there, or that relation is
 left; two homes or none are left too, named. `--dry-run` reports only. A site's refactoring moved 21 relations by hand
@@ -250,9 +279,11 @@ a `revise` replaced; retired questions keep the record
 Committed: yes.
 
 optional roster: `{"people": [names], "agents": [speaker prefixes]}` — when present, a `--by` or `--speaker` not on it
-is refused. mangsang never writes it. `"Claude ("` is a prefix, the usual one: it admits `Claude (<model>)`, the name an
-agent's turn is kept under; an agent's bare name (`--speaker Claude`) is refused with that fix — drop `--speaker` on a
-transcript turn, whose record names the model. An entry that names nobody (empty, not a string — an empty prefix would
+is refused. mangsang never writes it. For both hosts, use `"agents": ["Claude (", "Codex ("]`: these are
+speaker prefixes, admitting names such as `Claude (<model>)` and `Codex (thread <thread id>)`.
+Use the actual host and known identity, never an invented model. A bare name such as `--speaker Claude` is refused
+with that roster. On a Claude transcript turn, omit `--speaker` to use the model recorded by the importer;
+Codex turns use the explicit-file path described above. An entry that names nobody (empty, not a string — an empty prefix would
 admit every speaker) is left out and said, with the repair. Run by an agent (Claude Code, Codex, a worker), `--by NAME` also needs `--approved-in source:ID` — a
 source NAME spoke, where they approved — and records it; otherwise the agent signs `--delegated`
 
@@ -336,8 +367,10 @@ propagates both ways (a revised meaning stales the projection; a changed project
 `references` propagates nothing.
 A relation id is the hash of (src, predicate, dst); the same relation proposed twice is a duplicate.
 Every judgment (`confirm`, `reconfirm`, `concept`, `cq`) carries `--by` or `--delegated` — except a `reconfirm` an agent
-runs with neither, which is the agent's own re-read and is signed as such (`{"agent": "Claude (<model>)"}`, the model from the host's record of the session; `Claude Code` when that
-record is not found — the same name a judge round's `applied-by` takes), so an agent that
+runs with neither, which is the agent's own re-read and is signed as such: `Codex (thread <thread id>)` when
+`CODEX_THREAD_ID` is set; otherwise `Claude (<model>)` in Claude Code, or `Claude Code` when its model record is
+unavailable; otherwise `an agent worker` when `AGENT_WORKER` is set. The same identity is used by a judge round's
+`applied-by`, so an agent that
 read the change itself does not sign in the person's name; a `--delegated` value that
 is a delegation id (`D-xxxx`, chongdae's `delegate`) is stored as `{delegated: {ref}}` — machine-readable, declared
 once, never a pasted paragraph — though mangsang does not resolve it (whose delegation it is stays the record
@@ -487,7 +520,23 @@ unchanged.
 lock or
 record that other products read changes shape. hunsu's `check` fails a linked plugin whose source differs from the
 installed
-copy under one version; `hunsu install --refresh <plugin>` recopies after the bump.
+copy under one version; for a locally linked plugin, `hunsu install --refresh <plugin>` re-snapshots after the bump.
+
+### Release and adoption
+
+Documentation and shared instruction edits also need a patch bump when interfaces stay unchanged.
+Keep the version equal in `plugin.json`, `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`,
+and `.claude-plugin/marketplace.json` (both `metadata.version` and this product's `plugins[].version`).
+`.agents/plugins/marketplace.json` currently has no version field; verify its product name and source path,
+but do not invent a version field there.
+
+Before publication, run the relevant checks in **Self-check** for behavior changes; for documentation-only
+changes, verify links, command examples, imports and manifest consistency, plus `git diff --check`.
+Publish the checked commit using this repository's existing release convention. Publication does not update
+consumer installations: update the plugin through the host's supported workflow, reconcile the consuming
+project's declared environment and lock if managed, and start a new host session to apply the installation.
+Report publication, project adoption and live-host verification separately. Refreshing a locally linked
+plugin is not an update procedure for every remote installation.
 
 ## Self-check
 
