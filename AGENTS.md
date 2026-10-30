@@ -12,8 +12,9 @@ this checkout guide is not injected into a consumer's project by plugin installa
   contain host integration. `CLAUDE.md` only imports this file, so shared rules are edited here once.
 - Keep this repository independently usable: no imports from sibling plugins or dependence on an umbrella
   checkout. `hostcall.py` is vendored; coordinate changes to it with the other copies when available.
-- Use temporary projects for validation. From this repository root run `python3 test_mangsang.py` for
-  engine changes and `python3 test_properties.py` for anchor/model invariants. The property suite requires
+- Use temporary projects for validation. From this repository root run `python3 test_mangsang.py` and
+  `python3 test_running_agent.py` (a separate entrypoint; `test_mangsang.py` does not run it) for engine
+  changes and `python3 test_properties.py` for anchor/model invariants. The property suite requires
   Hypothesis in the selected Python environment; a skip is not a pass. These suites do not call a model.
 - For documentation-only changes, verify file links and CLI examples against `--help`. Follow README
   versioning before distributing or installing changed content; keep the three manifests and marketplace

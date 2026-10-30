@@ -552,6 +552,11 @@ plugin is not an update procedure for every remote installation.
 
 `python3 test_mangsang.py` — a temp project; every rejection and every kind of staleness fires once. No model calls.
 
+`python3 test_running_agent.py` — who signs what an agent judges on its own: an explicit `AGENT_HOST` over markers
+inherited from the other host, the legacy inference without it, the unknown-host fallback, and reconfirm provenance
+(an old signature never relabeled). Its own entrypoint, stdlib `unittest` (`python3 -m unittest test_running_agent.py`
+runs the same tests); `test_mangsang.py` does not run it. No model calls.
+
 `python3 test_properties.py` — the design's rules, tried against situations a machine makes up
 ([Hypothesis](https://hypothesis.readthedocs.io/),
 a developer's dependency only: `pip install hypothesis`; without it every property is SKIPped, never passed). A
