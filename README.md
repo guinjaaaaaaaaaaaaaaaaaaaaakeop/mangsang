@@ -21,7 +21,7 @@ Navigation: [Install](#install) · [Shared guidance](#shared-claude-and-codex-gu
 ## Install
 
 Python **3.11 or later** is required on both hosts. Ensure `python3` on the host's PATH meets this floor;
-the engine, command adapters and hooks use that executable.
+the engine and command adapters use that executable.
 
 ```
 claude plugin marketplace add guinjaaaaaaaaaaaaaaaaaaaaakeop/mangsang
@@ -540,9 +540,9 @@ plugin is not an update procedure for every remote installation.
 
 ## Self-check
 
-`python test_mangsang.py` — a temp project; every rejection and every kind of staleness fires once. No model calls.
+`python3 test_mangsang.py` — a temp project; every rejection and every kind of staleness fires once. No model calls.
 
-`python test_properties.py` — the design's rules, tried against situations a machine makes up
+`python3 test_properties.py` — the design's rules, tried against situations a machine makes up
 ([Hypothesis](https://hypothesis.readthedocs.io/),
 a developer's dependency only: `pip install hypothesis`; without it every property is SKIPped, never passed). A
 section edit
