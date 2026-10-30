@@ -1,0 +1,179 @@
+{
+  "engines": {
+    "python": ">=3.11",
+    "claude-code": ">=2.1"
+  },
+  "plugins": {
+    "hunsu": {
+      "version": "1.15.1",
+      "source": "github:guinjaaaaaaaaaaaaaaaaaaaaakeop/hunsu",
+      "marketplace": "hunsu"
+    },
+    "chongdae": {
+      "version": "1.24.0",
+      "source": "github:guinjaaaaaaaaaaaaaaaaaaaaakeop/chongdae",
+      "marketplace": "chongdae"
+    },
+    "mangsang": {
+      "version": "1.19.3",
+      "source": "github:guinjaaaaaaaaaaaaaaaaaaaaakeop/mangsang",
+      "marketplace": "mangsang"
+    },
+    "jokbo": {
+      "version": "1.8.1",
+      "source": "github:guinjaaaaaaaaaaaaaaaaaaaaakeop/jokbo",
+      "marketplace": "jokbo"
+    },
+    "hacheong": {
+      "version": "1.12.1",
+      "source": "github:guinjaaaaaaaaaaaaaaaaaaaaakeop/hacheong",
+      "marketplace": "hacheong"
+    },
+    "dwitbuk": {
+      "version": "1.16.0",
+      "source": "github:guinjaaaaaaaaaaaaaaaaaaaaakeop/dwitbuk",
+      "marketplace": "dwitbuk"
+    }
+  },
+  "roles": {
+    "planner": "session",
+    "implementer": [
+      "python3",
+      "{plugin:hacheong}/worker.py",
+      "--member",
+      "dakdol",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "codex"
+    ],
+    "nitpick": [
+      "python3",
+      "{plugin:hacheong}/worker.py",
+      "--member",
+      "teujip",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "quibble": [
+      "python3",
+      "{plugin:hacheong}/worker.py",
+      "--member",
+      "sibi",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "newbie": [
+      "python3",
+      "{plugin:hacheong}/worker.py",
+      "--member",
+      "chojja",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "codex"
+    ],
+    "verifier": [
+      "python3",
+      "{plugin:dwitbuk}/eyes_worker.py",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "reviewer": [
+      "python3",
+      "{plugin:dwitbuk}/dwitbuk.py",
+      "review",
+      "--target",
+      "."
+    ],
+    "coherence": [
+      "python3",
+      "{plugin:mangsang}/mangsang.py",
+      "impact",
+      "--target",
+      "."
+    ]
+  },
+  "reporters": {
+    "hunsu": [
+      "python3",
+      "{plugin:hunsu}/hunsu.py",
+      "check",
+      "--findings",
+      "--target",
+      "."
+    ],
+    "chongdae": [
+      "python3",
+      "{plugin:chongdae}/chongdae.py",
+      "report",
+      "--since",
+      "{since}",
+      "--target",
+      "."
+    ],
+    "mangsang": [
+      "python3",
+      "{plugin:mangsang}/mangsang.py",
+      "impact",
+      "--findings",
+      "--target",
+      "."
+    ]
+  },
+  "resolutions": {
+    "building a slice from a goal or plan": {
+      "use": "chongdae:run",
+      "note": "judge's proposal, applied verbatim by the mangsang setup session under the owner's delegated setup; no person read it",
+      "reviewed": false
+    },
+    "reviewing a change before merge": {
+      "order": [
+        "plugin:chongdae",
+        "dwitbuk:review"
+      ],
+      "note": "judge's proposal, applied verbatim by the mangsang setup session under the owner's delegated setup; no person read it",
+      "reviewed": false
+    },
+    "asking what happened or what is open": {
+      "order": [
+        "chongdae:run",
+        "dwitbuk:review",
+        "jokbo:read"
+      ],
+      "accept": "Answering 'what is open' reads `follow` and existing reviews only; a new hand review and its commit happen inside a chongdae session run, on the person's word",
+      "note": "judge's two proposals (this order; this accept) combined unchanged by the mangsang setup session under delegated setup; no person read it",
+      "reviewed": false
+    },
+    "bringing a decision to the person": {
+      "order": [
+        "mangsang:operate",
+        "chongdae:run",
+        "dwitbuk:review"
+      ],
+      "note": "judge proposed `use chongdae:run` over dwitbuk:review and `use mangsang:operate` over chongdae:run; the mangsang setup session merged the two into this precedence; no person read it",
+      "reviewed": false
+    }
+  },
+  "local-hooks-ok": [],
+  "capabilities": {
+    "loopback": "session",
+    "network": "session"
+  }
+}
