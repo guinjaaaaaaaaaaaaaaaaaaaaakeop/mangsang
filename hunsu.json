@@ -143,6 +143,11 @@
       "note": "judge's proposal, applied verbatim by the mangsang setup session under the owner's delegated setup; no person read it",
       "reviewed": false
     },
+    "disputing, testing or trying a built slice": {
+      "use": "hacheong:newbie",
+      "note": "judge's proposal, applied verbatim by the mangsang environment-refresh session under the owner's authorized maintenance; no person read it",
+      "reviewed": false
+    },
     "reviewing a change before merge": {
       "order": [
         "plugin:chongdae",
