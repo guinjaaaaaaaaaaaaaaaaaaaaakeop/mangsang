@@ -367,9 +367,14 @@ propagates both ways (a revised meaning stales the projection; a changed project
 `references` propagates nothing.
 A relation id is the hash of (src, predicate, dst); the same relation proposed twice is a duplicate.
 Every judgment (`confirm`, `reconfirm`, `concept`, `cq`) carries `--by` or `--delegated` — except a `reconfirm` an agent
-runs with neither, which is the agent's own re-read and is signed as such: `Codex (thread <thread id>)` when
-`CODEX_THREAD_ID` is set; otherwise `Claude (<model>)` in Claude Code, or `Claude Code` when its model record is
-unavailable; otherwise `an agent worker` when `AGENT_WORKER` is set. The same identity is used by a judge round's
+runs with neither, which is the agent's own re-read and is signed as such: an explicit `AGENT_HOST` (surrounding
+whitespace stripped, case-sensitive) takes precedence over inherited markers from the other host — `codex` gives
+`Codex (thread <thread id>)` when `CODEX_THREAD_ID` is non-empty, otherwise `Codex`, ignoring Claude markers and its
+session model; `claude-code` gives `Claude (<model>)` from its session record, or `Claude Code` when unavailable,
+ignoring `CODEX_THREAD_ID` and not requiring `CLAUDECODE`; an unknown non-empty host gives `an agent worker` when
+`AGENT_WORKER` is set, otherwise `an agent`, consulting neither the thread nor the session model. With `AGENT_HOST`
+absent or empty after stripping, the legacy order is `CODEX_THREAD_ID`, then `CLAUDECODE` (the same Claude names),
+then `AGENT_WORKER` (`an agent worker`), otherwise no agent (a person's terminal). The same identity is used by a judge round's
 `applied-by`, so an agent that
 read the change itself does not sign in the person's name; a `--delegated` value that
 is a delegation id (`D-xxxx`, chongdae's `delegate`) is stored as `{delegated: {ref}}` — machine-readable, declared

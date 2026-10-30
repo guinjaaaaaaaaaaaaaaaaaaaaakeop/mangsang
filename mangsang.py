@@ -97,7 +97,7 @@ DELEGATION_REF = re.compile(r"^D-[0-9a-f]+$")
 
 APPROVED_IN = None   # set by main when an agent signs in a person's name: the source where that person approved
 APPROVAL_OF = None   # and, when that approval answers an agent's own words (a proposal), the source it answers
-AGENT_ENV = ("CLAUDECODE", "CODEX_THREAD_ID", "AGENT_WORKER", "CLAUDE_CODE_SESSION_ID")
+AGENT_ENV = ("CLAUDECODE", "CODEX_THREAD_ID", "AGENT_WORKER", "CLAUDE_CODE_SESSION_ID", "AGENT_HOST")
 
 
 def session_model():
@@ -129,10 +129,19 @@ def session_model():
 
 
 def running_agent():
-    """The agent running this command, named from its host's env (None at a person's terminal). Not a person's name: what an
-    agent does on its own is signed as the agent's, so it stops wearing the person's. A Claude Code session is named by its
-    model, as its turns are kept (`Claude (<model>)`) — guin-site, 10-15: `judge consume` printed "applied by Claude Code",
-    which says no model; "Claude Code" only when the host's record of the session is not found."""
+    """Read the host's env now: stripped, case-sensitive AGENT_HOST wins over inherited markers.
+    codex uses its thread or "Codex"; claude-code uses its recorded model or "Claude Code".
+    An unknown host is "an agent worker" with AGENT_WORKER, else "an agent". With no host,
+    infer CODEX_THREAD_ID, then CLAUDECODE, then AGENT_WORKER, else None (a person's terminal)."""
+    host = os.environ.get("AGENT_HOST", "").strip()
+    if host == "codex":
+        thread = os.environ.get("CODEX_THREAD_ID")
+        return "Codex (thread %s)" % thread if thread else "Codex"
+    if host == "claude-code":
+        model = session_model()
+        return "Claude (%s)" % model if model else "Claude Code"
+    if host:
+        return "an agent worker" if os.environ.get("AGENT_WORKER") else "an agent"
     if os.environ.get("CODEX_THREAD_ID"):
         return "Codex (thread %s)" % os.environ["CODEX_THREAD_ID"]
     if os.environ.get("CLAUDECODE"):
