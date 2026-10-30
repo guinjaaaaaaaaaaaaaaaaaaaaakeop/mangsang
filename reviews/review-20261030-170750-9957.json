@@ -1,0 +1,124 @@
+{
+  "artifact-type": "dwitbuk/review@1",
+  "id": "review-20261030-170750-9957",
+  "since": "594e42f",
+  "head": "739c6016afff1c0d07b776e099e15eb52189b931",
+  "findings": [
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['building a slice from a goal or plan']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection"
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['reviewing a change before merge']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection"
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['asking what happened or what is open']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection"
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['bringing a decision to the person']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection"
+    },
+    {
+      "kind": "session-judged",
+      "where": "run-20261030-075011-93ed/adopt-env",
+      "text": "adopt .claude/settings.json, .gitignore, hunsu-judgments.json, hunsu.json, hunsu.lock.json decided by the session (claude-code claude-opus-5-5), not a person: Written by bootstrap session b402001e-6fff-4b08-a276-ad54410886de (Claude, claude-opus-5-5 per its report) between 15:45 and 15:50 local on 2026-10-30, before this run or any chongdae run existed in this project. Adopted unchanged as this task's work so they can be committed under a run; this session did not author their content. .gitignore: only the three added lines (.claude/settings.local.json, hunsu-conflicts.md, *-response.transcript.jsonl) are bootstrap work; the two committed lines are unchanged.",
+      "layer": "observation"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-075011-93ed/adopt-prior",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): adopting earlier owner-authorized edits unchanged after review; nothing to build, and the review is this session's",
+      "layer": "observation"
+    },
+    {
+      "kind": "session-judged",
+      "where": "run-20261030-075011-93ed/adopt-prior",
+      "text": "adopt .claude-plugin/plugin.json, AGENTS.md, CLAUDE.md, README.md, commands/impact.md, plugin.json, skills/operate/SKILL.md decided by the session (claude-code claude-opus-5-5), not a person: Owner-authorized edits made before this run by an earlier session (not this one; their timestamps predate even the bootstrap session b402001e, which preserved them untouched). Saved by the parent outside the repo as .umbrella/selfhost-baseline/mangsang.{patch,json} at HEAD bd8e2fa; the task's check proves they are byte-identical to that baseline. Adopted unchanged after this session's review so they can be committed under a run with that provenance; this session did not author them.",
+      "layer": "observation"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-075011-93ed/final-checks",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): no work of its own: the project's full standard checks, run by chongdae once on the final tree after every task's commit",
+      "layer": "observation"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-075011-93ed/hostcall-sync",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): a byte-exact copy of the vendored file as reviewed upstream (hacheong 7aa70c6); the owner's brief permits a read-only source copy, and its checks are the hash and the copied regression suite — there is nothing for a builder to decide",
+      "layer": "observation"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-075011-93ed/identity-docstring",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): a docstring-only restoration of two sentences of design rationale the build's rewrite dropped; no behavior changes, the build's checks decide it",
+      "layer": "observation"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-075011-93ed/identity-red",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): records the standalone red run before the build as a chongdae-run check: the tests task has no check of its own, and a unittest-discovery exit alone would not show the suite ran",
+      "layer": "observation"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-075011-93ed/identity-verify",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): no work of its own: it exists so the lock's verifier, a fresh Claude session, reads the code, tests and README that identity-build's verifier did not open",
+      "layer": "observation"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-075011-93ed/move-example",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): a one-line documentation correction the adopt-prior verifier demonstrated; the owner authorized fixing demonstrated inconsistencies in separate tasks",
+      "layer": "observation"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-075011-93ed/python3-floor-docs",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): four one-line documentation corrections the adoption review demonstrated; the owner authorized fixing demonstrated inconsistencies in separate tasks",
+      "layer": "observation"
+    },
+    {
+      "kind": "verifier-non-claim",
+      "where": "run-20261030-075011-93ed",
+      "text": "(verifier) accepted without reading the tree: the eyes opened no file and ran no command — the verdict rests on the packet alone — 2 task(s): hostcall-sync, final-checks",
+      "layer": "observation"
+    },
+    {
+      "kind": "seen-non-claims",
+      "where": "run-20261030-075011-93ed/identity-build (2), run-20261030-075011-93ed/identity-tests (5)",
+      "text": "7 provider non-claim(s) went to the verifier with the work and it accepted — read there, said here, not charged; each stays in its task's `non-claims`",
+      "layer": "observation"
+    },
+    {
+      "kind": "non-claim",
+      "where": "run-20261030-075011-93ed",
+      "text": "no check decides this task  [tasks env-local-records, adopt-env, identity-tests]",
+      "layer": "objection"
+    },
+    {
+      "kind": "non-claim",
+      "where": "run-20261030-075011-93ed",
+      "text": "env-local-records: done on the session's word by name (`run env-local-records`), with nothing of its own in the tree and no `did`  [task env-local-records]",
+      "layer": "objection"
+    }
+  ]
+}

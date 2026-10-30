@@ -1,0 +1,62 @@
+{
+  "artifact-type": "chongdae/request@1",
+  "written_by": "chongdae 1.24.0",
+  "stage": "verify",
+  "run": "run-20261030-075011-93ed",
+  "task": "adopt-prior",
+  "role": "verifier",
+  "target": ".",
+  "goal": "Owner-authorized prospective self-management of mangsang source with the released installed plugins: adopt the bootstrap environment with honest provenance; sync the reviewed vendored hostcall.py (hacheong 7aa70c6, sha256 fa06077c…); make running_agent() honor an explicit AGENT_HOST over opposite-host inherited markers (tests by the lock's nitpick, build by its implementer, read by its verifier); review and adopt the earlier authorized AGENTS/CLAUDE/README/skill/impact-adapter/>=3.11 manifest edits as prior work, not this run's authorship. No version bump, push, cache mutation or cross-project writes.",
+  "brief": "Review and adopt, unchanged, the edits made before this run (owner-authorized earlier work, not authored by this run): new AGENTS.md (shared Claude/Codex source guide) and CLAUDE.md (@AGENTS.md import); README navigation, Python 3.11+ install floor, shared-guidance section, Commands intro, Codex transcript limits under source, move as Python CLI, people.json roster for both hosts, agent-identity sentence under Anchors, hunsu --refresh wording, Release and adoption section; commands/impact.md argument-hint and $ARGUMENTS pass-through; skills/operate/SKILL.md roster and Codex transcript guidance; python >=3.11 in plugin.json and .claude-plugin/plugin.json (.codex-plugin/plugin.json already said >=3.11 at HEAD). The check proves the files are byte-identical to the saved baseline (outer .umbrella/selfhost-baseline/mangsang.json: diff sha256 8b6956b9…, AGENTS.md 4dede3c8…, CLAUDE.md 336cc4fb…). Review (session): links and navigation anchors resolve; impact's argument-hint matches impact --help (--show, --findings, --only); move has no adapter and is in --help; the four version fields agree at 1.19.3 and .agents/plugins/marketplace.json has no version field; the three manifests agree on >=3.11; git diff --check clean. Demonstrated inconsistencies are NOT fixed here — a separate task fixes them.",
+  "closes": [],
+  "contract": {},
+  "checks": [
+    [
+      "python3",
+      "-c",
+      "import hashlib,subprocess,sys; d=subprocess.run(['git','diff','--','.claude-plugin/plugin.json','README.md','commands/impact.md','plugin.json','skills/operate/SKILL.md'],capture_output=True).stdout; h=lambda p: hashlib.sha256(open(p,'rb').read()).hexdigest(); got=(hashlib.sha256(d).hexdigest(), h('AGENTS.md'), h('CLAUDE.md')); want=('8b6956b945e7fed0abe9b7caa385c8add2a52610acd22beb6950f0659ce21446','4dede3c8fb8b670091198fcb457b59a7a6989d24f6d5ea075b7dfdbee9559308','336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49'); print(got); sys.exit(got!=want)"
+    ]
+  ],
+  "tests": [],
+  "response": "./.chongdae/run-20261030-075011-93ed/local/adopt-prior.verify.response.json",
+  "touched": [
+    ".claude-plugin/plugin.json",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "commands/impact.md",
+    "plugin.json",
+    "skills/operate/SKILL.md"
+  ],
+  "built": null,
+  "excluded": {
+    "record-paths": []
+  },
+  "attribution": {
+    "adopted": [
+      ".claude-plugin/plugin.json",
+      "AGENTS.md",
+      "CLAUDE.md",
+      "README.md",
+      "commands/impact.md",
+      "plugin.json",
+      "skills/operate/SKILL.md"
+    ]
+  },
+  "since": {
+    ".": "594e42f189d3606894ade7b03d7d35cf02e0a999"
+  },
+  "checked": [
+    {
+      "command": "python3 -c 'import hashlib,subprocess,sys; d=subprocess.run(['\"'\"'git'\"'\"','\"'\"'diff'\"'\"','\"'\"'--'\"'\"','\"'\"'.claude-plugin/plugin.json'\"'\"','\"'\"'README.md'\"'\"','\"'\"'commands/impact.md'\"'\"','\"'\"'plugin.json'\"'\"','\"'\"'skills/operate/SKILL.md'\"'\"'],capture_output=True).stdout; h=lambda p: hashlib.sha256(open(p,'\"'\"'rb'\"'\"').read()).hexdigest(); got=(hashlib.sha256(d).hexdigest(), h('\"'\"'AGENTS.md'\"'\"'), h('\"'\"'CLAUDE.md'\"'\"')); want=('\"'\"'8b6956b945e7fed0abe9b7caa385c8add2a52610acd22beb6950f0659ce21446'\"'\"','\"'\"'4dede3c8fb8b670091198fcb457b59a7a6989d24f6d5ea075b7dfdbee9559308'\"'\"','\"'\"'336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49'\"'\"'); print(got); sys.exit(got!=want)'",
+      "exit": 0,
+      "tail": [
+        "('8b6956b945e7fed0abe9b7caa385c8add2a52610acd22beb6950f0659ce21446', '4dede3c8fb8b670091198fcb457b59a7a6989d24f6d5ea075b7dfdbee9559308', '336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49')"
+      ],
+      "at": "2026-10-30T07:52:52+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    }
+  ]
+}

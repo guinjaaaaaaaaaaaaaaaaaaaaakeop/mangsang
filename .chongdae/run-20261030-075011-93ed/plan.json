@@ -1,0 +1,10 @@
+{
+  "artifact-type": "chongdae/plan@1",
+  "written_by": "chongdae 1.24.0",
+  "goal": "Owner-authorized prospective self-management of mangsang source with the released installed plugins: adopt the bootstrap environment with honest provenance; sync the reviewed vendored hostcall.py (hacheong 7aa70c6, sha256 fa06077c…); make running_agent() honor an explicit AGENT_HOST over opposite-host inherited markers (tests by the lock's nitpick, build by its implementer, read by its verifier); review and adopt the earlier authorized AGENTS/CLAUDE/README/skill/impact-adapter/>=3.11 manifest edits as prior work, not this run's authorship. No version bump, push, cache mutation or cross-project writes.",
+  "kind": "session",
+  "tasks": [],
+  "providers": {
+    "session": "session"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "artifact-type": "chongdae/plan@1",
+  "written_by": "chongdae 1.24.0",
+  "goal": "Prepare the mangsang 2.0.0 candidate (owner-authorized v2 preparation; not a release): set the five version values to 2.0.0, keep python >=3.11 everywhere, and make README's pending floor wording a timeless 2.0 release statement; verify version fields, standalone packaging/import links and command docs; run the exact candidate checks on Python 3.11. No tag, push, release, install, algorithm, shared-hostcall or environment (hunsu) changes; records stay uncommitted.",
+  "kind": "session",
+  "tasks": [],
+  "providers": {
+    "session": "session"
+  }
+}

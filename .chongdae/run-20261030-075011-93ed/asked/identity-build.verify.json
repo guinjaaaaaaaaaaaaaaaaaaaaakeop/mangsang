@@ -1,0 +1,166 @@
+{
+  "artifact-type": "chongdae/request@1",
+  "written_by": "chongdae 1.24.0",
+  "stage": "verify",
+  "run": "run-20261030-075011-93ed",
+  "task": "identity-build",
+  "role": "verifier",
+  "target": ".",
+  "goal": "Owner-authorized prospective self-management of mangsang source with the released installed plugins: adopt the bootstrap environment with honest provenance; sync the reviewed vendored hostcall.py (hacheong 7aa70c6, sha256 fa06077c…); make running_agent() honor an explicit AGENT_HOST over opposite-host inherited markers (tests by the lock's nitpick, build by its implementer, read by its verifier); review and adopt the earlier authorized AGENTS/CLAUDE/README/skill/impact-adapter/>=3.11 manifest edits as prior work, not this run's authorship. No version bump, push, cache mutation or cross-project writes.",
+  "brief": "CONTRACT — an explicit AGENT_HOST names the running agent (mangsang.py running_agent, AGENT_ENV).\n\nDefect, reproduced read-only on this tree: running_agent() with AGENT_HOST=codex, AGENT_WORKER=1, CLAUDECODE=1 and no CODEX_THREAD_ID returns \"Claude Code\"; with AGENT_HOST=claude-code and CODEX_THREAD_ID=stale-parent it returns \"Codex (thread stale-parent)\". A worker host call (hostcall.worker_env, now vendored here) sets AGENT_HOST to the child's real host and drops the parent's session ids but keeps CLAUDECODE; an older parent could leave CODEX_THREAD_ID behind. The explicit host must win over opposite-host inherited markers.\n\nR1 Reading. running_agent() reads os.environ at call time. H = AGENT_HOST with surrounding whitespace stripped; otherwise compared exactly (case-sensitive). Recognized: \"codex\" and \"claude-code\".\nR2 H == \"codex\": \"Codex (thread <id>)\" when CODEX_THREAD_ID is non-empty (the id verbatim); otherwise exactly \"Codex\" — never a made-up thread. Claude evidence is ignored even when present: CLAUDECODE, CLAUDE_CODE_SESSION_ID and session_model() are not consulted (a parent Claude session's model must not name a Codex child).\nR3 H == \"claude-code\": \"Claude (<model>)\" when session_model() finds the model in the host's record of the session (CLAUDE_CODE_SESSION_ID's JSONL under CLAUDE_CONFIG_DIR or ~/.claude, projects/*/<id>.jsonl, unchanged); otherwise exactly \"Claude Code\". CODEX_THREAD_ID is ignored even when present. CLAUDECODE is not required.\nR4 H empty or AGENT_HOST unset: the legacy inference, unchanged in order and strings — CODEX_THREAD_ID -> \"Codex (thread <id>)\"; else CLAUDECODE -> \"Claude (<model>)\" / \"Claude Code\"; else AGENT_WORKER -> \"an agent worker\"; else None (a person's terminal).\nR5 H non-empty and not recognized (e.g. \"gemini\", \"claude\", \"Codex\"): conservative — never names Claude or Codex and consults neither CODEX_THREAD_ID nor session_model(); returns \"an agent worker\" when AGENT_WORKER is set, else exactly \"an agent\". Never None: an explicit host marker says an agent is running.\nR6 AGENT_ENV gains \"AGENT_HOST\" and keeps CLAUDECODE, CODEX_THREAD_ID, AGENT_WORKER, CLAUDE_CODE_SESSION_ID. So sign_as_agent treats an explicit host as an agent (--by NAME then needs --approved-in), and a test helper that clears AGENT_ENV to play a person at a terminal clears AGENT_HOST too.\nR7 Provenance. No model, thread or session value is ever invented. The exact strings \"Claude (<model>)\", \"Claude Code\", \"Codex (thread <id>)\", \"an agent worker\" keep their format, and the new \"Codex\" and \"an agent\" are the only additions. Signatures already stored in records (e.g. {\"agent\": \"Claude Code\"}, {\"agent\": \"Codex (thread old)\"}, a --by signature) are never rewritten or relabeled: only a new judgment writes a signature, with the identity of the agent running it now. session_model() and the source --from-transcript speaker naming are unchanged.\nR8 Documented. README \"Anchors, predicates, quotes\" (the sentence that begins \"runs with neither, which is the agent's own re-read and is signed as such:\") states R2-R5: the explicit AGENT_HOST precedence, the generic \"Codex\", the unknown-host fallback, and the legacy order when AGENT_HOST is absent. The running_agent docstring says the same in brief.\n\nBUILD. Make the contract hold in mangsang.py and document it in README.md. Change only those two files: running_agent() (and its docstring), AGENT_ENV, and the README sentence in \"Anchors, predicates, quotes\" that begins \"runs with neither, which is the agent's own re-read and is signed as such:\" (keep \"The same identity is used by a judge round's `applied-by`\"). Do not change session_model(), sign_as_agent()'s logic, the --from-transcript speaker naming, any record format, or any test. Write it in the file's own voice (short docstring, comments only where they carry a reason).\n\nProtected — never edit: test_running_agent.py (the contract's tests, written by the lock's nitpick, red before this build: 33 ran, 29 failures counting subtests, assertion failures only), test_mangsang.py, test_properties.py. If one contradicts the contract, say so instead of changing it.\n\nChecks (all must pass; run them yourself): python3 test_running_agent.py; python3.11 test_running_agent.py; python3 test_mangsang.py; python3.11 test_mangsang.py; the Hypothesis property suite with the outer venv interpreter ../.venv/bin/python test_properties.py, which must report no SKIP (the venv has Hypothesis 6.168.1; a skip is not a pass).\n\nFor the verifier: open mangsang.py at AGENT_ENV, session_model, running_agent and sign_as_agent, open test_running_agent.py, and open the README sentence (R8), and hold each R1-R8 against what they say — quote the lines. The tests' own non-claims leave R8 (README/docstring wording) and the \"never invented\" reading to you.",
+  "closes": [],
+  "contract": {},
+  "checks": [
+    [
+      "python3",
+      "test_running_agent.py"
+    ],
+    [
+      "python3.11",
+      "test_running_agent.py"
+    ],
+    [
+      "python3",
+      "test_mangsang.py"
+    ],
+    [
+      "python3.11",
+      "test_mangsang.py"
+    ],
+    [
+      "python3",
+      "-c",
+      "import subprocess,sys; r=subprocess.run(['../.venv/bin/python','test_properties.py'],capture_output=True,text=True); out=r.stdout+r.stderr; print(out[-3000:]); sys.exit(r.returncode or int('SKIP' in out))"
+    ]
+  ],
+  "tests": [
+    "test_running_agent.py",
+    "test_mangsang.py",
+    "test_properties.py"
+  ],
+  "domain": "code",
+  "response": "./.chongdae/run-20261030-075011-93ed/local/identity-build.verify.response.json",
+  "touched": [
+    "README.md",
+    "mangsang.py"
+  ],
+  "built": {
+    "summary": "Updated only mangsang.py and README.md: explicit AGENT_HOST takes precedence, AGENT_ENV includes it, and identity behavior is documented. All five required checks passed; Hypothesis reported no SKIP.",
+    "verified": [
+      {
+        "check": "python3 test_running_agent.py",
+        "exit": 0
+      },
+      {
+        "check": "python3.11 test_running_agent.py",
+        "exit": 0
+      },
+      {
+        "check": "python3 test_mangsang.py",
+        "exit": 0
+      },
+      {
+        "check": "python3.11 test_mangsang.py",
+        "exit": 0
+      },
+      {
+        "check": "python3 -c \"import subprocess,sys; r=subprocess.run(['../.venv/bin/python','test_properties.py'],capture_output=True,text=True); out=r.stdout+r.stderr; print(out[-3000:]); sys.exit(r.returncode or int('SKIP' in out))\"",
+        "exit": 0
+      }
+    ],
+    "non-claims": [
+      "Host integration was not tested.",
+      "README and docstring wording were inspected manually, not verified by tests."
+    ]
+  },
+  "excluded": {
+    "record-paths": []
+  },
+  "touched_since": [],
+  "since": {
+    ".": "eac9573688d926e2563988043213064dd2a983f1"
+  },
+  "tests_non_claims": {
+    "identity-tests": [
+      "R8 is not tested: \"README 'Anchors, predicates, quotes' ... states R2-R5 ... The running_agent docstring says the same in brief.\" Whether prose 'states' a rule is a matter of reading, not exact strings, and the brief's case list has no README case. The verifier must read the README and the docstring.",
+      "R7 'session_model() and the source --from-transcript speaker naming are unchanged': this file only exercises session_model through running_agent (record found / not found); the --from-transcript speaker naming is left to test_mangsang.py.",
+      "R7 'No model, thread or session value is ever invented' is checked only through the exact strings asserted here (e.g. 'Codex' with an empty or missing thread, 'an agent' for unknown hosts), not by proof over every input.",
+      "R6 'a test helper that clears AGENT_ENV ... clears AGENT_HOST too' follows from AGENT_ENV containing AGENT_HOST (tested); no test runs test_mangsang.py's run() helper under an inherited AGENT_HOST.",
+      "test_R7_reconfirm_under_explicit_codex_thread_signs_that_thread passes on the current tree (the legacy order already gives that answer); its byte-identical check on the second relation's file still decides 'never relabeled'."
+    ]
+  },
+  "checked": [
+    {
+      "command": "python3 test_running_agent.py",
+      "exit": 0,
+      "tail": [
+        "Ran 33 tests in 0.131s",
+        "OK"
+      ],
+      "at": "2026-10-30T08:03:05+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3.11 test_running_agent.py",
+      "exit": 0,
+      "tail": [
+        "Ran 33 tests in 0.137s",
+        "OK"
+      ],
+      "at": "2026-10-30T08:03:05+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 test_mangsang.py",
+      "exit": 0,
+      "tail": [
+        "PASS test_show_names_the_declaration_an_anchor_reads_when_that_is_what_moved",
+        "PASS test_show_prints_every_end_that_moved",
+        "PASS test_spacing_and_comment_marks_inside_strings_and_blocks_are_content",
+        "PASS test_unseen_directories_are_capped_excludable_and_reach_files_beside_deeper_ones",
+        "PASS test_what_the_net_cannot_see_is_said_and_can_be_checked",
+        "all passed"
+      ],
+      "at": "2026-10-30T08:03:11+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3.11 test_mangsang.py",
+      "exit": 0,
+      "tail": [
+        "PASS test_show_names_the_declaration_an_anchor_reads_when_that_is_what_moved",
+        "PASS test_show_prints_every_end_that_moved",
+        "PASS test_spacing_and_comment_marks_inside_strings_and_blocks_are_content",
+        "PASS test_unseen_directories_are_capped_excludable_and_reach_files_beside_deeper_ones",
+        "PASS test_what_the_net_cannot_see_is_said_and_can_be_checked",
+        "all passed"
+      ],
+      "at": "2026-10-30T08:03:17+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 -c 'import subprocess,sys; r=subprocess.run(['\"'\"'../.venv/bin/python'\"'\"','\"'\"'test_properties.py'\"'\"'],capture_output=True,text=True); out=r.stdout+r.stderr; print(out[-3000:]); sys.exit(r.returncode or int('\"'\"'SKIP'\"'\"' in out))'",
+      "exit": 0,
+      "tail": [
+        "PASS test_any_sequence_of_reconfirm_revise_and_rename_keeps_history_and_answerability",
+        "PASS test_coverage_and_projection_are_deterministic_and_monotone_in_relations",
+        "PASS test_reach_is_the_reverse_of_where_a_change_travels",
+        "PASS test_show_finds_the_earlier_text_at_any_depth_inside_a_repository",
+        "PASS test_stale_names_the_end_that_changed_and_only_when_it_propagates",
+        "all passed"
+      ],
+      "at": "2026-10-30T08:03:23+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    }
+  ]
+}

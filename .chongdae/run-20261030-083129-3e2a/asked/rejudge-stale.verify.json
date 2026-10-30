@@ -1,0 +1,71 @@
+{
+  "artifact-type": "chongdae/request@1",
+  "written_by": "chongdae 1.24.0",
+  "stage": "verify",
+  "run": "run-20261030-083129-3e2a",
+  "task": "rejudge-stale",
+  "role": "verifier",
+  "target": ".",
+  "goal": "Environment refresh (owner-authorized maintenance after the approved AGENTS.md self-check edit 64108a9): re-judge, with the installed released hunsu 1.15.1, the 8 situations whose judgments read the old AGENTS.md text — judge request --stale, the declared Claude judge per packet, consume — so hunsu check is clean again; resolutions change only as hunsu requires and stay reviewed:false where an agent proposed them; relock only through supported commands; no source, harness, doc, version, push or plugin-cache changes.",
+  "brief": "hunsu check reports error 1: 8 situations were judged about other text of their members — the AGENTS.md mode (file:AGENTS.md, judged at 4dede3c8fb8b) changed in 64108a9 (approved self-check edit). Re-judge exactly those with the installed released hunsu 1.15.1: judge request --out <new temp dir> --stale; hunsu judge_worker.py --host claude (no model override) per packet; judge consume --dir. consume merges over the old judgments, keeps findings that come back the same word for word, and marks reviewed:false any resolution whose findings changed; resolutions are edited only if check then requires it, and an agent-proposed one stays reviewed:false. Then check (and lock/compose only if they say it is owed). The bootstrap judge's raw evidence (<tmp>) is left untouched; the old hunsu-judgments.json stays in history at 594e42f. Checks: hunsu check exits 0; the committed environment files hold no machine path.",
+  "closes": [],
+  "contract": {},
+  "checks": [
+    [
+      "python3",
+      "{plugin:hunsu}/hunsu.py",
+      "check",
+      "--target",
+      "."
+    ],
+    [
+      "python3",
+      "-c",
+      "import re,sys; bad=[(p,m) for p in ('hunsu.json','hunsu.lock.json','hunsu-judgments.json') for m in re.findall(r'/(?:Users|home|private/var|tmp)/[^\"\\s]*', open(p,encoding='utf-8').read())]; print(bad or 'no machine paths in the committed environment files'); sys.exit(bool(bad))"
+    ]
+  ],
+  "tests": [],
+  "response": "./.chongdae/run-20261030-083129-3e2a/local/rejudge-stale.verify.response.json",
+  "touched": [
+    "hunsu-judgments.json",
+    "hunsu.json",
+    "hunsu.lock.json"
+  ],
+  "built": null,
+  "excluded": {
+    "record-paths": [
+      ".dwitbuk/review.lock",
+      "reviews/review-20261030-170750-9957.json",
+      "reviews/review-20261030-172022-1ef2.json"
+    ]
+  },
+  "since": {
+    ".": "64108a960d09b1beb7f150af013b0d4d4f5590c6"
+  },
+  "checked": [
+    {
+      "command": "python3 '{plugin:hunsu}/hunsu.py' check --target .",
+      "exit": 0,
+      "tail": [
+        "info  4 finding(s) settled by the members' own text (sequenced / not co-active / duplicate, each on a verified sentence) — no resolution needed; see hunsu-conflicts.md",
+        "  (offline: a release is known here only from this machine's marketplace copies — `hunsu outdated` asks the marketplaces, read-only)",
+        "errors 0 · warnings 0 · info 1"
+      ],
+      "at": "2026-10-30T08:34:45+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 -c 'import re,sys; bad=[(p,m) for p in ('\"'\"'hunsu.json'\"'\"','\"'\"'hunsu.lock.json'\"'\"','\"'\"'hunsu-judgments.json'\"'\"') for m in re.findall(r'\"'\"'/(?:Users|home|private/var|tmp)/[^\"\\s]*'\"'\"', open(p,encoding='\"'\"'utf-8'\"'\"').read())]; print(bad or '\"'\"'no machine paths in the committed environment files'\"'\"'); sys.exit(bool(bad))'",
+      "exit": 0,
+      "tail": [
+        "no machine paths in the committed environment files"
+      ],
+      "at": "2026-10-30T08:34:45+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    }
+  ]
+}

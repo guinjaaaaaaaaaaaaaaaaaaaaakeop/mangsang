@@ -1,0 +1,181 @@
+{
+  "artifact-type": "chongdae/task@1",
+  "written_by": "chongdae 1.24.0",
+  "status": "done",
+  "def": {
+    "id": "identity-tests",
+    "role": "nitpick",
+    "brief": "CONTRACT — an explicit AGENT_HOST names the running agent (mangsang.py running_agent, AGENT_ENV).\n\nDefect, reproduced read-only on this tree: running_agent() with AGENT_HOST=codex, AGENT_WORKER=1, CLAUDECODE=1 and no CODEX_THREAD_ID returns \"Claude Code\"; with AGENT_HOST=claude-code and CODEX_THREAD_ID=stale-parent it returns \"Codex (thread stale-parent)\". A worker host call (hostcall.worker_env, now vendored here) sets AGENT_HOST to the child's real host and drops the parent's session ids but keeps CLAUDECODE; an older parent could leave CODEX_THREAD_ID behind. The explicit host must win over opposite-host inherited markers.\n\nR1 Reading. running_agent() reads os.environ at call time. H = AGENT_HOST with surrounding whitespace stripped; otherwise compared exactly (case-sensitive). Recognized: \"codex\" and \"claude-code\".\nR2 H == \"codex\": \"Codex (thread <id>)\" when CODEX_THREAD_ID is non-empty (the id verbatim); otherwise exactly \"Codex\" — never a made-up thread. Claude evidence is ignored even when present: CLAUDECODE, CLAUDE_CODE_SESSION_ID and session_model() are not consulted (a parent Claude session's model must not name a Codex child).\nR3 H == \"claude-code\": \"Claude (<model>)\" when session_model() finds the model in the host's record of the session (CLAUDE_CODE_SESSION_ID's JSONL under CLAUDE_CONFIG_DIR or ~/.claude, projects/*/<id>.jsonl, unchanged); otherwise exactly \"Claude Code\". CODEX_THREAD_ID is ignored even when present. CLAUDECODE is not required.\nR4 H empty or AGENT_HOST unset: the legacy inference, unchanged in order and strings — CODEX_THREAD_ID -> \"Codex (thread <id>)\"; else CLAUDECODE -> \"Claude (<model>)\" / \"Claude Code\"; else AGENT_WORKER -> \"an agent worker\"; else None (a person's terminal).\nR5 H non-empty and not recognized (e.g. \"gemini\", \"claude\", \"Codex\"): conservative — never names Claude or Codex and consults neither CODEX_THREAD_ID nor session_model(); returns \"an agent worker\" when AGENT_WORKER is set, else exactly \"an agent\". Never None: an explicit host marker says an agent is running.\nR6 AGENT_ENV gains \"AGENT_HOST\" and keeps CLAUDECODE, CODEX_THREAD_ID, AGENT_WORKER, CLAUDE_CODE_SESSION_ID. So sign_as_agent treats an explicit host as an agent (--by NAME then needs --approved-in), and a test helper that clears AGENT_ENV to play a person at a terminal clears AGENT_HOST too.\nR7 Provenance. No model, thread or session value is ever invented. The exact strings \"Claude (<model>)\", \"Claude Code\", \"Codex (thread <id>)\", \"an agent worker\" keep their format, and the new \"Codex\" and \"an agent\" are the only additions. Signatures already stored in records (e.g. {\"agent\": \"Claude Code\"}, {\"agent\": \"Codex (thread old)\"}, a --by signature) are never rewritten or relabeled: only a new judgment writes a signature, with the identity of the agent running it now. session_model() and the source --from-transcript speaker naming are unchanged.\nR8 Documented. README \"Anchors, predicates, quotes\" (the sentence that begins \"runs with neither, which is the agent's own re-read and is signed as such:\") states R2-R5: the explicit AGENT_HOST precedence, the generic \"Codex\", the unknown-host fallback, and the legacy order when AGENT_HOST is absent. The running_agent docstring says the same in brief.\nWrite the contract's tests as ONE new file, test_running_agent.py, at the repository root. Touch no other file.\n\nForm: stdlib only. unittest.TestCase classes, and `if __name__ == \"__main__\": unittest.main()` so that BOTH `python3 test_running_agent.py` (standalone; the project's suites are run that way) and `python3 -m unittest test_running_agent.py` run the same real tests. Import mangsang from the file's own directory as test_mangsang.py does (HERE = dirname(abspath(__file__)); sys.path.insert(0, HERE)). Each test sets its environment with unittest.mock.patch.dict(os.environ, {...}, clear=True) (keep PATH/HOME only if a test needs them) so the session that runs the suite — itself an agent with AGENT_HOST/CLAUDECODE/CODEX_THREAD_ID of its own — cannot leak in. Model evidence comes from a synthetic Claude session record in a temp CLAUDE_CONFIG_DIR (projects/<any>/<session id>.jsonl with {\"type\": \"assistant\", \"message\": {\"model\": \"...\"}} lines; see test_an_agent_applying_a_judge_round_is_named_by_its_sessions_model in test_mangsang.py). Never read the real ~/.claude; no network, no model calls.\n\nCases (each a named test; assert exact strings):\n- mixed, the reproduction 1: AGENT_HOST=codex, AGENT_WORKER=1, CLAUDECODE=1, no CODEX_THREAD_ID, and a CLAUDE_CODE_SESSION_ID whose synthetic record names a Claude model -> exactly \"Codex\" (no Claude name, the record's model not used).\n- mixed, the reproduction 2: AGENT_HOST=claude-code, CODEX_THREAD_ID=stale-parent, CLAUDECODE=1 -> \"Claude (<model>)\" with a session record, \"Claude Code\" without one; \"stale-parent\" never appears.\n- explicit Codex with its own thread: AGENT_HOST=codex, CODEX_THREAD_ID=T -> \"Codex (thread T)\" (also with CLAUDECODE=1 present).\n- explicit Claude without CLAUDECODE -> Claude identity (record model, else \"Claude Code\").\n- whitespace: AGENT_HOST=\"  codex  \" is recognized.\n- legacy hosts (no AGENT_HOST, and AGENT_HOST=\"\"): CODEX_THREAD_ID only -> \"Codex (thread X)\"; CLAUDECODE with a record -> \"Claude (<model>)\"; CLAUDECODE without -> \"Claude Code\"; CODEX_THREAD_ID and CLAUDECODE both -> \"Codex (thread X)\" (legacy order kept).\n- worker only: AGENT_WORKER=1 alone -> \"an agent worker\".\n- human terminal: none of the markers -> None.\n- unknown explicit host: AGENT_HOST=gemini (and \"claude\") with CLAUDECODE=1 and CODEX_THREAD_ID=x -> \"an agent\"; plus AGENT_WORKER=1 -> \"an agent worker\"; neither contains \"Claude\" nor \"Codex\".\n- AGENT_ENV contains \"AGENT_HOST\" and still the four legacy keys.\n- an explicit host alone is an agent for signing: with only AGENT_HOST=codex set, `concept add NAME --means ... --by lee` in a temp project with mangsang/people.json listing lee is refused for lacking --approved-in (call mangsang.main and catch SystemExit), while with no markers at all the same command is accepted.\n- provenance through a real judgment, no relabeling: in a temp project (temp dir, `git init` optional; register a plan .md and a .py, confirm a `documents` relation via a proposals.json with `confirm ... --by tester` from a clean env, change the .py so it goes stale), run `reconfirm <id>` with neither --by nor --delegated under AGENT_HOST=codex + CODEX_THREAD_ID=T and assert the stored relation's signature is {\"agent\": \"Codex (thread T)\"}; under the mixed env of reproduction 1 it is {\"agent\": \"Codex\"}. A second relation confirmed earlier (its JSON file under mangsang/relations/) is byte-identical before and after — an old signature is never relabeled. Reuse the shapes in test_mangsang.py (PLAN/CODE/register/confirm/reconfirm) but keep this file self-contained (do not import test_mangsang).\n\nRed before the build must be for the right reasons: on the current tree the reproduction, unknown-host, AGENT_ENV and explicit-host-signing cases FAIL on assertions (the legacy/worker/human cases pass). No ImportError, no NameError, no zero-test run. Run `python3 test_running_agent.py` yourself and say which tests fail and why.",
+    "closes": [],
+    "needs": [],
+    "checks": [],
+    "tests": [
+      "test_running_agent.py"
+    ],
+    "gate": null,
+    "domain": "code",
+    "scope": [
+      "test_running_agent.py"
+    ]
+  },
+  "seq": 7,
+  "added": "2026-10-30T07:58:52+00:00",
+  "non-claims": [
+    "no check decides this task; done means the agent said so",
+    "(provider) R8 is not tested: \"README 'Anchors, predicates, quotes' ... states R2-R5 ... The running_agent docstring says the same in brief.\" Whether prose 'states' a rule is a matter of reading, not exact strings, and the brief's case list has no README case. The verifier must read the README and the docstring.",
+    "(provider) R7 'session_model() and the source --from-transcript speaker naming are unchanged': this file only exercises session_model through running_agent (record found / not found); the --from-transcript speaker naming is left to test_mangsang.py.",
+    "(provider) R7 'No model, thread or session value is ever invented' is checked only through the exact strings asserted here (e.g. 'Codex' with an empty or missing thread, 'an agent' for unknown hosts), not by proof over every input.",
+    "(provider) R6 'a test helper that clears AGENT_ENV ... clears AGENT_HOST too' follows from AGENT_ENV containing AGENT_HOST (tested); no test runs test_mangsang.py's run() helper under an inherited AGENT_HOST.",
+    "(provider) test_R7_reconfirm_under_explicit_codex_thread_signs_that_thread passes on the current tree (the legacy order already gives that answer); its byte-identical check on the second relation's file still decides 'never relabeled'."
+  ],
+  "response": {
+    "status": "done",
+    "summary": "Wrote test_running_agent.py: 33 unittest tests in 6 classes, stdlib only. Every test builds its environment from nothing with mock.patch.dict(os.environ, ..., clear=True), using a temp HOME and a temp CLAUDE_CONFIG_DIR that holds a synthetic session record (sess-1 -> claude-opus-5-5), so the real ~/.claude is never read. `python3 test_running_agent.py` and `python3 -m unittest test_running_agent.py` give the same result: Ran 33, FAILED (failures=29, counting subtests); 20 test methods fail and 13 pass. Every failure is an assertion failure; there are no ImportError, NameError or other errors. What fails, and why:\n- Reproduction 1: returns 'Claude (claude-opus-5-5)' instead of 'Codex'.\n- Reproduction 2: returns 'Codex (thread stale-parent)' instead of 'Claude (claude-opus-5-5)' or 'Claude Code'.\n- Explicit claude-code without CLAUDECODE: returns None.\n- Explicit codex with no thread: returns 'Claude Code' or None instead of 'Codex'.\n- Whitespace-padded hosts are not recognized.\n- Unknown hosts (gemini, claude, Codex, CODEX, Claude-Code): return 'Codex (thread x)' or None instead of 'an agent' / 'an agent worker'.\n- session_model() is consulted under an explicit codex host and under an unknown host.\n- AGENT_HOST is missing from AGENT_ENV.\n- `concept add --by lee` with only AGENT_HOST=codex (or gemini) set is accepted when it should be refused for lacking --approved-in.\n- reconfirm signs {'agent': 'Claude (claude-opus-5-5)'} instead of {'agent': 'Codex'} under the mixed env, and signs the stale-parent thread under AGENT_HOST=claude-code.\nPassing now, as expected: the legacy, worker-only and human-terminal cases, explicit codex with its own thread, AGENT_ENV still holding the four legacy keys, signing with no markers, and reconfirm under codex + thread T, which the legacy order already gets right.",
+    "tests": [
+      "test_running_agent.py"
+    ],
+    "covers": [
+      {
+        "section": "R1",
+        "tests": [
+          "test_R1_whitespace_around_codex_is_stripped",
+          "test_R1_whitespace_around_claude_code_is_stripped",
+          "test_R1_read_at_call_time_not_import_time",
+          "test_R5_unknown_host_with_both_markers_is_an_agent"
+        ]
+      },
+      {
+        "section": "R2",
+        "tests": [
+          "test_R2_mixed_reproduction_1_codex_child_with_inherited_claude_markers_is_codex",
+          "test_R2_explicit_codex_ignores_claude_session_id_without_claudecode",
+          "test_R2_explicit_codex_with_empty_thread_is_generic_codex",
+          "test_R2_explicit_codex_with_its_own_thread",
+          "test_R2_explicit_codex_with_its_own_thread_and_claudecode_present",
+          "test_R2_explicit_codex_does_not_consult_session_model"
+        ]
+      },
+      {
+        "section": "R3",
+        "tests": [
+          "test_R3_mixed_reproduction_2_claude_child_with_stale_codex_thread_and_record",
+          "test_R3_mixed_reproduction_2_claude_child_with_stale_codex_thread_no_record",
+          "test_R3_explicit_claude_without_claudecode_reads_the_record",
+          "test_R3_explicit_claude_without_claudecode_or_record_is_claude_code",
+          "test_R3_explicit_claude_beats_agent_worker"
+        ]
+      },
+      {
+        "section": "R4",
+        "tests": [
+          "test_R4_legacy_codex_thread_only",
+          "test_R4_legacy_claudecode_with_record",
+          "test_R4_legacy_claudecode_without_record",
+          "test_R4_legacy_order_codex_thread_before_claudecode",
+          "test_R4_legacy_whitespace_only_host_is_empty",
+          "test_R4_worker_only",
+          "test_R4_human_terminal_is_none"
+        ]
+      },
+      {
+        "section": "R5",
+        "tests": [
+          "test_R5_unknown_host_with_both_markers_is_an_agent",
+          "test_R5_unknown_host_with_worker_is_an_agent_worker",
+          "test_R5_unknown_host_alone_is_never_none",
+          "test_R5_unknown_host_does_not_consult_session_model"
+        ]
+      },
+      {
+        "section": "R6",
+        "tests": [
+          "test_R6_agent_env_contains_agent_host",
+          "test_R6_agent_env_keeps_the_legacy_keys",
+          "test_R6_explicit_host_alone_is_an_agent_for_signing",
+          "test_R6_unknown_explicit_host_alone_is_an_agent_for_signing",
+          "test_R6_no_markers_is_a_person_for_signing"
+        ]
+      },
+      {
+        "section": "R7",
+        "tests": [
+          "test_R7_reconfirm_under_explicit_codex_thread_signs_that_thread",
+          "test_R7_reconfirm_under_mixed_reproduction_1_signs_generic_codex",
+          "test_R7_reconfirm_under_explicit_claude_with_stale_thread_signs_claude"
+        ]
+      }
+    ],
+    "non-claims": [
+      "R8 is not tested: \"README 'Anchors, predicates, quotes' ... states R2-R5 ... The running_agent docstring says the same in brief.\" Whether prose 'states' a rule is a matter of reading, not exact strings, and the brief's case list has no README case. The verifier must read the README and the docstring.",
+      "R7 'session_model() and the source --from-transcript speaker naming are unchanged': this file only exercises session_model through running_agent (record found / not found); the --from-transcript speaker naming is left to test_mangsang.py.",
+      "R7 'No model, thread or session value is ever invented' is checked only through the exact strings asserted here (e.g. 'Codex' with an empty or missing thread, 'an agent' for unknown hosts), not by proof over every input.",
+      "R6 'a test helper that clears AGENT_ENV ... clears AGENT_HOST too' follows from AGENT_ENV containing AGENT_HOST (tested); no test runs test_mangsang.py's run() helper under an inherited AGENT_HOST.",
+      "test_R7_reconfirm_under_explicit_codex_thread_signs_that_thread passes on the current tree (the legacy order already gives that answer); its byte-identical check on the second relation's file still decides 'never relabeled'."
+    ],
+    "worker": {
+      "host": "claude-code",
+      "model": "claude-opus-5-5",
+      "turns": 7,
+      "cost_usd": 0.49614420000000004
+    }
+  },
+  "answered": {
+    "at": "2026-10-30T08:00:42+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "touched_by_provider": [
+    "test_running_agent.py"
+  ],
+  "performed_by": {
+    "provider": "command",
+    "argv": [
+      "python3",
+      "{plugin:hacheong}/worker.py",
+      "--member",
+      "teujip",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "host": "claude-code",
+    "model": "claude-opus-5-5",
+    "turns": 7,
+    "cost_usd": 0.49614420000000004,
+    "versions": {
+      "used": {
+        "hacheong": "1.12.1",
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [
+        "write ./test_running_agent.py"
+      ],
+      "commands-run": 4,
+      "commands-failed": 0
+    }
+  },
+  "checks": [],
+  "touched": [
+    "test_running_agent.py"
+  ],
+  "done": {
+    "at": "2026-10-30T08:00:42+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "seen-non-claims": {
+    "by": "verifier of identity-build",
+    "texts": [
+      "(provider) R8 is not tested: \"README 'Anchors, predicates, quotes' ... states R2-R5 ... The running_agent docstring says the same in brief.\" Whether prose 'states' a rule is a matter of reading, not exact strings, and the brief's case list has no README case. The verifier must read the README and the docstring.",
+      "(provider) R7 'session_model() and the source --from-transcript speaker naming are unchanged': this file only exercises session_model through running_agent (record found / not found); the --from-transcript speaker naming is left to test_mangsang.py.",
+      "(provider) R7 'No model, thread or session value is ever invented' is checked only through the exact strings asserted here (e.g. 'Codex' with an empty or missing thread, 'an agent' for unknown hosts), not by proof over every input.",
+      "(provider) R6 'a test helper that clears AGENT_ENV ... clears AGENT_HOST too' follows from AGENT_ENV containing AGENT_HOST (tested); no test runs test_mangsang.py's run() helper under an inherited AGENT_HOST.",
+      "(provider) test_R7_reconfirm_under_explicit_codex_thread_signs_that_thread passes on the current tree (the legacy order already gives that answer); its byte-identical check on the second relation's file still decides 'never relabeled'."
+    ],
+    "at": "2026-10-30T08:03:36+00:00",
+    "chongdae": "chongdae 1.24.0"
+  }
+}

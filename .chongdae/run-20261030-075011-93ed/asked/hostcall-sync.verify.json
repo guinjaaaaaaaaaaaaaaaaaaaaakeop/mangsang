@@ -1,0 +1,86 @@
+{
+  "artifact-type": "chongdae/request@1",
+  "written_by": "chongdae 1.24.0",
+  "stage": "verify",
+  "run": "run-20261030-075011-93ed",
+  "task": "hostcall-sync",
+  "role": "verifier",
+  "target": ".",
+  "goal": "Owner-authorized prospective self-management of mangsang source with the released installed plugins: adopt the bootstrap environment with honest provenance; sync the reviewed vendored hostcall.py (hacheong 7aa70c6, sha256 fa06077c…); make running_agent() honor an explicit AGENT_HOST over opposite-host inherited markers (tests by the lock's nitpick, build by its implementer, read by its verifier); review and adopt the earlier authorized AGENTS/CLAUDE/README/skill/impact-adapter/>=3.11 manifest edits as prior work, not this run's authorship. No version bump, push, cache mutation or cross-project writes.",
+  "brief": "Synchronize the vendored hostcall.py with the reviewed hacheong copy: commit 7aa70c6 (hacheong run-20261030-073703-9853/hostcall-env-build), SHA256 fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b. New worker_env(host) copies os.environ, drops inherited CODEX_THREAD_ID, CLAUDE_CODE_SESSION_ID, CHONGDAE_SESSION, AI_AGENT, CLAUDE_PROJECT_DIR, CODEX_VERSION, sets AGENT_HOST (codex | claude-code) and AGENT_WORKER=1, raises ValueError for other hosts; run_claude keeps CLAUDE_CODE_DISABLE_AUTO_MEMORY=1; CLAUDECODE, credentials, config, sandbox and model settings pass through. The mangsang copy was byte-identical to hacheong 1.12.1 (4c24231, sha 3e549140…), so the change is exactly 7aa70c6's hunk. Checks: (1) the file's hash; (2) hacheong's 30-test test_hostcall_env.py copied READ-ONLY with this hostcall.py into a disposable temp dir and run there — mangsang imports nothing from the sibling at runtime; before the copy it was red (30 tests: 21 failures, 16 errors), evidence <tmp>; (3) mangsang's own suite (judge_worker.py imports hostcall). Mock-based: no live child host is claimed. The other copies (hunsu, dwitbuk) are not touched from here.",
+  "closes": [],
+  "contract": {},
+  "checks": [
+    [
+      "python3",
+      "-c",
+      "import hashlib,sys; h=hashlib.sha256(open('hostcall.py','rb').read()).hexdigest(); print(h); sys.exit(h!='fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b')"
+    ],
+    [
+      "python3",
+      "-c",
+      "import os,shutil,subprocess,sys,tempfile; t=tempfile.mkdtemp(prefix='mangsang-hostcall-'); shutil.copy('hostcall.py',t); shutil.copy(os.path.join('..','hacheong','test_hostcall_env.py'),t); r=subprocess.run([sys.executable,'-m','unittest','-v','test_hostcall_env.py'],cwd=t); shutil.rmtree(t); sys.exit(r.returncode)"
+    ],
+    [
+      "python3",
+      "test_mangsang.py"
+    ]
+  ],
+  "tests": [],
+  "response": "./.chongdae/run-20261030-075011-93ed/local/hostcall-sync.verify.response.json",
+  "touched": [
+    "hostcall.py"
+  ],
+  "built": null,
+  "excluded": {
+    "record-paths": []
+  },
+  "since": {
+    ".": "84b920050fef296229beaf3bb3c079bbd7ca8987"
+  },
+  "checked": [
+    {
+      "command": "python3 -c 'import hashlib,sys; h=hashlib.sha256(open('\"'\"'hostcall.py'\"'\"','\"'\"'rb'\"'\"').read()).hexdigest(); print(h); sys.exit(h!='\"'\"'fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b'\"'\"')'",
+      "exit": 0,
+      "tail": [
+        "fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b"
+      ],
+      "at": "2026-10-30T07:55:27+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 -c 'import os,shutil,subprocess,sys,tempfile; t=tempfile.mkdtemp(prefix='\"'\"'mangsang-hostcall-'\"'\"'); shutil.copy('\"'\"'hostcall.py'\"'\"',t); shutil.copy(os.path.join('\"'\"'..'\"'\"','\"'\"'hacheong'\"'\"','\"'\"'test_hostcall_env.py'\"'\"'),t); r=subprocess.run([sys.executable,'\"'\"'-m'\"'\"','\"'\"'unittest'\"'\"','\"'\"'-v'\"'\"','\"'\"'test_hostcall_env.py'\"'\"'],cwd=t); shutil.rmtree(t); sys.exit(r.returncode)'",
+      "exit": 0,
+      "tail": [
+        "test_H6_run_claude_argv_and_kwargs (test_hostcall_env.H6Preservation.test_H6_run_claude_argv_and_kwargs) ... ok",
+        "test_H6_run_claude_minimal_argv (test_hostcall_env.H6Preservation.test_H6_run_claude_minimal_argv) ... ok",
+        "test_H6_run_codex_argv_kwargs_files_and_return (test_hostcall_env.H6Preservation.test_H6_run_codex_argv_kwargs_files_and_return) ... ok",
+        "test_H6_run_codex_parent_sandbox_overrides_and_last_absent_is_none (test_hostcall_env.H6Preservation.test_H6_run_codex_parent_sandbox_overrides_and_last_absent_is_none) ... ok",
+        "Ran 30 tests in 0.016s",
+        "OK"
+      ],
+      "at": "2026-10-30T07:55:27+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 test_mangsang.py",
+      "exit": 0,
+      "tail": [
+        "PASS test_show_names_the_declaration_an_anchor_reads_when_that_is_what_moved",
+        "PASS test_show_prints_every_end_that_moved",
+        "PASS test_spacing_and_comment_marks_inside_strings_and_blocks_are_content",
+        "PASS test_unseen_directories_are_capped_excludable_and_reach_files_beside_deeper_ones",
+        "PASS test_what_the_net_cannot_see_is_said_and_can_be_checked",
+        "all passed"
+      ],
+      "at": "2026-10-30T07:55:33+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    }
+  ]
+}

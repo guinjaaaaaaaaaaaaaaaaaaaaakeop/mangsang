@@ -1,0 +1,149 @@
+{
+  "artifact-type": "chongdae/task@1",
+  "written_by": "chongdae 1.24.0",
+  "status": "done",
+  "def": {
+    "id": "move-example",
+    "role": "session",
+    "brief": "Fix the defect the lock's verifier (dwitbuk eyes, claude-opus-5-5) found when reading adopt-prior: the adopted README '### `move` (Python CLI)' example `python3 \"/path/to/plugin/mangsang.py\" move --target \"/path/to/project\"` fails exactly as written — cmd_move exits 'say who moves them (--by) or why the human delegated it (--delegated), or --dry-run' — and `move --help` / the engine usage line say `move [ID...] --by NAME | --delegated WHY [--dry-run]`. Make the example carry the signer (`--by NAME` or `--delegated WHY`) with `--dry-run` as the preview that needs neither. Only that sentence changes.",
+    "closes": [],
+    "needs": [],
+    "checks": [
+      [
+        "python3",
+        "-c",
+        "import sys; s=open('README.md',encoding='utf-8').read(); sec=s.split('### \\x60move\\x60 (Python CLI)',1)[1].split('\\n### ',1)[0]; ok=('--by NAME' in sec and '--delegated' in sec and '--dry-run' in sec); print('move example names its signer' if ok else 'move example lacks --by/--delegated'); sys.exit(not ok)"
+      ],
+      [
+        "git",
+        "diff",
+        "--check"
+      ]
+    ],
+    "tests": [],
+    "gate": null,
+    "scope": [
+      "README.md"
+    ]
+  },
+  "seq": 6,
+  "added": "2026-10-30T07:56:39+00:00",
+  "self-performed": {
+    "instead-of": "implementer",
+    "why": "a one-line documentation correction the adopt-prior verifier demonstrated; the owner authorized fixing demonstrated inconsistencies in separate tasks",
+    "by": {
+      "agent": "claude-code claude-opus-5-5"
+    },
+    "at": "2026-10-30T07:56:39+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "checks-passed": {
+    "ran": [
+      {
+        "command": "python3 -c 'import sys; s=open('\"'\"'README.md'\"'\"',encoding='\"'\"'utf-8'\"'\"').read(); sec=s.split('\"'\"'### \\x60move\\x60 (Python CLI)'\"'\"',1)[1].split('\"'\"'\\n### '\"'\"',1)[0]; ok=('\"'\"'--by NAME'\"'\"' in sec and '\"'\"'--delegated'\"'\"' in sec and '\"'\"'--dry-run'\"'\"' in sec); print('\"'\"'move example names its signer'\"'\"' if ok else '\"'\"'move example lacks --by/--delegated'\"'\"'); sys.exit(not ok)'",
+        "exit": 0,
+        "tail": [
+          "move example names its signer"
+        ],
+        "at": "2026-10-30T07:56:52+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "git diff --check",
+        "exit": 0,
+        "tail": [
+          ""
+        ],
+        "at": "2026-10-30T07:56:52+00:00",
+        "chongdae": "chongdae 1.24.0"
+      }
+    ],
+    "at": "2026-10-30T07:56:53+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "review": {
+    "artifact-type": "dwitbuk/review@1",
+    "verdict": "accept",
+    "findings": [],
+    "worker": {
+      "host": "claude-code",
+      "model": "claude-opus-5-5",
+      "turns": 3,
+      "cost_usd": 0.0453414
+    }
+  },
+  "verdict-given": {
+    "at": "2026-10-30T07:56:59+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "reviewed_tree": {
+    "README.md": "6a314cae412a2feeed32e37c3678ed062118dc8e"
+  },
+  "verified_by": {
+    "provider": "command",
+    "argv": [
+      "python3",
+      "{plugin:dwitbuk}/eyes_worker.py",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "host": "claude-code",
+    "model": "claude-opus-5-5",
+    "turns": 3,
+    "cost_usd": 0.0453414,
+    "versions": {
+      "used": {
+        "dwitbuk": "1.16.0",
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [],
+      "commands-run": 0,
+      "commands-failed": 0
+    }
+  },
+  "checks": [
+    [
+      "python3",
+      "-c",
+      "import sys; s=open('README.md',encoding='utf-8').read(); sec=s.split('### \\x60move\\x60 (Python CLI)',1)[1].split('\\n### ',1)[0]; ok=('--by NAME' in sec and '--delegated' in sec and '--dry-run' in sec); print('move example names its signer' if ok else 'move example lacks --by/--delegated'); sys.exit(not ok)"
+    ],
+    [
+      "git",
+      "diff",
+      "--check"
+    ]
+  ],
+  "touched": [
+    "README.md"
+  ],
+  "performed_by": {
+    "provider": "session",
+    "host": "claude-code",
+    "agent": "claude-code_2-1-314_agent",
+    "effort": "xhigh",
+    "model": "claude-opus-5-5",
+    "versions": {
+      "used": {
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [
+        "edit ./README.md"
+      ],
+      "commands-run": 3,
+      "command-lines": "kept in the local session transcript, not in the record",
+      "window-from": "2026-10-30T07:56:39+00:00"
+    }
+  },
+  "done": {
+    "at": "2026-10-30T07:56:59+00:00",
+    "chongdae": "chongdae 1.24.0"
+  }
+}

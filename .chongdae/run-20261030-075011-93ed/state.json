@@ -1,0 +1,44 @@
+{
+  "artifact-type": "chongdae/run@1",
+  "written_by": "chongdae 1.24.0",
+  "status": "complete",
+  "non-claims": [],
+  "created": {
+    "at": "2026-10-30T07:50:11+00:00",
+    "chongdae": "chongdae 1.24.0",
+    "based_on": "bd8e2fa8408aff836c547f083303dbd86c1b8395"
+  },
+  "environment": {
+    "locked": {
+      "chongdae": "1.24.0#2ebc633b588f",
+      "dwitbuk": "1.16.0#51128fee56ee",
+      "hacheong": "1.12.1#cda16204ca77",
+      "hunsu": "1.15.1#506135a169ad",
+      "jokbo": "1.8.1#e29b4880489d",
+      "mangsang": "1.19.3#16820498c0f4"
+    }
+  },
+  "ended": {
+    "at": "2026-10-30T08:07:50+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "reviewed": {
+    "by": {
+      "provider": "command",
+      "argv": [
+        "python3",
+        "{plugin:dwitbuk}/dwitbuk.py",
+        "review",
+        "--target",
+        "."
+      ]
+    },
+    "said": "review-20261030-170750-9957: 6 objection(s) (non-claim 2, unreviewed 4), 12 observation(s) since 594e42f",
+    "wrote": [
+      ".dwitbuk/review.lock",
+      "reviews/review-20261030-170750-9957.json"
+    ],
+    "at": "2026-10-30T08:07:50+00:00",
+    "chongdae": "chongdae 1.24.0"
+  }
+}

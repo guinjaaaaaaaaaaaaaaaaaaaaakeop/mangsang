@@ -1,0 +1,168 @@
+{
+  "artifact-type": "chongdae/task@1",
+  "written_by": "chongdae 1.24.0",
+  "status": "done",
+  "def": {
+    "id": "versioning-major",
+    "role": "session",
+    "brief": "README Versioning: the **major** rule names only a changed artifact/lock/record shape. Add that dropping a supported Python or host version (a raised engines floor) is major too, and say what that means for this checkout: the >=3.11 floor (adopted in 7db34a2; the released 1.19.3 declared >=3.9 in plugin.json and .claude-plugin/plugin.json) drops 3.9 and 3.10, so it ships as part of the planned 2.0, not as a patch, and the source manifests and marketplace entries stay 1.19.3 until that coordinated release. Release and adoption's 'Documentation and shared instruction edits also need a patch bump' must not read as patch-only when the same release raises a floor. Checks: the section says it; every version field is still 1.19.3 and every python floor >=3.11 (nothing bumped); README/AGENTS/skill links and anchors resolve; git diff --check. Engine and property suites are not rerun: nothing they test changes.",
+    "closes": [],
+    "needs": [],
+    "checks": [
+      [
+        "python3",
+        "-c",
+        "import json,re,sys; s=open('README.md',encoding='utf-8').read(); sec=s.split('## Versioning',1)[1].split('\\n## ',1)[0]; v=[json.load(open(p))['version'] for p in ('plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json')]; m=json.load(open('.claude-plugin/marketplace.json')); v+=[m['metadata']['version']]+[p['version'] for p in m['plugins'] if p['name']=='mangsang']; flo=[json.load(open(p))['engines']['python'] for p in ('plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json')]; ok=all(w in sec for w in ('Python or host version','3.9','3.10','2.0','1.19.3')) and set(v)=={'1.19.3'} and set(flo)=={'>=3.11'}; print(v, flo, 'versioning states the floor as major' if ok else 'NOT stated / versions moved'); sys.exit(not ok)"
+      ],
+      [
+        "python3",
+        "-c",
+        "import os,re,sys\ndef slug(h): return re.sub(r'[^\\w\\- ]','',h.strip().lower().replace('`','')).replace(' ','-')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'^#+ +(.*)$',open(p,encoding='utf-8').read(),re.M)}\nbad=[]\nfor doc in ('README.md','AGENTS.md','skills/operate/SKILL.md'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\\]\\(([^)\\s]+)\\)',open(doc,encoding='utf-8').read()):\n        if re.match(r'https?:',t): continue\n        path,_,anchor=t.partition('#'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'missing file')); continue\n        if anchor and target.endswith('.md') and anchor not in heads(target): bad.append((doc,t,'missing anchor'))\nprint(bad or 'links and anchors resolve'); sys.exit(bool(bad))\n"
+      ],
+      [
+        "git",
+        "diff",
+        "--check"
+      ]
+    ],
+    "tests": [],
+    "gate": null,
+    "scope": [
+      "README.md"
+    ]
+  },
+  "seq": 1,
+  "added": "2026-10-30T08:18:49+00:00",
+  "self-performed": {
+    "instead-of": "implementer",
+    "why": "a documentation-only clarification of two README sentences the owner specified; routine docs are the session's with a recorded reason",
+    "by": {
+      "agent": "claude-code claude-opus-5-5"
+    },
+    "at": "2026-10-30T08:18:49+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "checks-passed": {
+    "ran": [
+      {
+        "command": "python3 -c 'import json,re,sys; s=open('\"'\"'README.md'\"'\"',encoding='\"'\"'utf-8'\"'\"').read(); sec=s.split('\"'\"'## Versioning'\"'\"',1)[1].split('\"'\"'\\n## '\"'\"',1)[0]; v=[json.load(open(p))['\"'\"'version'\"'\"'] for p in ('\"'\"'plugin.json'\"'\"','\"'\"'.claude-plugin/plugin.json'\"'\"','\"'\"'.codex-plugin/plugin.json'\"'\"')]; m=json.load(open('\"'\"'.claude-plugin/marketplace.json'\"'\"')); v+=[m['\"'\"'metadata'\"'\"']['\"'\"'version'\"'\"']]+[p['\"'\"'version'\"'\"'] for p in m['\"'\"'plugins'\"'\"'] if p['\"'\"'name'\"'\"']=='\"'\"'mangsang'\"'\"']; flo=[json.load(open(p))['\"'\"'engines'\"'\"']['\"'\"'python'\"'\"'] for p in ('\"'\"'plugin.json'\"'\"','\"'\"'.claude-plugin/plugin.json'\"'\"','\"'\"'.codex-plugin/plugin.json'\"'\"')]; ok=all(w in sec for w in ('\"'\"'Python or host version'\"'\"','\"'\"'3.9'\"'\"','\"'\"'3.10'\"'\"','\"'\"'2.0'\"'\"','\"'\"'1.19.3'\"'\"')) and set(v)=={'\"'\"'1.19.3'\"'\"'} and set(flo)=={'\"'\"'>=3.11'\"'\"'}; print(v, flo, '\"'\"'versioning states the floor as major'\"'\"' if ok else '\"'\"'NOT stated / versions moved'\"'\"'); sys.exit(not ok)'",
+        "exit": 0,
+        "tail": [
+          "['1.19.3', '1.19.3', '1.19.3', '1.19.3', '1.19.3'] ['>=3.11', '>=3.11', '>=3.11'] versioning states the floor as major"
+        ],
+        "at": "2026-10-30T08:19:04+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3 -c 'import os,re,sys\ndef slug(h): return re.sub(r'\"'\"'[^\\w\\- ]'\"'\"','\"'\"''\"'\"',h.strip().lower().replace('\"'\"'`'\"'\"','\"'\"''\"'\"')).replace('\"'\"' '\"'\"','\"'\"'-'\"'\"')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'\"'\"'^#+ +(.*)$'\"'\"',open(p,encoding='\"'\"'utf-8'\"'\"').read(),re.M)}\nbad=[]\nfor doc in ('\"'\"'README.md'\"'\"','\"'\"'AGENTS.md'\"'\"','\"'\"'skills/operate/SKILL.md'\"'\"'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\"'\"'\\]\\(([^)\\s]+)\\)'\"'\"',open(doc,encoding='\"'\"'utf-8'\"'\"').read()):\n        if re.match(r'\"'\"'https?:'\"'\"',t): continue\n        path,_,anchor=t.partition('\"'\"'#'\"'\"'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'\"'\"'missing file'\"'\"')); continue\n        if anchor and target.endswith('\"'\"'.md'\"'\"') and anchor not in heads(target): bad.append((doc,t,'\"'\"'missing anchor'\"'\"'))\nprint(bad or '\"'\"'links and anchors resolve'\"'\"'); sys.exit(bool(bad))\n'",
+        "exit": 0,
+        "tail": [
+          "links and anchors resolve"
+        ],
+        "at": "2026-10-30T08:19:04+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "git diff --check",
+        "exit": 0,
+        "tail": [
+          ""
+        ],
+        "at": "2026-10-30T08:19:04+00:00",
+        "chongdae": "chongdae 1.24.0"
+      }
+    ],
+    "at": "2026-10-30T08:19:04+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "review": {
+    "artifact-type": "dwitbuk/review@1",
+    "verdict": "accept",
+    "findings": [],
+    "worker": {
+      "host": "claude-code",
+      "model": "claude-opus-5-5",
+      "turns": 3,
+      "cost_usd": 0.0674506
+    }
+  },
+  "verdict-given": {
+    "at": "2026-10-30T08:19:14+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "reviewed_tree": {
+    "README.md": "e1cd46b63d4ddfe3c7f2793df3183937ec085826"
+  },
+  "verified_by": {
+    "provider": "command",
+    "argv": [
+      "python3",
+      "{plugin:dwitbuk}/eyes_worker.py",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "host": "claude-code",
+    "model": "claude-opus-5-5",
+    "turns": 3,
+    "cost_usd": 0.0674506,
+    "versions": {
+      "used": {
+        "dwitbuk": "1.16.0",
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [],
+      "commands-run": 0,
+      "commands-failed": 0
+    }
+  },
+  "checks": [
+    [
+      "python3",
+      "-c",
+      "import json,re,sys; s=open('README.md',encoding='utf-8').read(); sec=s.split('## Versioning',1)[1].split('\\n## ',1)[0]; v=[json.load(open(p))['version'] for p in ('plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json')]; m=json.load(open('.claude-plugin/marketplace.json')); v+=[m['metadata']['version']]+[p['version'] for p in m['plugins'] if p['name']=='mangsang']; flo=[json.load(open(p))['engines']['python'] for p in ('plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json')]; ok=all(w in sec for w in ('Python or host version','3.9','3.10','2.0','1.19.3')) and set(v)=={'1.19.3'} and set(flo)=={'>=3.11'}; print(v, flo, 'versioning states the floor as major' if ok else 'NOT stated / versions moved'); sys.exit(not ok)"
+    ],
+    [
+      "python3",
+      "-c",
+      "import os,re,sys\ndef slug(h): return re.sub(r'[^\\w\\- ]','',h.strip().lower().replace('`','')).replace(' ','-')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'^#+ +(.*)$',open(p,encoding='utf-8').read(),re.M)}\nbad=[]\nfor doc in ('README.md','AGENTS.md','skills/operate/SKILL.md'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\\]\\(([^)\\s]+)\\)',open(doc,encoding='utf-8').read()):\n        if re.match(r'https?:',t): continue\n        path,_,anchor=t.partition('#'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'missing file')); continue\n        if anchor and target.endswith('.md') and anchor not in heads(target): bad.append((doc,t,'missing anchor'))\nprint(bad or 'links and anchors resolve'); sys.exit(bool(bad))\n"
+    ],
+    [
+      "git",
+      "diff",
+      "--check"
+    ]
+  ],
+  "touched": [
+    "README.md"
+  ],
+  "performed_by": {
+    "provider": "session",
+    "host": "claude-code",
+    "agent": "claude-code_2-1-314_agent",
+    "effort": "xhigh",
+    "model": "claude-opus-5-5",
+    "versions": {
+      "used": {
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [
+        "edit ./README.md"
+      ],
+      "commands-run": 1,
+      "command-lines": "kept in the local session transcript, not in the record",
+      "window-from": "2026-10-30T08:18:49+00:00"
+    }
+  },
+  "done": {
+    "at": "2026-10-30T08:19:15+00:00",
+    "chongdae": "chongdae 1.24.0"
+  }
+}

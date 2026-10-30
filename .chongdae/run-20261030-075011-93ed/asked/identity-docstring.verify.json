@@ -1,0 +1,86 @@
+{
+  "artifact-type": "chongdae/request@1",
+  "written_by": "chongdae 1.24.0",
+  "stage": "verify",
+  "run": "run-20261030-075011-93ed",
+  "task": "identity-docstring",
+  "role": "verifier",
+  "target": ".",
+  "goal": "Owner-authorized prospective self-management of mangsang source with the released installed plugins: adopt the bootstrap environment with honest provenance; sync the reviewed vendored hostcall.py (hacheong 7aa70c6, sha256 fa06077c…); make running_agent() honor an explicit AGENT_HOST over opposite-host inherited markers (tests by the lock's nitpick, build by its implementer, read by its verifier); review and adopt the earlier authorized AGENTS/CLAUDE/README/skill/impact-adapter/>=3.11 manifest edits as prior work, not this run's authorship. No version bump, push, cache mutation or cross-project writes.",
+  "brief": "Docstring only, mangsang.py running_agent: identity-build replaced the whole docstring and with it the design rationale the file kept — 'Not a person's name: what an agent does on its own is signed as the agent's, so it stops wearing the person's' and why a Claude Code session is named by its model (guin-site, 10-15: judge consume printed 'applied by Claude Code', which says no model). Restore those two sentences beside the new explicit-host rule (kept as the build wrote it, with the reason: a worker host call sets AGENT_HOST to the child's host and keeps the parent's CLAUDECODE). No code line changes; the ast check proves the docstring holds both, and the suites stay green.",
+  "closes": [],
+  "contract": {},
+  "checks": [
+    [
+      "python3",
+      "test_running_agent.py"
+    ],
+    [
+      "python3",
+      "test_mangsang.py"
+    ],
+    [
+      "python3",
+      "-c",
+      "import ast,sys; t=ast.parse(open('mangsang.py',encoding='utf-8').read()); f=next(n for n in t.body if isinstance(n,ast.FunctionDef) and n.name=='running_agent'); d=ast.get_docstring(f); ok=all(s in d for s in ('Not a person','guin-site, 10-15','AGENT_HOST')); print(d); sys.exit(not ok)"
+    ]
+  ],
+  "tests": [],
+  "response": "./.chongdae/run-20261030-075011-93ed/local/identity-docstring.verify.response.json",
+  "touched": [
+    "mangsang.py"
+  ],
+  "built": null,
+  "excluded": {
+    "record-paths": []
+  },
+  "since": {
+    ".": "4eef2540bf5756c3e7ab96ee40f1a8dc94092ced"
+  },
+  "checked": [
+    {
+      "command": "python3 test_running_agent.py",
+      "exit": 0,
+      "tail": [
+        "Ran 33 tests in 0.132s",
+        "OK"
+      ],
+      "at": "2026-10-30T08:04:57+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 test_mangsang.py",
+      "exit": 0,
+      "tail": [
+        "PASS test_show_names_the_declaration_an_anchor_reads_when_that_is_what_moved",
+        "PASS test_show_prints_every_end_that_moved",
+        "PASS test_spacing_and_comment_marks_inside_strings_and_blocks_are_content",
+        "PASS test_unseen_directories_are_capped_excludable_and_reach_files_beside_deeper_ones",
+        "PASS test_what_the_net_cannot_see_is_said_and_can_be_checked",
+        "all passed"
+      ],
+      "at": "2026-10-30T08:05:03+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 -c 'import ast,sys; t=ast.parse(open('\"'\"'mangsang.py'\"'\"',encoding='\"'\"'utf-8'\"'\"').read()); f=next(n for n in t.body if isinstance(n,ast.FunctionDef) and n.name=='\"'\"'running_agent'\"'\"'); d=ast.get_docstring(f); ok=all(s in d for s in ('\"'\"'Not a person'\"'\"','\"'\"'guin-site, 10-15'\"'\"','\"'\"'AGENT_HOST'\"'\"')); print(d); sys.exit(not ok)'",
+      "exit": 0,
+      "tail": [
+        "model, as its turns are kept (`Claude (<model>)`) — guin-site, 10-15: `judge consume` printed \"applied by Claude Code\",",
+        "which says no model; \"Claude Code\" only when the host's record of the session is not found.",
+        "Read the host's env now: stripped, case-sensitive AGENT_HOST wins over inherited markers (a worker host call sets it to",
+        "the child's host and keeps the parent's CLAUDECODE). codex uses its thread or \"Codex\"; claude-code uses its recorded",
+        "model or \"Claude Code\". An unknown host is \"an agent worker\" with AGENT_WORKER, else \"an agent\". With no host,",
+        "infer CODEX_THREAD_ID, then CLAUDECODE, then AGENT_WORKER, else None."
+      ],
+      "at": "2026-10-30T08:05:03+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    }
+  ]
+}

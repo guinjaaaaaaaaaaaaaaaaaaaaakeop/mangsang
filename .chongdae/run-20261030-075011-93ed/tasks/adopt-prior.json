@@ -1,0 +1,173 @@
+{
+  "artifact-type": "chongdae/task@1",
+  "written_by": "chongdae 1.24.0",
+  "status": "done",
+  "def": {
+    "id": "adopt-prior",
+    "role": "session",
+    "brief": "Review and adopt, unchanged, the edits made before this run (owner-authorized earlier work, not authored by this run): new AGENTS.md (shared Claude/Codex source guide) and CLAUDE.md (@AGENTS.md import); README navigation, Python 3.11+ install floor, shared-guidance section, Commands intro, Codex transcript limits under source, move as Python CLI, people.json roster for both hosts, agent-identity sentence under Anchors, hunsu --refresh wording, Release and adoption section; commands/impact.md argument-hint and $ARGUMENTS pass-through; skills/operate/SKILL.md roster and Codex transcript guidance; python >=3.11 in plugin.json and .claude-plugin/plugin.json (.codex-plugin/plugin.json already said >=3.11 at HEAD). The check proves the files are byte-identical to the saved baseline (outer .umbrella/selfhost-baseline/mangsang.json: diff sha256 8b6956b9…, AGENTS.md 4dede3c8…, CLAUDE.md 336cc4fb…). Review (session): links and navigation anchors resolve; impact's argument-hint matches impact --help (--show, --findings, --only); move has no adapter and is in --help; the four version fields agree at 1.19.3 and .agents/plugins/marketplace.json has no version field; the three manifests agree on >=3.11; git diff --check clean. Demonstrated inconsistencies are NOT fixed here — a separate task fixes them.",
+    "closes": [],
+    "needs": [],
+    "checks": [
+      [
+        "python3",
+        "-c",
+        "import hashlib,subprocess,sys; d=subprocess.run(['git','diff','--','.claude-plugin/plugin.json','README.md','commands/impact.md','plugin.json','skills/operate/SKILL.md'],capture_output=True).stdout; h=lambda p: hashlib.sha256(open(p,'rb').read()).hexdigest(); got=(hashlib.sha256(d).hexdigest(), h('AGENTS.md'), h('CLAUDE.md')); want=('8b6956b945e7fed0abe9b7caa385c8add2a52610acd22beb6950f0659ce21446','4dede3c8fb8b670091198fcb457b59a7a6989d24f6d5ea075b7dfdbee9559308','336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49'); print(got); sys.exit(got!=want)"
+      ]
+    ],
+    "tests": [],
+    "gate": null,
+    "scope": [
+      ".claude-plugin/plugin.json",
+      "AGENTS.md",
+      "CLAUDE.md",
+      "README.md",
+      "commands/impact.md",
+      "plugin.json",
+      "skills/operate/SKILL.md"
+    ]
+  },
+  "seq": 3,
+  "added": "2026-10-30T07:52:38+00:00",
+  "self-performed": {
+    "instead-of": "implementer",
+    "why": "adopting earlier owner-authorized edits unchanged after review; nothing to build, and the review is this session's",
+    "by": {
+      "agent": "claude-code claude-opus-5-5"
+    },
+    "at": "2026-10-30T07:52:38+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "adopted": [
+    {
+      "by": {
+        "agent": "claude-code claude-opus-5-5"
+      },
+      "why": "Owner-authorized edits made before this run by an earlier session (not this one; their timestamps predate even the bootstrap session b402001e, which preserved them untouched). Saved by the parent outside the repo as .umbrella/selfhost-baseline/mangsang.{patch,json} at HEAD bd8e2fa; the task's check proves they are byte-identical to that baseline. Adopted unchanged after this session's review so they can be committed under a run with that provenance; this session did not author them.",
+      "files": [
+        ".claude-plugin/plugin.json",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "README.md",
+        "commands/impact.md",
+        "plugin.json",
+        "skills/operate/SKILL.md"
+      ],
+      "at": "2026-10-30T07:52:45+00:00",
+      "chongdae": "chongdae 1.24.0"
+    }
+  ],
+  "checks-passed": {
+    "ran": [
+      {
+        "command": "python3 -c 'import hashlib,subprocess,sys; d=subprocess.run(['\"'\"'git'\"'\"','\"'\"'diff'\"'\"','\"'\"'--'\"'\"','\"'\"'.claude-plugin/plugin.json'\"'\"','\"'\"'README.md'\"'\"','\"'\"'commands/impact.md'\"'\"','\"'\"'plugin.json'\"'\"','\"'\"'skills/operate/SKILL.md'\"'\"'],capture_output=True).stdout; h=lambda p: hashlib.sha256(open(p,'\"'\"'rb'\"'\"').read()).hexdigest(); got=(hashlib.sha256(d).hexdigest(), h('\"'\"'AGENTS.md'\"'\"'), h('\"'\"'CLAUDE.md'\"'\"')); want=('\"'\"'8b6956b945e7fed0abe9b7caa385c8add2a52610acd22beb6950f0659ce21446'\"'\"','\"'\"'4dede3c8fb8b670091198fcb457b59a7a6989d24f6d5ea075b7dfdbee9559308'\"'\"','\"'\"'336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49'\"'\"'); print(got); sys.exit(got!=want)'",
+        "exit": 0,
+        "tail": [
+          "('8b6956b945e7fed0abe9b7caa385c8add2a52610acd22beb6950f0659ce21446', '4dede3c8fb8b670091198fcb457b59a7a6989d24f6d5ea075b7dfdbee9559308', '336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49')"
+        ],
+        "at": "2026-10-30T07:52:52+00:00",
+        "chongdae": "chongdae 1.24.0"
+      }
+    ],
+    "at": "2026-10-30T07:52:52+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "review": {
+    "artifact-type": "dwitbuk/review@1",
+    "verdict": "accept",
+    "findings": [
+      {
+        "kind": "anomaly",
+        "where": "README.md, `move` (Python CLI) section",
+        "record_quote": "",
+        "tree_quote": "`Use python3 \"/path/to/plugin/mangsang.py\" move --target \"/path/to/project\"`",
+        "why": "The new README example leaves out a signer. mangsang.py:2037-2038 `cmd_move` exits with \"say who moves them (--by) or why the human delegated it (--delegated), or --dry-run\" unless one of those is given, so the command fails exactly as written. The `--help` usage line also says `move [ID...] --by NAME | --delegated WHY [--dry-run]`. The README's own rule is to verify CLI examples against `--help`. The brief says inconsistencies are fixed in a separate task and this task adopts the edits unchanged, so this is noted rather than treated as a reason to reject. Everything else checked out: the navigation anchors resolve to existing headings, impact's argument-hint matches its parser (--show, --findings, --only), and running_agent() (mangsang.py:131-143) matches the new reconfirm identity order (CODEX_THREAD_ID, Claude model or Claude Code, AGENT_WORKER)."
+      }
+    ],
+    "worker": {
+      "host": "claude-code",
+      "model": "claude-opus-5-5",
+      "turns": 9,
+      "cost_usd": 0.212539
+    }
+  },
+  "verdict-given": {
+    "at": "2026-10-30T07:53:21+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "reviewed_tree": {
+    ".claude-plugin/plugin.json": "5ca0f471f18bb8e57f9bada7ac182b6a8a8c38fd",
+    "README.md": "5043bce1c0cf6cda659919804b911300c6fa9ae8",
+    "commands/impact.md": "da6bc1283b42fde6c0381dbc9d0c27f0413db40b",
+    "plugin.json": "21db7418c84a10dd235515563d9ec94dc0465457",
+    "skills/operate/SKILL.md": "090e91bf5c6cd6aa10cd91d330aec3a4509ffb4d",
+    "AGENTS.md": "03953315ebf8cef91553ed4eac0f1e9ad7210998",
+    "CLAUDE.md": "c140473a3a5fbe89301c99d9d0d1b76c5971f2c3"
+  },
+  "verified_by": {
+    "provider": "command",
+    "argv": [
+      "python3",
+      "{plugin:dwitbuk}/eyes_worker.py",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "host": "claude-code",
+    "model": "claude-opus-5-5",
+    "turns": 9,
+    "cost_usd": 0.212539,
+    "versions": {
+      "used": {
+        "dwitbuk": "1.16.0",
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [],
+      "commands-run": 0,
+      "commands-failed": 0
+    }
+  },
+  "checks": [
+    [
+      "python3",
+      "-c",
+      "import hashlib,subprocess,sys; d=subprocess.run(['git','diff','--','.claude-plugin/plugin.json','README.md','commands/impact.md','plugin.json','skills/operate/SKILL.md'],capture_output=True).stdout; h=lambda p: hashlib.sha256(open(p,'rb').read()).hexdigest(); got=(hashlib.sha256(d).hexdigest(), h('AGENTS.md'), h('CLAUDE.md')); want=('8b6956b945e7fed0abe9b7caa385c8add2a52610acd22beb6950f0659ce21446','4dede3c8fb8b670091198fcb457b59a7a6989d24f6d5ea075b7dfdbee9559308','336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49'); print(got); sys.exit(got!=want)"
+    ]
+  ],
+  "touched": [
+    ".claude-plugin/plugin.json",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "commands/impact.md",
+    "plugin.json",
+    "skills/operate/SKILL.md"
+  ],
+  "performed_by": {
+    "provider": "session",
+    "host": "claude-code",
+    "agent": "claude-code_2-1-314_agent",
+    "effort": "xhigh",
+    "model": "claude-opus-5-5",
+    "versions": {
+      "used": {
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [],
+      "commands-run": 3,
+      "command-lines": "kept in the local session transcript, not in the record",
+      "window-from": "2026-10-30T07:52:38+00:00"
+    }
+  },
+  "done": {
+    "at": "2026-10-30T07:53:21+00:00",
+    "chongdae": "chongdae 1.24.0"
+  }
+}

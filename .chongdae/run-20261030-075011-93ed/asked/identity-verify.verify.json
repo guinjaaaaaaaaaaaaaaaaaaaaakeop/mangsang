@@ -1,0 +1,63 @@
+{
+  "artifact-type": "chongdae/request@1",
+  "written_by": "chongdae 1.24.0",
+  "stage": "verify",
+  "run": "run-20261030-075011-93ed",
+  "task": "identity-verify",
+  "role": "verifier",
+  "target": ".",
+  "goal": "Owner-authorized prospective self-management of mangsang source with the released installed plugins: adopt the bootstrap environment with honest provenance; sync the reviewed vendored hostcall.py (hacheong 7aa70c6, sha256 fa06077c…); make running_agent() honor an explicit AGENT_HOST over opposite-host inherited markers (tests by the lock's nitpick, build by its implementer, read by its verifier); review and adopt the earlier authorized AGENTS/CLAUDE/README/skill/impact-adapter/>=3.11 manifest edits as prior work, not this run's authorship. No version bump, push, cache mutation or cross-project writes.",
+  "brief": "CONTRACT — an explicit AGENT_HOST names the running agent (mangsang.py running_agent, AGENT_ENV).\n\nDefect, reproduced read-only on this tree: running_agent() with AGENT_HOST=codex, AGENT_WORKER=1, CLAUDECODE=1 and no CODEX_THREAD_ID returns \"Claude Code\"; with AGENT_HOST=claude-code and CODEX_THREAD_ID=stale-parent it returns \"Codex (thread stale-parent)\". A worker host call (hostcall.worker_env, now vendored here) sets AGENT_HOST to the child's real host and drops the parent's session ids but keeps CLAUDECODE; an older parent could leave CODEX_THREAD_ID behind. The explicit host must win over opposite-host inherited markers.\n\nR1 Reading. running_agent() reads os.environ at call time. H = AGENT_HOST with surrounding whitespace stripped; otherwise compared exactly (case-sensitive). Recognized: \"codex\" and \"claude-code\".\nR2 H == \"codex\": \"Codex (thread <id>)\" when CODEX_THREAD_ID is non-empty (the id verbatim); otherwise exactly \"Codex\" — never a made-up thread. Claude evidence is ignored even when present: CLAUDECODE, CLAUDE_CODE_SESSION_ID and session_model() are not consulted (a parent Claude session's model must not name a Codex child).\nR3 H == \"claude-code\": \"Claude (<model>)\" when session_model() finds the model in the host's record of the session (CLAUDE_CODE_SESSION_ID's JSONL under CLAUDE_CONFIG_DIR or ~/.claude, projects/*/<id>.jsonl, unchanged); otherwise exactly \"Claude Code\". CODEX_THREAD_ID is ignored even when present. CLAUDECODE is not required.\nR4 H empty or AGENT_HOST unset: the legacy inference, unchanged in order and strings — CODEX_THREAD_ID -> \"Codex (thread <id>)\"; else CLAUDECODE -> \"Claude (<model>)\" / \"Claude Code\"; else AGENT_WORKER -> \"an agent worker\"; else None (a person's terminal).\nR5 H non-empty and not recognized (e.g. \"gemini\", \"claude\", \"Codex\"): conservative — never names Claude or Codex and consults neither CODEX_THREAD_ID nor session_model(); returns \"an agent worker\" when AGENT_WORKER is set, else exactly \"an agent\". Never None: an explicit host marker says an agent is running.\nR6 AGENT_ENV gains \"AGENT_HOST\" and keeps CLAUDECODE, CODEX_THREAD_ID, AGENT_WORKER, CLAUDE_CODE_SESSION_ID. So sign_as_agent treats an explicit host as an agent (--by NAME then needs --approved-in), and a test helper that clears AGENT_ENV to play a person at a terminal clears AGENT_HOST too.\nR7 Provenance. No model, thread or session value is ever invented. The exact strings \"Claude (<model>)\", \"Claude Code\", \"Codex (thread <id>)\", \"an agent worker\" keep their format, and the new \"Codex\" and \"an agent\" are the only additions. Signatures already stored in records (e.g. {\"agent\": \"Claude Code\"}, {\"agent\": \"Codex (thread old)\"}, a --by signature) are never rewritten or relabeled: only a new judgment writes a signature, with the identity of the agent running it now. session_model() and the source --from-transcript speaker naming are unchanged.\nR8 Documented. README \"Anchors, predicates, quotes\" (the sentence that begins \"runs with neither, which is the agent's own re-read and is signed as such:\") states R2-R5: the explicit AGENT_HOST precedence, the generic \"Codex\", the unknown-host fallback, and the legacy order when AGENT_HOST is absent. The running_agent docstring says the same in brief.\nVERIFY (read-only; nothing in the tree changes). The verifier on identity-build accepted after opening only mangsang.py lines 95-185 and grepping AGENT_ENV/sign_as_agent; it never opened the tests or the README. This task asks the lock's verifier, a fresh session, to read the exact files the contract stands on and hold R1-R8 (above) against them — quote the lines you rely on:\n1. mangsang.py: AGENT_ENV (near line 100), session_model() and running_agent() (lines ~102-157), sign_as_agent() (search \"def sign_as_agent\"), and the reconfirm/judge-consume callers of running_agent() (search \"running_agent()\").\n2. test_running_agent.py, the whole file: do its 33 tests assert exactly R1-R7 (both mixed reproductions, explicit hosts, whitespace, legacy order, worker-only, human terminal, unknown hosts, AGENT_ENV, signing, reconfirm provenance with an old signature byte-identical)? Name any rule a test asserts wrongly or misses.\n3. README.md, section \"Anchors, predicates, quotes\", the sentence beginning \"runs with neither, which is the agent's own re-read and is signed as such:\" — does it state R2-R5 as the code does (R8)?\n4. Commits 4eef254 (build) and 739c601 (docstring only) are the change; eac9573 holds the tests. test_mangsang.py and test_properties.py were protected and unchanged (git log -- test_mangsang.py test_properties.py shows no commit in this run).\nThe check runs python3 test_running_agent.py on this tree. Report a contradiction between the contract, the code, the tests and the README as a finding; do not accept on the packet alone.",
+  "closes": [],
+  "contract": {},
+  "checks": [
+    [
+      "python3",
+      "test_running_agent.py"
+    ],
+    [
+      "git",
+      "diff",
+      "--quiet",
+      "bd8e2fa",
+      "--",
+      "test_mangsang.py",
+      "test_properties.py"
+    ]
+  ],
+  "tests": [],
+  "response": "./.chongdae/run-20261030-075011-93ed/local/identity-verify.verify.response.json",
+  "touched": [],
+  "built": null,
+  "excluded": {
+    "record-paths": []
+  },
+  "since": {
+    ".": "739c6016afff1c0d07b776e099e15eb52189b931"
+  },
+  "checked": [
+    {
+      "command": "python3 test_running_agent.py",
+      "exit": 0,
+      "tail": [
+        "Ran 33 tests in 0.122s",
+        "OK"
+      ],
+      "at": "2026-10-30T08:05:40+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "git diff --quiet bd8e2fa -- test_mangsang.py test_properties.py",
+      "exit": 0,
+      "tail": [
+        ""
+      ],
+      "at": "2026-10-30T08:05:40+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    }
+  ]
+}

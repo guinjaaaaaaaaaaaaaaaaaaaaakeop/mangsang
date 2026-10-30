@@ -1,0 +1,74 @@
+{
+  "artifact-type": "chongdae/task@1",
+  "written_by": "chongdae 1.24.0",
+  "status": "done",
+  "def": {
+    "id": "adopt-env",
+    "role": "session",
+    "brief": "Adopt, unchanged, the project environment written by the bootstrap session b402001e-6fff-4b08-a276-ad54410886de (Claude, before this run or any run existed) so it can be committed under a run with honest provenance: .claude/settings.json (written by claude plugin install --scope project), hunsu.json, hunsu.lock.json, hunsu-judgments.json, and the three .gitignore lines released hunsu init added (.claude/settings.local.json, hunsu-conflicts.md, *-response.transcript.jsonl). This session did not author their content and changes none of it. The four hunsu resolutions stay reviewed:false — adopting the files is not a person's review of them. hunsu check on this machine: errors 0, warnings 0, info 1 (Claude); the Codex-side check stays pending the hunsu receipt-fingerprint release.",
+    "closes": [],
+    "needs": [],
+    "checks": [],
+    "tests": [],
+    "gate": null,
+    "scope": [
+      ".claude/settings.json",
+      ".gitignore",
+      "hunsu-judgments.json",
+      "hunsu.json",
+      "hunsu.lock.json"
+    ]
+  },
+  "seq": 2,
+  "added": "2026-10-30T07:50:41+00:00",
+  "non-claims": [
+    "no check decides this task; done means the agent said so"
+  ],
+  "adopted": [
+    {
+      "by": {
+        "agent": "claude-code claude-opus-5-5"
+      },
+      "why": "Written by bootstrap session b402001e-6fff-4b08-a276-ad54410886de (Claude, claude-opus-5-5 per its report) between 15:45 and 15:50 local on 2026-10-30, before this run or any chongdae run existed in this project. Adopted unchanged as this task's work so they can be committed under a run; this session did not author their content. .gitignore: only the three added lines (.claude/settings.local.json, hunsu-conflicts.md, *-response.transcript.jsonl) are bootstrap work; the two committed lines are unchanged.",
+      "files": [
+        ".claude/settings.json",
+        ".gitignore",
+        "hunsu-judgments.json",
+        "hunsu.json",
+        "hunsu.lock.json"
+      ],
+      "at": "2026-10-30T07:50:47+00:00",
+      "chongdae": "chongdae 1.24.0"
+    }
+  ],
+  "checks": [],
+  "touched": [
+    ".claude/settings.json",
+    ".gitignore",
+    "hunsu-judgments.json",
+    "hunsu.json",
+    "hunsu.lock.json"
+  ],
+  "performed_by": {
+    "provider": "session",
+    "host": "claude-code",
+    "agent": "claude-code_2-1-314_agent",
+    "effort": "xhigh",
+    "model": "claude-opus-5-5",
+    "versions": {
+      "used": {
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [],
+      "commands-run": 3,
+      "command-lines": "kept in the local session transcript, not in the record",
+      "window-from": "2026-10-30T07:50:41+00:00"
+    }
+  },
+  "done": {
+    "at": "2026-10-30T07:51:02+00:00",
+    "chongdae": "chongdae 1.24.0"
+  }
+}

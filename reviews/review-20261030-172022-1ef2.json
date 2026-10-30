@@ -1,0 +1,95 @@
+{
+  "artifact-type": "dwitbuk/review@1",
+  "id": "review-20261030-172022-1ef2",
+  "since": "739c6016afff1c0d07b776e099e15eb52189b931",
+  "head": "64108a960d09b1beb7f150af013b0d4d4f5590c6",
+  "findings": [
+    {
+      "kind": "drift",
+      "where": "8 situation(s) were judged about other text of their members (building a slice from a goal or plan; disputing, testing or trying a built slice; reviewing a change before merge; asking what happened or what is open; bringing a decision to the person; before changing a file / what stands on it; recording why things are as they are; setting up a project) — `hunsu judge request --out DIR --stale`, judge those packets, `consume`",
+      "text": "8 situation(s) were judged about other text of their members (building a slice from a goal or plan; disputing, testing or trying a built slice; reviewing a change before merge; asking what happened or what is open; bringing a decision to the person; before changing a file / what stands on it; recording why things are as they are; setting up a project) — `hunsu judge request --out DIR --stale`, judge those packets, `consume`",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection",
+      "disposition": {
+        "as": "accepted",
+        "delegated": "No person read this finding. The owner's instruction for this round authorized the supported re-judgment as necessary maintenance after the approved AGENTS.md self-check edit, and asked for a truthful delegated disposition. The drift was real (the AGENTS.md mode changed from 4dede3c8fb8b to 9ec20a5a0b93). Task rejudge-stale re-judged all 8 situations with installed hunsu 1.15.1 (8 claude-opus-5-5 judge calls, judge consume), and hunsu check now reports errors 0. Committed in 743f8da.",
+        "by": null,
+        "finding_text": "8 situation(s) were judged about other text of their members (building a slice from a goal or plan; disputing, testing or trying a built slice; reviewing a change before merge; asking what happened or what is open; bringing a decision to the person; before changing a file / what stands on it; recording why things are as they are; setting up a project) — `hunsu judge request --out DIR --stale`, judge those packets, `consume`",
+        "where": "8 situation(s) were judged about other text of their members (building a slice from a goal or plan; disputing, testing or trying a built slice; reviewing a change before merge; asking what happened or what is open; bringing a decision to the person; before changing a file / what stands on it; recording why things are as they are; setting up a project) — `hunsu judge request --out DIR --stale`, judge those packets, `consume`",
+        "quote": "\"file:AGENTS.md\": \"9ec20a5a0b93\""
+      }
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['building a slice from a goal or plan']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['reviewing a change before merge']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['asking what happened or what is open']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['bringing a decision to the person']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-081817-1b83/selfcheck-entrypoints",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): a documentation-only addition of one standard-check entrypoint to README Self-check and the shared AGENTS.md; routine docs are the session's with a recorded reason",
+      "layer": "observation"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-081817-1b83/versioning-major",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): a documentation-only clarification of two README sentences the owner specified; routine docs are the session's with a recorded reason",
+      "layer": "observation"
+    },
+    {
+      "kind": "non-claim",
+      "where": "run-20261030-075011-93ed",
+      "text": "no check decides this task  [tasks env-local-records, adopt-env, identity-tests]",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "non-claim",
+      "where": "run-20261030-075011-93ed",
+      "text": "env-local-records: done on the session's word by name (`run env-local-records`), with nothing of its own in the tree and no `did`  [task env-local-records]",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "unchanged",
+      "layer": "observation",
+      "where": "1 earlier review(s)",
+      "seen-in": [
+        "review-20261030-170750-9957"
+      ],
+      "text": "12 observation(s) written in full in 1 earlier review(s) and unchanged since (seen-non-claims 1, self-performed 8, session-judged 2, verifier-non-claim 1)"
+    }
+  ]
+}

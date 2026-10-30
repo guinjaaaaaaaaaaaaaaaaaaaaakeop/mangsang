@@ -1,0 +1,172 @@
+{
+  "artifact-type": "chongdae/task@1",
+  "written_by": "chongdae 1.24.0",
+  "status": "done",
+  "def": {
+    "id": "selfcheck-entrypoints",
+    "role": "session",
+    "brief": "The documented standard self-check (README '## Self-check' and AGENTS.md's run line) names test_mangsang.py and test_properties.py but not test_running_agent.py, the explicit-AGENT_HOST identity regressions added in eac9573 (33 stdlib unittest tests, run standalone). Document it as its own entrypoint — `python3 test_running_agent.py` (`python3 -m unittest test_running_agent.py` runs the same tests) — and say plainly that `test_mangsang.py` does not run it, so no count of one suite is read as covering the other. Not integrated into test_mangsang.py: that would change a suite the identity build protected, and needs a test-harness task of its own. Checks: every root test_*.py is named as `python3 <file>` in both README Self-check and AGENTS.md; the file's own docstring gives that command; README states test_mangsang.py does not run it; links and anchors resolve; git diff --check. Suites are not rerun: no code or test changes.",
+    "closes": [],
+    "needs": [],
+    "checks": [
+      [
+        "python3",
+        "-c",
+        "import glob,sys; r=open('README.md',encoding='utf-8').read(); sc=r.split('## Self-check',1)[1]; a=open('AGENTS.md',encoding='utf-8').read(); tests=sorted(glob.glob('test_*.py')); miss=[(t,w) for t in tests for w,txt in (('README Self-check',sc),('AGENTS.md',a)) if '\\x60python3 '+t+'\\x60' not in txt]; doc=open('test_running_agent.py',encoding='utf-8').read().split(chr(34)*3)[1]; ok=not miss and 'python3 test_running_agent.py' in doc and '\\x60test_mangsang.py\\x60 does not run it' in sc; print(tests, miss or 'every test entrypoint is named in README Self-check and AGENTS.md'); sys.exit(not ok)"
+      ],
+      [
+        "python3",
+        "-c",
+        "import os,re,sys\ndef slug(h): return re.sub(r'[^\\w\\- ]','',h.strip().lower().replace('`','')).replace(' ','-')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'^#+ +(.*)$',open(p,encoding='utf-8').read(),re.M)}\nbad=[]\nfor doc in ('README.md','AGENTS.md','skills/operate/SKILL.md'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\\]\\(([^)\\s]+)\\)',open(doc,encoding='utf-8').read()):\n        if re.match(r'https?:',t): continue\n        path,_,anchor=t.partition('#'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'missing file')); continue\n        if anchor and target.endswith('.md') and anchor not in heads(target): bad.append((doc,t,'missing anchor'))\nprint(bad or 'links and anchors resolve'); sys.exit(bool(bad))\n"
+      ],
+      [
+        "git",
+        "diff",
+        "--check"
+      ]
+    ],
+    "tests": [],
+    "gate": null,
+    "scope": [
+      "AGENTS.md",
+      "README.md"
+    ]
+  },
+  "seq": 2,
+  "added": "2026-10-30T08:19:37+00:00",
+  "self-performed": {
+    "instead-of": "implementer",
+    "why": "a documentation-only addition of one standard-check entrypoint to README Self-check and the shared AGENTS.md; routine docs are the session's with a recorded reason",
+    "by": {
+      "agent": "claude-code claude-opus-5-5"
+    },
+    "at": "2026-10-30T08:19:37+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "checks-passed": {
+    "ran": [
+      {
+        "command": "python3 -c 'import glob,sys; r=open('\"'\"'README.md'\"'\"',encoding='\"'\"'utf-8'\"'\"').read(); sc=r.split('\"'\"'## Self-check'\"'\"',1)[1]; a=open('\"'\"'AGENTS.md'\"'\"',encoding='\"'\"'utf-8'\"'\"').read(); tests=sorted(glob.glob('\"'\"'test_*.py'\"'\"')); miss=[(t,w) for t in tests for w,txt in (('\"'\"'README Self-check'\"'\"',sc),('\"'\"'AGENTS.md'\"'\"',a)) if '\"'\"'\\x60python3 '\"'\"'+t+'\"'\"'\\x60'\"'\"' not in txt]; doc=open('\"'\"'test_running_agent.py'\"'\"',encoding='\"'\"'utf-8'\"'\"').read().split(chr(34)*3)[1]; ok=not miss and '\"'\"'python3 test_running_agent.py'\"'\"' in doc and '\"'\"'\\x60test_mangsang.py\\x60 does not run it'\"'\"' in sc; print(tests, miss or '\"'\"'every test entrypoint is named in README Self-check and AGENTS.md'\"'\"'); sys.exit(not ok)'",
+        "exit": 0,
+        "tail": [
+          "['test_mangsang.py', 'test_properties.py', 'test_running_agent.py'] every test entrypoint is named in README Self-check and AGENTS.md"
+        ],
+        "at": "2026-10-30T08:19:57+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3 -c 'import os,re,sys\ndef slug(h): return re.sub(r'\"'\"'[^\\w\\- ]'\"'\"','\"'\"''\"'\"',h.strip().lower().replace('\"'\"'`'\"'\"','\"'\"''\"'\"')).replace('\"'\"' '\"'\"','\"'\"'-'\"'\"')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'\"'\"'^#+ +(.*)$'\"'\"',open(p,encoding='\"'\"'utf-8'\"'\"').read(),re.M)}\nbad=[]\nfor doc in ('\"'\"'README.md'\"'\"','\"'\"'AGENTS.md'\"'\"','\"'\"'skills/operate/SKILL.md'\"'\"'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\"'\"'\\]\\(([^)\\s]+)\\)'\"'\"',open(doc,encoding='\"'\"'utf-8'\"'\"').read()):\n        if re.match(r'\"'\"'https?:'\"'\"',t): continue\n        path,_,anchor=t.partition('\"'\"'#'\"'\"'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'\"'\"'missing file'\"'\"')); continue\n        if anchor and target.endswith('\"'\"'.md'\"'\"') and anchor not in heads(target): bad.append((doc,t,'\"'\"'missing anchor'\"'\"'))\nprint(bad or '\"'\"'links and anchors resolve'\"'\"'); sys.exit(bool(bad))\n'",
+        "exit": 0,
+        "tail": [
+          "links and anchors resolve"
+        ],
+        "at": "2026-10-30T08:19:57+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "git diff --check",
+        "exit": 0,
+        "tail": [
+          ""
+        ],
+        "at": "2026-10-30T08:19:57+00:00",
+        "chongdae": "chongdae 1.24.0"
+      }
+    ],
+    "at": "2026-10-30T08:19:57+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "review": {
+    "artifact-type": "dwitbuk/review@1",
+    "verdict": "accept",
+    "findings": [],
+    "worker": {
+      "host": "claude-code",
+      "model": "claude-opus-5-5",
+      "turns": 5,
+      "cost_usd": 0.093305
+    }
+  },
+  "verdict-given": {
+    "at": "2026-10-30T08:20:07+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "reviewed_tree": {
+    "AGENTS.md": "d9ff6d0805e7dac996b5009725e5ae62a89ba48e",
+    "README.md": "4fecdac8ded076efa40970e9d3563458d826be3d"
+  },
+  "verified_by": {
+    "provider": "command",
+    "argv": [
+      "python3",
+      "{plugin:dwitbuk}/eyes_worker.py",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "host": "claude-code",
+    "model": "claude-opus-5-5",
+    "turns": 5,
+    "cost_usd": 0.093305,
+    "versions": {
+      "used": {
+        "dwitbuk": "1.16.0",
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [],
+      "commands-run": 0,
+      "commands-failed": 0
+    }
+  },
+  "checks": [
+    [
+      "python3",
+      "-c",
+      "import glob,sys; r=open('README.md',encoding='utf-8').read(); sc=r.split('## Self-check',1)[1]; a=open('AGENTS.md',encoding='utf-8').read(); tests=sorted(glob.glob('test_*.py')); miss=[(t,w) for t in tests for w,txt in (('README Self-check',sc),('AGENTS.md',a)) if '\\x60python3 '+t+'\\x60' not in txt]; doc=open('test_running_agent.py',encoding='utf-8').read().split(chr(34)*3)[1]; ok=not miss and 'python3 test_running_agent.py' in doc and '\\x60test_mangsang.py\\x60 does not run it' in sc; print(tests, miss or 'every test entrypoint is named in README Self-check and AGENTS.md'); sys.exit(not ok)"
+    ],
+    [
+      "python3",
+      "-c",
+      "import os,re,sys\ndef slug(h): return re.sub(r'[^\\w\\- ]','',h.strip().lower().replace('`','')).replace(' ','-')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'^#+ +(.*)$',open(p,encoding='utf-8').read(),re.M)}\nbad=[]\nfor doc in ('README.md','AGENTS.md','skills/operate/SKILL.md'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\\]\\(([^)\\s]+)\\)',open(doc,encoding='utf-8').read()):\n        if re.match(r'https?:',t): continue\n        path,_,anchor=t.partition('#'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'missing file')); continue\n        if anchor and target.endswith('.md') and anchor not in heads(target): bad.append((doc,t,'missing anchor'))\nprint(bad or 'links and anchors resolve'); sys.exit(bool(bad))\n"
+    ],
+    [
+      "git",
+      "diff",
+      "--check"
+    ]
+  ],
+  "touched": [
+    "AGENTS.md",
+    "README.md"
+  ],
+  "performed_by": {
+    "provider": "session",
+    "host": "claude-code",
+    "agent": "claude-code_2-1-314_agent",
+    "effort": "xhigh",
+    "model": "claude-opus-5-5",
+    "versions": {
+      "used": {
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [
+        "edit ./README.md",
+        "edit ./AGENTS.md"
+      ],
+      "commands-run": 2,
+      "command-lines": "kept in the local session transcript, not in the record",
+      "window-from": "2026-10-30T08:19:37+00:00"
+    }
+  },
+  "done": {
+    "at": "2026-10-30T08:20:08+00:00",
+    "chongdae": "chongdae 1.24.0"
+  }
+}

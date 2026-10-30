@@ -1,0 +1,157 @@
+{
+  "artifact-type": "chongdae/task@1",
+  "written_by": "chongdae 1.24.0",
+  "status": "done",
+  "def": {
+    "id": "python3-floor-docs",
+    "role": "session",
+    "brief": "Fix the inconsistencies the adopt-prior review demonstrated between the adopted Python 3.11+/python3 floor (README Install: python3 on PATH must meet 3.11) and the rest of the shipped text: (1) README Install says 'the engine, command adapters and hooks use that executable' — mangsang ships no hooks (no hooks/ directory, no hooks key in any manifest): drop 'and hooks'. (2) skills/operate/SKILL.md says '(`python` on hosts that have no `python3`)' — contradicts the floor: say python3 3.11+ is required instead. (3) README Self-check runs `python test_mangsang.py` / `python test_properties.py` while AGENTS.md says python3: use python3. (4) commands/judge.md tells the agent to run `python \"${CLAUDE_PLUGIN_ROOT}/judge_worker.py\"` while the engine's own next line (mangsang.py judge request) prints python3: use python3. Nothing else changes; test docstrings are left alone.",
+    "closes": [],
+    "needs": [],
+    "checks": [
+      [
+        "python3",
+        "-c",
+        "import re,sys; bad=[(f,i+1,l.strip()) for f in ('README.md','skills/operate/SKILL.md','commands/judge.md') for i,l in enumerate(open(f,encoding='utf-8')) if re.search(r'\\x60python\\x60|\\x60python [^\\x60]|python \"|and hooks use', l)]; print(bad or 'no bare python'); sys.exit(bool(bad))"
+      ],
+      [
+        "git",
+        "diff",
+        "--check"
+      ]
+    ],
+    "tests": [],
+    "gate": null,
+    "scope": [
+      "README.md",
+      "commands/judge.md",
+      "skills/operate/SKILL.md"
+    ]
+  },
+  "seq": 4,
+  "added": "2026-10-30T07:53:44+00:00",
+  "self-performed": {
+    "instead-of": "implementer",
+    "why": "four one-line documentation corrections the adoption review demonstrated; the owner authorized fixing demonstrated inconsistencies in separate tasks",
+    "by": {
+      "agent": "claude-code claude-opus-5-5"
+    },
+    "at": "2026-10-30T07:53:44+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "checks-passed": {
+    "ran": [
+      {
+        "command": "python3 -c 'import re,sys; bad=[(f,i+1,l.strip()) for f in ('\"'\"'README.md'\"'\"','\"'\"'skills/operate/SKILL.md'\"'\"','\"'\"'commands/judge.md'\"'\"') for i,l in enumerate(open(f,encoding='\"'\"'utf-8'\"'\"')) if re.search(r'\"'\"'\\x60python\\x60|\\x60python [^\\x60]|python \"|and hooks use'\"'\"', l)]; print(bad or '\"'\"'no bare python'\"'\"'); sys.exit(bool(bad))'",
+        "exit": 0,
+        "tail": [
+          "no bare python"
+        ],
+        "at": "2026-10-30T07:54:22+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "git diff --check",
+        "exit": 0,
+        "tail": [
+          ""
+        ],
+        "at": "2026-10-30T07:54:22+00:00",
+        "chongdae": "chongdae 1.24.0"
+      }
+    ],
+    "at": "2026-10-30T07:54:22+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "review": {
+    "artifact-type": "dwitbuk/review@1",
+    "verdict": "accept",
+    "findings": [],
+    "worker": {
+      "host": "claude-code",
+      "model": "claude-opus-5-5",
+      "turns": 4,
+      "cost_usd": 0.07105860000000001
+    }
+  },
+  "verdict-given": {
+    "at": "2026-10-30T07:54:33+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "reviewed_tree": {
+    "README.md": "bbde2488aa6d16863607ccf377d1c29aa6fb726e",
+    "commands/judge.md": "4fb81c773a816751166234a31c9c7ab30522b681",
+    "skills/operate/SKILL.md": "99b5530aa06344372d66a62d344aaf29559ba74b"
+  },
+  "verified_by": {
+    "provider": "command",
+    "argv": [
+      "python3",
+      "{plugin:dwitbuk}/eyes_worker.py",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "host": "claude-code",
+    "model": "claude-opus-5-5",
+    "turns": 4,
+    "cost_usd": 0.07105860000000001,
+    "versions": {
+      "used": {
+        "dwitbuk": "1.16.0",
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [],
+      "commands-run": 0,
+      "commands-failed": 0
+    }
+  },
+  "checks": [
+    [
+      "python3",
+      "-c",
+      "import re,sys; bad=[(f,i+1,l.strip()) for f in ('README.md','skills/operate/SKILL.md','commands/judge.md') for i,l in enumerate(open(f,encoding='utf-8')) if re.search(r'\\x60python\\x60|\\x60python [^\\x60]|python \"|and hooks use', l)]; print(bad or 'no bare python'); sys.exit(bool(bad))"
+    ],
+    [
+      "git",
+      "diff",
+      "--check"
+    ]
+  ],
+  "touched": [
+    "README.md",
+    "commands/judge.md",
+    "skills/operate/SKILL.md"
+  ],
+  "performed_by": {
+    "provider": "session",
+    "host": "claude-code",
+    "agent": "claude-code_2-1-314_agent",
+    "effort": "xhigh",
+    "model": "claude-opus-5-5",
+    "versions": {
+      "used": {
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [
+        "edit ./README.md",
+        "edit ./commands/judge.md",
+        "edit ./skills/operate/SKILL.md"
+      ],
+      "commands-run": 4,
+      "command-lines": "kept in the local session transcript, not in the record",
+      "window-from": "2026-10-30T07:53:44+00:00"
+    }
+  },
+  "done": {
+    "at": "2026-10-30T07:54:33+00:00",
+    "chongdae": "chongdae 1.24.0"
+  }
+}

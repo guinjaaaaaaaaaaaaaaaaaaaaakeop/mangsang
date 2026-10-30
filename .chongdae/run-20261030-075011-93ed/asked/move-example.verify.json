@@ -1,0 +1,61 @@
+{
+  "artifact-type": "chongdae/request@1",
+  "written_by": "chongdae 1.24.0",
+  "stage": "verify",
+  "run": "run-20261030-075011-93ed",
+  "task": "move-example",
+  "role": "verifier",
+  "target": ".",
+  "goal": "Owner-authorized prospective self-management of mangsang source with the released installed plugins: adopt the bootstrap environment with honest provenance; sync the reviewed vendored hostcall.py (hacheong 7aa70c6, sha256 fa06077c…); make running_agent() honor an explicit AGENT_HOST over opposite-host inherited markers (tests by the lock's nitpick, build by its implementer, read by its verifier); review and adopt the earlier authorized AGENTS/CLAUDE/README/skill/impact-adapter/>=3.11 manifest edits as prior work, not this run's authorship. No version bump, push, cache mutation or cross-project writes.",
+  "brief": "Fix the defect the lock's verifier (dwitbuk eyes, claude-opus-5-5) found when reading adopt-prior: the adopted README '### `move` (Python CLI)' example `python3 \"/path/to/plugin/mangsang.py\" move --target \"/path/to/project\"` fails exactly as written — cmd_move exits 'say who moves them (--by) or why the human delegated it (--delegated), or --dry-run' — and `move --help` / the engine usage line say `move [ID...] --by NAME | --delegated WHY [--dry-run]`. Make the example carry the signer (`--by NAME` or `--delegated WHY`) with `--dry-run` as the preview that needs neither. Only that sentence changes.",
+  "closes": [],
+  "contract": {},
+  "checks": [
+    [
+      "python3",
+      "-c",
+      "import sys; s=open('README.md',encoding='utf-8').read(); sec=s.split('### \\x60move\\x60 (Python CLI)',1)[1].split('\\n### ',1)[0]; ok=('--by NAME' in sec and '--delegated' in sec and '--dry-run' in sec); print('move example names its signer' if ok else 'move example lacks --by/--delegated'); sys.exit(not ok)"
+    ],
+    [
+      "git",
+      "diff",
+      "--check"
+    ]
+  ],
+  "tests": [],
+  "response": "./.chongdae/run-20261030-075011-93ed/local/move-example.verify.response.json",
+  "touched": [
+    "README.md"
+  ],
+  "built": null,
+  "excluded": {
+    "record-paths": []
+  },
+  "since": {
+    ".": "75ab06453e60f3f121053ba781a2a8729d1954d1"
+  },
+  "checked": [
+    {
+      "command": "python3 -c 'import sys; s=open('\"'\"'README.md'\"'\"',encoding='\"'\"'utf-8'\"'\"').read(); sec=s.split('\"'\"'### \\x60move\\x60 (Python CLI)'\"'\"',1)[1].split('\"'\"'\\n### '\"'\"',1)[0]; ok=('\"'\"'--by NAME'\"'\"' in sec and '\"'\"'--delegated'\"'\"' in sec and '\"'\"'--dry-run'\"'\"' in sec); print('\"'\"'move example names its signer'\"'\"' if ok else '\"'\"'move example lacks --by/--delegated'\"'\"'); sys.exit(not ok)'",
+      "exit": 0,
+      "tail": [
+        "move example names its signer"
+      ],
+      "at": "2026-10-30T07:56:52+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0,
+      "tail": [
+        ""
+      ],
+      "at": "2026-10-30T07:56:52+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    }
+  ]
+}

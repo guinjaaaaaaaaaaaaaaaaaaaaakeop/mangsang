@@ -1,0 +1,180 @@
+{
+  "artifact-type": "chongdae/task@1",
+  "written_by": "chongdae 1.24.0",
+  "status": "done",
+  "def": {
+    "id": "hostcall-sync",
+    "role": "session",
+    "brief": "Synchronize the vendored hostcall.py with the reviewed hacheong copy: commit 7aa70c6 (hacheong run-20261030-073703-9853/hostcall-env-build), SHA256 fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b. New worker_env(host) copies os.environ, drops inherited CODEX_THREAD_ID, CLAUDE_CODE_SESSION_ID, CHONGDAE_SESSION, AI_AGENT, CLAUDE_PROJECT_DIR, CODEX_VERSION, sets AGENT_HOST (codex | claude-code) and AGENT_WORKER=1, raises ValueError for other hosts; run_claude keeps CLAUDE_CODE_DISABLE_AUTO_MEMORY=1; CLAUDECODE, credentials, config, sandbox and model settings pass through. The mangsang copy was byte-identical to hacheong 1.12.1 (4c24231, sha 3e549140…), so the change is exactly 7aa70c6's hunk. Checks: (1) the file's hash; (2) hacheong's 30-test test_hostcall_env.py copied READ-ONLY with this hostcall.py into a disposable temp dir and run there — mangsang imports nothing from the sibling at runtime; before the copy it was red (30 tests: 21 failures, 16 errors), evidence <temporary-evidence>/hostcall-red-before-sync.txt; (3) mangsang's own suite (judge_worker.py imports hostcall). Mock-based: no live child host is claimed. The other copies (hunsu, dwitbuk) are not touched from here.",
+    "closes": [],
+    "needs": [],
+    "checks": [
+      [
+        "python3",
+        "-c",
+        "import hashlib,sys; h=hashlib.sha256(open('hostcall.py','rb').read()).hexdigest(); print(h); sys.exit(h!='fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b')"
+      ],
+      [
+        "python3",
+        "-c",
+        "import os,shutil,subprocess,sys,tempfile; t=tempfile.mkdtemp(prefix='mangsang-hostcall-'); shutil.copy('hostcall.py',t); shutil.copy(os.path.join('..','hacheong','test_hostcall_env.py'),t); r=subprocess.run([sys.executable,'-m','unittest','-v','test_hostcall_env.py'],cwd=t); shutil.rmtree(t); sys.exit(r.returncode)"
+      ],
+      [
+        "python3",
+        "test_mangsang.py"
+      ]
+    ],
+    "tests": [],
+    "gate": null,
+    "scope": [
+      "hostcall.py"
+    ]
+  },
+  "seq": 5,
+  "added": "2026-10-30T07:55:16+00:00",
+  "self-performed": {
+    "instead-of": "implementer",
+    "why": "a byte-exact copy of the vendored file as reviewed upstream (hacheong 7aa70c6); the owner's brief permits a read-only source copy, and its checks are the hash and the copied regression suite — there is nothing for a builder to decide",
+    "by": {
+      "agent": "claude-code claude-opus-5-5"
+    },
+    "at": "2026-10-30T07:55:16+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "checks-passed": {
+    "ran": [
+      {
+        "command": "python3 -c 'import hashlib,sys; h=hashlib.sha256(open('\"'\"'hostcall.py'\"'\"','\"'\"'rb'\"'\"').read()).hexdigest(); print(h); sys.exit(h!='\"'\"'fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b'\"'\"')'",
+        "exit": 0,
+        "tail": [
+          "fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b"
+        ],
+        "at": "2026-10-30T07:55:27+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3 -c 'import os,shutil,subprocess,sys,tempfile; t=tempfile.mkdtemp(prefix='\"'\"'mangsang-hostcall-'\"'\"'); shutil.copy('\"'\"'hostcall.py'\"'\"',t); shutil.copy(os.path.join('\"'\"'..'\"'\"','\"'\"'hacheong'\"'\"','\"'\"'test_hostcall_env.py'\"'\"'),t); r=subprocess.run([sys.executable,'\"'\"'-m'\"'\"','\"'\"'unittest'\"'\"','\"'\"'-v'\"'\"','\"'\"'test_hostcall_env.py'\"'\"'],cwd=t); shutil.rmtree(t); sys.exit(r.returncode)'",
+        "exit": 0,
+        "tail": [
+          "test_H6_run_claude_argv_and_kwargs (test_hostcall_env.H6Preservation.test_H6_run_claude_argv_and_kwargs) ... ok",
+          "test_H6_run_claude_minimal_argv (test_hostcall_env.H6Preservation.test_H6_run_claude_minimal_argv) ... ok",
+          "test_H6_run_codex_argv_kwargs_files_and_return (test_hostcall_env.H6Preservation.test_H6_run_codex_argv_kwargs_files_and_return) ... ok",
+          "test_H6_run_codex_parent_sandbox_overrides_and_last_absent_is_none (test_hostcall_env.H6Preservation.test_H6_run_codex_parent_sandbox_overrides_and_last_absent_is_none) ... ok",
+          "Ran 30 tests in 0.016s",
+          "OK"
+        ],
+        "at": "2026-10-30T07:55:27+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3 test_mangsang.py",
+        "exit": 0,
+        "tail": [
+          "PASS test_show_names_the_declaration_an_anchor_reads_when_that_is_what_moved",
+          "PASS test_show_prints_every_end_that_moved",
+          "PASS test_spacing_and_comment_marks_inside_strings_and_blocks_are_content",
+          "PASS test_unseen_directories_are_capped_excludable_and_reach_files_beside_deeper_ones",
+          "PASS test_what_the_net_cannot_see_is_said_and_can_be_checked",
+          "all passed"
+        ],
+        "at": "2026-10-30T07:55:33+00:00",
+        "chongdae": "chongdae 1.24.0"
+      }
+    ],
+    "at": "2026-10-30T07:55:33+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "review": {
+    "artifact-type": "dwitbuk/review@1",
+    "verdict": "accept",
+    "findings": [],
+    "worker": {
+      "host": "claude-code",
+      "model": "claude-opus-5-5",
+      "turns": 2,
+      "cost_usd": 0.0494952
+    },
+    "non-claims": [
+      "accepted without reading the tree: the eyes opened no file and ran no command — the verdict rests on the packet alone"
+    ]
+  },
+  "verdict-given": {
+    "at": "2026-10-30T07:55:40+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "reviewed_tree": {
+    "hostcall.py": "d7b8249dd926bda2f8d86bd2776fd35cbfeb07c5"
+  },
+  "non-claims": [
+    "(verifier) accepted without reading the tree: the eyes opened no file and ran no command — the verdict rests on the packet alone"
+  ],
+  "verified_by": {
+    "provider": "command",
+    "argv": [
+      "python3",
+      "{plugin:dwitbuk}/eyes_worker.py",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "host": "claude-code",
+    "model": "claude-opus-5-5",
+    "turns": 2,
+    "cost_usd": 0.0494952,
+    "versions": {
+      "used": {
+        "dwitbuk": "1.16.0",
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [],
+      "commands-run": 0,
+      "commands-failed": 0
+    }
+  },
+  "checks": [
+    [
+      "python3",
+      "-c",
+      "import hashlib,sys; h=hashlib.sha256(open('hostcall.py','rb').read()).hexdigest(); print(h); sys.exit(h!='fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b')"
+    ],
+    [
+      "python3",
+      "-c",
+      "import os,shutil,subprocess,sys,tempfile; t=tempfile.mkdtemp(prefix='mangsang-hostcall-'); shutil.copy('hostcall.py',t); shutil.copy(os.path.join('..','hacheong','test_hostcall_env.py'),t); r=subprocess.run([sys.executable,'-m','unittest','-v','test_hostcall_env.py'],cwd=t); shutil.rmtree(t); sys.exit(r.returncode)"
+    ],
+    [
+      "python3",
+      "test_mangsang.py"
+    ]
+  ],
+  "touched": [
+    "hostcall.py"
+  ],
+  "performed_by": {
+    "provider": "session",
+    "host": "claude-code",
+    "agent": "claude-code_2-1-314_agent",
+    "effort": "xhigh",
+    "model": "claude-opus-5-5",
+    "versions": {
+      "used": {
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [],
+      "commands-run": 3,
+      "command-lines": "kept in the local session transcript, not in the record",
+      "window-from": "2026-10-30T07:55:16+00:00"
+    }
+  },
+  "done": {
+    "at": "2026-10-30T07:55:40+00:00",
+    "chongdae": "chongdae 1.24.0"
+  }
+}

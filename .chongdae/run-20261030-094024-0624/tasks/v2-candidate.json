@@ -1,0 +1,330 @@
+{
+  "artifact-type": "chongdae/task@1",
+  "written_by": "chongdae 1.24.0",
+  "status": "done",
+  "def": {
+    "id": "v2-candidate",
+    "role": "session",
+    "brief": "mangsang 2.0.0 candidate — metadata and wording only, not a release (no tag, push, publish or install; the installed engines stay the published 1.x generation managing this candidate, and source 2.0.0 is not installed). (1) The five version values go 1.19.3 -> 2.0.0: plugin.json, .claude-plugin/plugin.json, .codex-plugin/plugin.json, .claude-plugin/marketplace.json metadata.version and plugins[mangsang].version; .agents/plugins/marketplace.json keeps no version field; every python floor stays >=3.11. Major because the floor drops 3.9/3.10 (README Versioning's own rule). (2) README Versioning's pending sentence ('The >=3.11 floor in this checkout ... planned 2.0 ... stay at 1.19.3 until that coordinated release') becomes a timeless statement: 2.0.0 raised the floor to >=3.11, dropping 3.9 and 3.10, which 1.19.3 and earlier declared — that is why it is major. Historical examples elsewhere are not rewritten. No algorithm, test, hostcall.py (fa06077c…), AGENTS/CLAUDE or hunsu environment change; the engine's written_by stamp reads the manifest version, so it becomes 'mangsang 2.0.0' (+g<sha> in a checkout). Checks: all version fields, floors, names and sources; command adapters vs mangsang.py --help vs README headings (move CLI-only) and skill paths; stdlib-only imports and a bare copy of the tracked files runs mangsang.py/judge_worker.py --help and stamps 'mangsang 2.0.0' under 3.11; README/AGENTS/skill links; test_mangsang.py and test_running_agent.py (separate entrypoints) on python3.11, and again with python3 on PATH resolving to 3.11; the property suite with the outer venv (reports its Python and Hypothesis version; no SKIP); git diff --check; hunsu check (no instruction text changes, so no re-judge).",
+    "closes": [],
+    "needs": [],
+    "checks": [
+      [
+        "python3.11",
+        "-c",
+        "import json,sys\nL=lambda p: json.load(open(p,encoding='utf-8'))\nm=L('.claude-plugin/marketplace.json'); a=L('.agents/plugins/marketplace.json')\nv={'plugin.json':L('plugin.json')['version'],'.claude-plugin/plugin.json':L('.claude-plugin/plugin.json')['version'],'.codex-plugin/plugin.json':L('.codex-plugin/plugin.json')['version'],'marketplace metadata':m['metadata']['version'],'marketplace plugins[mangsang]':[p['version'] for p in m['plugins'] if p['name']=='mangsang'][0]}\nf={p:L(p)['engines']['python'] for p in ('plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json')}\nnames={L(p)['name'] for p in ('plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json')}|{p['name'] for p in m['plugins']}|{p['name'] for p in a['plugins']}\nsrc=([p['source'] for p in m['plugins']]==['./'] and [p['source'] for p in a['plugins']]==[{'source':'local','path':'./'}] and 'version' not in json.dumps(a))\nr=open('README.md',encoding='utf-8').read(); sec=r.split('## Versioning',1)[1].split('\\n## ',1)[0]\nstale=[w for w in ('planned 2.0','stay at 1.19.3','in this checkout','until that coordinated') if w in r]\nsaid=all(w in sec for w in ('2.0.0','3.9','3.10','>=3.11'))\nprint(v); print(f); print(names, 'sources ok' if src else 'SOURCES WRONG'); print('stale wording:', stale or 'none', '| floor statement:', said)\nsys.exit(not (set(v.values())=={'2.0.0'} and set(f.values())=={'>=3.11'} and names=={'mangsang'} and src and not stale and said))\n"
+      ],
+      [
+        "python3.11",
+        "-c",
+        "import glob,json,os,re,subprocess,sys\nh=subprocess.run([sys.executable,'mangsang.py','--help'],capture_output=True,text=True).stdout\nsubs=set(re.search(r'\\{([a-z,]+)\\}',h).group(1).split(','))\nbad=[]\nadapters={}\nfor p in sorted(glob.glob('commands/*.md')):\n    t=open(p,encoding='utf-8').read(); m=re.search(r'^!`python3 \"\\$\\{CLAUDE_PLUGIN_ROOT\\}/mangsang.py\" ([a-z]+) \\$ARGUMENTS --target \\.`$',t,re.M)\n    if not m: bad.append((p,'no engine line')); continue\n    adapters[os.path.basename(p)[:-3]]=m.group(1)\n    if m.group(1)!=os.path.basename(p)[:-3] or m.group(1) not in subs: bad.append((p,m.group(1)))\nr=open('README.md',encoding='utf-8').read()\nheads=set(re.findall(r'^### `/mangsang:([a-z]+)`',r,re.M))\nif heads!=set(adapters): bad.append(('README adapter headings vs commands/', sorted(heads^set(adapters))))\ncli_only=subs-set(adapters)\nif cli_only!={'move'} or '### `move` (Python CLI)' not in r: bad.append(('CLI-only commands', sorted(cli_only)))\nfor p in ('plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json'):\n    s=json.load(open(p)).get('skills')\n    if s is not None and not os.path.isfile(os.path.join(s,'operate','SKILL.md')): bad.append((p,'skills',s))\nprint('subcommands',sorted(subs)); print('adapters',len(adapters),'cli-only',sorted(cli_only)); print(bad or 'command docs, adapters and skill paths agree'); sys.exit(bool(bad))\n"
+      ],
+      [
+        "python3.11",
+        "-c",
+        "import ast,os,shutil,subprocess,sys,tempfile\nlocal={'anchors','hostcall','mangsang','judge_worker'}\nbad=[]\nfor f in ('mangsang.py','anchors.py','judge_worker.py','hostcall.py'):\n    for n in ast.walk(ast.parse(open(f,encoding='utf-8').read())):\n        mods=[a.name for a in n.names] if isinstance(n,ast.Import) else [n.module] if isinstance(n,ast.ImportFrom) and n.level==0 else []\n        for m in mods:\n            top=m.split('.')[0]\n            if top not in sys.stdlib_module_names and top not in local: bad.append((f,m))\nfiles=subprocess.run(['git','ls-files'],capture_output=True,text=True).stdout.split()\nd=tempfile.mkdtemp(prefix='mangsang-standalone-')\nfor f in files:\n    os.makedirs(os.path.join(d,os.path.dirname(f)),exist_ok=True); shutil.copy2(f,os.path.join(d,f))\nfor argv in (['mangsang.py','--help'],['judge_worker.py','--help']):\n    r=subprocess.run([sys.executable,'-E','-s',*argv],cwd=d,capture_output=True,text=True)\n    if r.returncode: bad.append((argv,r.stderr[-300:]))\nr=subprocess.run([sys.executable,'-E','-s','-c','import mangsang,sys; print(mangsang.engine())'],cwd=d,capture_output=True,text=True)\nprint(sys.version.split()[0], 'copied', len(files), 'tracked files; engine in copy:', r.stdout.strip() or r.stderr[-200:])\nshutil.rmtree(d)\nif r.returncode or not r.stdout.startswith('mangsang 2.0.0'): bad.append(('engine stamp', r.stdout.strip()))\nprint(bad or 'stdlib-only imports; runs from a bare copy of the tracked files'); sys.exit(bool(bad))\n"
+      ],
+      [
+        "python3",
+        "-c",
+        "import os,re,sys\ndef slug(h): return re.sub(r'[^\\w\\- ]','',h.strip().lower().replace('`','')).replace(' ','-')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'^#+ +(.*)$',open(p,encoding='utf-8').read(),re.M)}\nbad=[]\nfor doc in ('README.md','AGENTS.md','skills/operate/SKILL.md'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\\]\\(([^)\\s]+)\\)',open(doc,encoding='utf-8').read()):\n        if re.match(r'https?:',t): continue\n        path,_,anchor=t.partition('#'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'missing file')); continue\n        if anchor and target.endswith('.md') and anchor not in heads(target): bad.append((doc,t,'missing anchor'))\nprint(bad or 'links and anchors resolve'); sys.exit(bool(bad))\n"
+      ],
+      [
+        "python3.11",
+        "test_mangsang.py"
+      ],
+      [
+        "python3.11",
+        "test_running_agent.py"
+      ],
+      [
+        "python3.11",
+        "-c",
+        "import os,subprocess,sys,tempfile\nd=tempfile.mkdtemp(prefix='py311-path-'); os.symlink(sys.executable,os.path.join(d,'python3'))\nenv=dict(os.environ,PATH=d+os.pathsep+os.environ.get('PATH',''))\nv=subprocess.run(['python3','-c','import sys;print(sys.version.split()[0])'],env=env,capture_output=True,text=True).stdout.strip()\nprint('python3 on PATH:',v)\nrc={t:subprocess.run(['python3',t],env=env,capture_output=True,text=True) for t in ('test_mangsang.py','test_running_agent.py')}\nfor t,r in rc.items(): print(t,'exit',r.returncode,'|',(r.stdout+r.stderr).strip().splitlines()[-1])\nsys.exit(not v.startswith('3.11') or any(r.returncode for r in rc.values()))\n"
+      ],
+      [
+        "python3",
+        "-c",
+        "import subprocess,sys\nv=subprocess.run(['../.venv/bin/python','-c','import sys,hypothesis;print(sys.version.split()[0],hypothesis.__version__)'],capture_output=True,text=True).stdout.strip()\nr=subprocess.run(['../.venv/bin/python','test_properties.py'],capture_output=True,text=True); out=r.stdout+r.stderr\nprint('venv python, hypothesis:',v); print('PASS',out.count('\\nPASS ')+out.startswith('PASS '),'SKIP',out.count('SKIP '),'|',out.strip().splitlines()[-1])\nsys.exit(r.returncode or int('SKIP' in out))\n"
+      ],
+      [
+        "git",
+        "diff",
+        "--check"
+      ],
+      [
+        "python3",
+        "{plugin:hunsu}/hunsu.py",
+        "check",
+        "--target",
+        "."
+      ]
+    ],
+    "tests": [],
+    "gate": null,
+    "scope": [
+      ".claude-plugin/marketplace.json",
+      ".claude-plugin/plugin.json",
+      ".codex-plugin/plugin.json",
+      "README.md",
+      "plugin.json"
+    ]
+  },
+  "seq": 1,
+  "added": "2026-10-30T09:41:39+00:00",
+  "self-performed": {
+    "instead-of": "implementer",
+    "why": "metadata and one README paragraph only (five version strings, the floor statement); the owner's brief allows a session role for metadata/doc work with a recorded reason, and nothing here is a build",
+    "by": {
+      "agent": "claude-code claude-opus-5-5"
+    },
+    "at": "2026-10-30T09:41:39+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "checks-passed": {
+    "ran": [
+      {
+        "command": "python3.11 -c 'import json,sys\nL=lambda p: json.load(open(p,encoding='\"'\"'utf-8'\"'\"'))\nm=L('\"'\"'.claude-plugin/marketplace.json'\"'\"'); a=L('\"'\"'.agents/plugins/marketplace.json'\"'\"')\nv={'\"'\"'plugin.json'\"'\"':L('\"'\"'plugin.json'\"'\"')['\"'\"'version'\"'\"'],'\"'\"'.claude-plugin/plugin.json'\"'\"':L('\"'\"'.claude-plugin/plugin.json'\"'\"')['\"'\"'version'\"'\"'],'\"'\"'.codex-plugin/plugin.json'\"'\"':L('\"'\"'.codex-plugin/plugin.json'\"'\"')['\"'\"'version'\"'\"'],'\"'\"'marketplace metadata'\"'\"':m['\"'\"'metadata'\"'\"']['\"'\"'version'\"'\"'],'\"'\"'marketplace plugins[mangsang]'\"'\"':[p['\"'\"'version'\"'\"'] for p in m['\"'\"'plugins'\"'\"'] if p['\"'\"'name'\"'\"']=='\"'\"'mangsang'\"'\"'][0]}\nf={p:L(p)['\"'\"'engines'\"'\"']['\"'\"'python'\"'\"'] for p in ('\"'\"'plugin.json'\"'\"','\"'\"'.claude-plugin/plugin.json'\"'\"','\"'\"'.codex-plugin/plugin.json'\"'\"')}\nnames={L(p)['\"'\"'name'\"'\"'] for p in ('\"'\"'plugin.json'\"'\"','\"'\"'.claude-plugin/plugin.json'\"'\"','\"'\"'.codex-plugin/plugin.json'\"'\"')}|{p['\"'\"'name'\"'\"'] for p in m['\"'\"'plugins'\"'\"']}|{p['\"'\"'name'\"'\"'] for p in a['\"'\"'plugins'\"'\"']}\nsrc=([p['\"'\"'source'\"'\"'] for p in m['\"'\"'plugins'\"'\"']]==['\"'\"'./'\"'\"'] and [p['\"'\"'source'\"'\"'] for p in a['\"'\"'plugins'\"'\"']]==[{'\"'\"'source'\"'\"':'\"'\"'local'\"'\"','\"'\"'path'\"'\"':'\"'\"'./'\"'\"'}] and '\"'\"'version'\"'\"' not in json.dumps(a))\nr=open('\"'\"'README.md'\"'\"',encoding='\"'\"'utf-8'\"'\"').read(); sec=r.split('\"'\"'## Versioning'\"'\"',1)[1].split('\"'\"'\\n## '\"'\"',1)[0]\nstale=[w for w in ('\"'\"'planned 2.0'\"'\"','\"'\"'stay at 1.19.3'\"'\"','\"'\"'in this checkout'\"'\"','\"'\"'until that coordinated'\"'\"') if w in r]\nsaid=all(w in sec for w in ('\"'\"'2.0.0'\"'\"','\"'\"'3.9'\"'\"','\"'\"'3.10'\"'\"','\"'\"'>=3.11'\"'\"'))\nprint(v); print(f); print(names, '\"'\"'sources ok'\"'\"' if src else '\"'\"'SOURCES WRONG'\"'\"'); print('\"'\"'stale wording:'\"'\"', stale or '\"'\"'none'\"'\"', '\"'\"'| floor statement:'\"'\"', said)\nsys.exit(not (set(v.values())=={'\"'\"'2.0.0'\"'\"'} and set(f.values())=={'\"'\"'>=3.11'\"'\"'} and names=={'\"'\"'mangsang'\"'\"'} and src and not stale and said))\n'",
+        "exit": 0,
+        "tail": [
+          "{'plugin.json': '2.0.0', '.claude-plugin/plugin.json': '2.0.0', '.codex-plugin/plugin.json': '2.0.0', 'marketplace metadata': '2.0.0', 'marketplace plugins[mangsang]': '2.0.0'}",
+          "{'plugin.json': '>=3.11', '.claude-plugin/plugin.json': '>=3.11', '.codex-plugin/plugin.json': '>=3.11'}",
+          "{'mangsang'} sources ok",
+          "stale wording: none | floor statement: True"
+        ],
+        "at": "2026-10-30T09:42:22+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3.11 -c 'import glob,json,os,re,subprocess,sys\nh=subprocess.run([sys.executable,'\"'\"'mangsang.py'\"'\"','\"'\"'--help'\"'\"'],capture_output=True,text=True).stdout\nsubs=set(re.search(r'\"'\"'\\{([a-z,]+)\\}'\"'\"',h).group(1).split('\"'\"','\"'\"'))\nbad=[]\nadapters={}\nfor p in sorted(glob.glob('\"'\"'commands/*.md'\"'\"')):\n    t=open(p,encoding='\"'\"'utf-8'\"'\"').read(); m=re.search(r'\"'\"'^!`python3 \"\\$\\{CLAUDE_PLUGIN_ROOT\\}/mangsang.py\" ([a-z]+) \\$ARGUMENTS --target \\.`$'\"'\"',t,re.M)\n    if not m: bad.append((p,'\"'\"'no engine line'\"'\"')); continue\n    adapters[os.path.basename(p)[:-3]]=m.group(1)\n    if m.group(1)!=os.path.basename(p)[:-3] or m.group(1) not in subs: bad.append((p,m.group(1)))\nr=open('\"'\"'README.md'\"'\"',encoding='\"'\"'utf-8'\"'\"').read()\nheads=set(re.findall(r'\"'\"'^### `/mangsang:([a-z]+)`'\"'\"',r,re.M))\nif heads!=set(adapters): bad.append(('\"'\"'README adapter headings vs commands/'\"'\"', sorted(heads^set(adapters))))\ncli_only=subs-set(adapters)\nif cli_only!={'\"'\"'move'\"'\"'} or '\"'\"'### `move` (Python CLI)'\"'\"' not in r: bad.append(('\"'\"'CLI-only commands'\"'\"', sorted(cli_only)))\nfor p in ('\"'\"'plugin.json'\"'\"','\"'\"'.claude-plugin/plugin.json'\"'\"','\"'\"'.codex-plugin/plugin.json'\"'\"'):\n    s=json.load(open(p)).get('\"'\"'skills'\"'\"')\n    if s is not None and not os.path.isfile(os.path.join(s,'\"'\"'operate'\"'\"','\"'\"'SKILL.md'\"'\"')): bad.append((p,'\"'\"'skills'\"'\"',s))\nprint('\"'\"'subcommands'\"'\"',sorted(subs)); print('\"'\"'adapters'\"'\"',len(adapters),'\"'\"'cli-only'\"'\"',sorted(cli_only)); print(bad or '\"'\"'command docs, adapters and skill paths agree'\"'\"'); sys.exit(bool(bad))\n'",
+        "exit": 0,
+        "tail": [
+          "subcommands ['check', 'concept', 'confirm', 'cq', 'impact', 'judge', 'lookup', 'move', 'observe', 'reconfirm', 'register', 'report', 'retire', 'source']",
+          "adapters 13 cli-only ['move']",
+          "command docs, adapters and skill paths agree"
+        ],
+        "at": "2026-10-30T09:42:22+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3.11 -c 'import ast,os,shutil,subprocess,sys,tempfile\nlocal={'\"'\"'anchors'\"'\"','\"'\"'hostcall'\"'\"','\"'\"'mangsang'\"'\"','\"'\"'judge_worker'\"'\"'}\nbad=[]\nfor f in ('\"'\"'mangsang.py'\"'\"','\"'\"'anchors.py'\"'\"','\"'\"'judge_worker.py'\"'\"','\"'\"'hostcall.py'\"'\"'):\n    for n in ast.walk(ast.parse(open(f,encoding='\"'\"'utf-8'\"'\"').read())):\n        mods=[a.name for a in n.names] if isinstance(n,ast.Import) else [n.module] if isinstance(n,ast.ImportFrom) and n.level==0 else []\n        for m in mods:\n            top=m.split('\"'\"'.'\"'\"')[0]\n            if top not in sys.stdlib_module_names and top not in local: bad.append((f,m))\nfiles=subprocess.run(['\"'\"'git'\"'\"','\"'\"'ls-files'\"'\"'],capture_output=True,text=True).stdout.split()\nd=tempfile.mkdtemp(prefix='\"'\"'mangsang-standalone-'\"'\"')\nfor f in files:\n    os.makedirs(os.path.join(d,os.path.dirname(f)),exist_ok=True); shutil.copy2(f,os.path.join(d,f))\nfor argv in (['\"'\"'mangsang.py'\"'\"','\"'\"'--help'\"'\"'],['\"'\"'judge_worker.py'\"'\"','\"'\"'--help'\"'\"']):\n    r=subprocess.run([sys.executable,'\"'\"'-E'\"'\"','\"'\"'-s'\"'\"',*argv],cwd=d,capture_output=True,text=True)\n    if r.returncode: bad.append((argv,r.stderr[-300:]))\nr=subprocess.run([sys.executable,'\"'\"'-E'\"'\"','\"'\"'-s'\"'\"','\"'\"'-c'\"'\"','\"'\"'import mangsang,sys; print(mangsang.engine())'\"'\"'],cwd=d,capture_output=True,text=True)\nprint(sys.version.split()[0], '\"'\"'copied'\"'\"', len(files), '\"'\"'tracked files; engine in copy:'\"'\"', r.stdout.strip() or r.stderr[-200:])\nshutil.rmtree(d)\nif r.returncode or not r.stdout.startswith('\"'\"'mangsang 2.0.0'\"'\"'): bad.append(('\"'\"'engine stamp'\"'\"', r.stdout.strip()))\nprint(bad or '\"'\"'stdlib-only imports; runs from a bare copy of the tracked files'\"'\"'); sys.exit(bool(bad))\n'",
+        "exit": 0,
+        "tail": [
+          "3.11.16 copied 38 tracked files; engine in copy: mangsang 2.0.0",
+          "stdlib-only imports; runs from a bare copy of the tracked files"
+        ],
+        "at": "2026-10-30T09:42:22+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3 -c 'import os,re,sys\ndef slug(h): return re.sub(r'\"'\"'[^\\w\\- ]'\"'\"','\"'\"''\"'\"',h.strip().lower().replace('\"'\"'`'\"'\"','\"'\"''\"'\"')).replace('\"'\"' '\"'\"','\"'\"'-'\"'\"')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'\"'\"'^#+ +(.*)$'\"'\"',open(p,encoding='\"'\"'utf-8'\"'\"').read(),re.M)}\nbad=[]\nfor doc in ('\"'\"'README.md'\"'\"','\"'\"'AGENTS.md'\"'\"','\"'\"'skills/operate/SKILL.md'\"'\"'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\"'\"'\\]\\(([^)\\s]+)\\)'\"'\"',open(doc,encoding='\"'\"'utf-8'\"'\"').read()):\n        if re.match(r'\"'\"'https?:'\"'\"',t): continue\n        path,_,anchor=t.partition('\"'\"'#'\"'\"'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'\"'\"'missing file'\"'\"')); continue\n        if anchor and target.endswith('\"'\"'.md'\"'\"') and anchor not in heads(target): bad.append((doc,t,'\"'\"'missing anchor'\"'\"'))\nprint(bad or '\"'\"'links and anchors resolve'\"'\"'); sys.exit(bool(bad))\n'",
+        "exit": 0,
+        "tail": [
+          "links and anchors resolve"
+        ],
+        "at": "2026-10-30T09:42:22+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3.11 test_mangsang.py",
+        "exit": 0,
+        "tail": [
+          "PASS test_show_names_the_declaration_an_anchor_reads_when_that_is_what_moved",
+          "PASS test_show_prints_every_end_that_moved",
+          "PASS test_spacing_and_comment_marks_inside_strings_and_blocks_are_content",
+          "PASS test_unseen_directories_are_capped_excludable_and_reach_files_beside_deeper_ones",
+          "PASS test_what_the_net_cannot_see_is_said_and_can_be_checked",
+          "all passed"
+        ],
+        "at": "2026-10-30T09:42:28+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3.11 test_running_agent.py",
+        "exit": 0,
+        "tail": [
+          "Ran 33 tests in 0.125s",
+          "OK"
+        ],
+        "at": "2026-10-30T09:42:28+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3.11 -c 'import os,subprocess,sys,tempfile\nd=tempfile.mkdtemp(prefix='\"'\"'py311-path-'\"'\"'); os.symlink(sys.executable,os.path.join(d,'\"'\"'python3'\"'\"'))\nenv=dict(os.environ,PATH=d+os.pathsep+os.environ.get('\"'\"'PATH'\"'\"','\"'\"''\"'\"'))\nv=subprocess.run(['\"'\"'python3'\"'\"','\"'\"'-c'\"'\"','\"'\"'import sys;print(sys.version.split()[0])'\"'\"'],env=env,capture_output=True,text=True).stdout.strip()\nprint('\"'\"'python3 on PATH:'\"'\"',v)\nrc={t:subprocess.run(['\"'\"'python3'\"'\"',t],env=env,capture_output=True,text=True) for t in ('\"'\"'test_mangsang.py'\"'\"','\"'\"'test_running_agent.py'\"'\"')}\nfor t,r in rc.items(): print(t,'\"'\"'exit'\"'\"',r.returncode,'\"'\"'|'\"'\"',(r.stdout+r.stderr).strip().splitlines()[-1])\nsys.exit(not v.startswith('\"'\"'3.11'\"'\"') or any(r.returncode for r in rc.values()))\n'",
+        "exit": 0,
+        "tail": [
+          "python3 on PATH: 3.11.16",
+          "test_mangsang.py exit 0 | all passed",
+          "test_running_agent.py exit 0 | OK"
+        ],
+        "at": "2026-10-30T09:42:34+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3 -c 'import subprocess,sys\nv=subprocess.run(['\"'\"'../.venv/bin/python'\"'\"','\"'\"'-c'\"'\"','\"'\"'import sys,hypothesis;print(sys.version.split()[0],hypothesis.__version__)'\"'\"'],capture_output=True,text=True).stdout.strip()\nr=subprocess.run(['\"'\"'../.venv/bin/python'\"'\"','\"'\"'test_properties.py'\"'\"'],capture_output=True,text=True); out=r.stdout+r.stderr\nprint('\"'\"'venv python, hypothesis:'\"'\"',v); print('\"'\"'PASS'\"'\"',out.count('\"'\"'\\nPASS '\"'\"')+out.startswith('\"'\"'PASS '\"'\"'),'\"'\"'SKIP'\"'\"',out.count('\"'\"'SKIP '\"'\"'),'\"'\"'|'\"'\"',out.strip().splitlines()[-1])\nsys.exit(r.returncode or int('\"'\"'SKIP'\"'\"' in out))\n'",
+        "exit": 0,
+        "tail": [
+          "venv python, hypothesis: 3.12.14 6.168.1",
+          "PASS 6 SKIP 0 | all passed"
+        ],
+        "at": "2026-10-30T09:42:39+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "git diff --check",
+        "exit": 0,
+        "tail": [
+          ""
+        ],
+        "at": "2026-10-30T09:42:39+00:00",
+        "chongdae": "chongdae 1.24.0"
+      },
+      {
+        "command": "python3 '{plugin:hunsu}/hunsu.py' check --target .",
+        "exit": 0,
+        "tail": [
+          "info  4 finding(s) settled by the members' own text (sequenced / not co-active / duplicate, each on a verified sentence) — no resolution needed; see hunsu-conflicts.md",
+          "  (offline: a release is known here only from this machine's marketplace copies — `hunsu outdated` asks the marketplaces, read-only)",
+          "errors 0 · warnings 0 · info 1"
+        ],
+        "at": "2026-10-30T09:42:40+00:00",
+        "chongdae": "chongdae 1.24.0"
+      }
+    ],
+    "at": "2026-10-30T09:42:40+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "review": {
+    "artifact-type": "dwitbuk/review@1",
+    "verdict": "accept",
+    "findings": [],
+    "worker": {
+      "host": "claude-code",
+      "model": "claude-opus-5-5",
+      "turns": 4,
+      "cost_usd": 0.1574202
+    }
+  },
+  "verdict-given": {
+    "at": "2026-10-30T09:42:57+00:00",
+    "chongdae": "chongdae 1.24.0"
+  },
+  "reviewed_tree": {
+    ".claude-plugin/marketplace.json": "76eed5a4df13e2205da7717e3cc6027293e8f6bf",
+    ".claude-plugin/plugin.json": "118fc15d87e602629f94ac2a1473dcb76da08955",
+    ".codex-plugin/plugin.json": "c68617fb0d1e14bd86fe15c5acdc525fbe7547ec",
+    "README.md": "3f57a4e5051f14e1c5df44b55fb0a59d91ee0bff",
+    "plugin.json": "e5600d0a26daa7aaeac6f2c5dfa5d053965c293a"
+  },
+  "verified_by": {
+    "provider": "command",
+    "argv": [
+      "python3",
+      "{plugin:dwitbuk}/eyes_worker.py",
+      "--request",
+      "{request}",
+      "--response",
+      "{response}",
+      "--host",
+      "claude"
+    ],
+    "host": "claude-code",
+    "model": "claude-opus-5-5",
+    "turns": 4,
+    "cost_usd": 0.1574202,
+    "versions": {
+      "used": {
+        "dwitbuk": "1.16.0",
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [],
+      "commands-run": 0,
+      "commands-failed": 0
+    }
+  },
+  "checks": [
+    [
+      "python3.11",
+      "-c",
+      "import json,sys\nL=lambda p: json.load(open(p,encoding='utf-8'))\nm=L('.claude-plugin/marketplace.json'); a=L('.agents/plugins/marketplace.json')\nv={'plugin.json':L('plugin.json')['version'],'.claude-plugin/plugin.json':L('.claude-plugin/plugin.json')['version'],'.codex-plugin/plugin.json':L('.codex-plugin/plugin.json')['version'],'marketplace metadata':m['metadata']['version'],'marketplace plugins[mangsang]':[p['version'] for p in m['plugins'] if p['name']=='mangsang'][0]}\nf={p:L(p)['engines']['python'] for p in ('plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json')}\nnames={L(p)['name'] for p in ('plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json')}|{p['name'] for p in m['plugins']}|{p['name'] for p in a['plugins']}\nsrc=([p['source'] for p in m['plugins']]==['./'] and [p['source'] for p in a['plugins']]==[{'source':'local','path':'./'}] and 'version' not in json.dumps(a))\nr=open('README.md',encoding='utf-8').read(); sec=r.split('## Versioning',1)[1].split('\\n## ',1)[0]\nstale=[w for w in ('planned 2.0','stay at 1.19.3','in this checkout','until that coordinated') if w in r]\nsaid=all(w in sec for w in ('2.0.0','3.9','3.10','>=3.11'))\nprint(v); print(f); print(names, 'sources ok' if src else 'SOURCES WRONG'); print('stale wording:', stale or 'none', '| floor statement:', said)\nsys.exit(not (set(v.values())=={'2.0.0'} and set(f.values())=={'>=3.11'} and names=={'mangsang'} and src and not stale and said))\n"
+    ],
+    [
+      "python3.11",
+      "-c",
+      "import glob,json,os,re,subprocess,sys\nh=subprocess.run([sys.executable,'mangsang.py','--help'],capture_output=True,text=True).stdout\nsubs=set(re.search(r'\\{([a-z,]+)\\}',h).group(1).split(','))\nbad=[]\nadapters={}\nfor p in sorted(glob.glob('commands/*.md')):\n    t=open(p,encoding='utf-8').read(); m=re.search(r'^!`python3 \"\\$\\{CLAUDE_PLUGIN_ROOT\\}/mangsang.py\" ([a-z]+) \\$ARGUMENTS --target \\.`$',t,re.M)\n    if not m: bad.append((p,'no engine line')); continue\n    adapters[os.path.basename(p)[:-3]]=m.group(1)\n    if m.group(1)!=os.path.basename(p)[:-3] or m.group(1) not in subs: bad.append((p,m.group(1)))\nr=open('README.md',encoding='utf-8').read()\nheads=set(re.findall(r'^### `/mangsang:([a-z]+)`',r,re.M))\nif heads!=set(adapters): bad.append(('README adapter headings vs commands/', sorted(heads^set(adapters))))\ncli_only=subs-set(adapters)\nif cli_only!={'move'} or '### `move` (Python CLI)' not in r: bad.append(('CLI-only commands', sorted(cli_only)))\nfor p in ('plugin.json','.claude-plugin/plugin.json','.codex-plugin/plugin.json'):\n    s=json.load(open(p)).get('skills')\n    if s is not None and not os.path.isfile(os.path.join(s,'operate','SKILL.md')): bad.append((p,'skills',s))\nprint('subcommands',sorted(subs)); print('adapters',len(adapters),'cli-only',sorted(cli_only)); print(bad or 'command docs, adapters and skill paths agree'); sys.exit(bool(bad))\n"
+    ],
+    [
+      "python3.11",
+      "-c",
+      "import ast,os,shutil,subprocess,sys,tempfile\nlocal={'anchors','hostcall','mangsang','judge_worker'}\nbad=[]\nfor f in ('mangsang.py','anchors.py','judge_worker.py','hostcall.py'):\n    for n in ast.walk(ast.parse(open(f,encoding='utf-8').read())):\n        mods=[a.name for a in n.names] if isinstance(n,ast.Import) else [n.module] if isinstance(n,ast.ImportFrom) and n.level==0 else []\n        for m in mods:\n            top=m.split('.')[0]\n            if top not in sys.stdlib_module_names and top not in local: bad.append((f,m))\nfiles=subprocess.run(['git','ls-files'],capture_output=True,text=True).stdout.split()\nd=tempfile.mkdtemp(prefix='mangsang-standalone-')\nfor f in files:\n    os.makedirs(os.path.join(d,os.path.dirname(f)),exist_ok=True); shutil.copy2(f,os.path.join(d,f))\nfor argv in (['mangsang.py','--help'],['judge_worker.py','--help']):\n    r=subprocess.run([sys.executable,'-E','-s',*argv],cwd=d,capture_output=True,text=True)\n    if r.returncode: bad.append((argv,r.stderr[-300:]))\nr=subprocess.run([sys.executable,'-E','-s','-c','import mangsang,sys; print(mangsang.engine())'],cwd=d,capture_output=True,text=True)\nprint(sys.version.split()[0], 'copied', len(files), 'tracked files; engine in copy:', r.stdout.strip() or r.stderr[-200:])\nshutil.rmtree(d)\nif r.returncode or not r.stdout.startswith('mangsang 2.0.0'): bad.append(('engine stamp', r.stdout.strip()))\nprint(bad or 'stdlib-only imports; runs from a bare copy of the tracked files'); sys.exit(bool(bad))\n"
+    ],
+    [
+      "python3",
+      "-c",
+      "import os,re,sys\ndef slug(h): return re.sub(r'[^\\w\\- ]','',h.strip().lower().replace('`','')).replace(' ','-')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'^#+ +(.*)$',open(p,encoding='utf-8').read(),re.M)}\nbad=[]\nfor doc in ('README.md','AGENTS.md','skills/operate/SKILL.md'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\\]\\(([^)\\s]+)\\)',open(doc,encoding='utf-8').read()):\n        if re.match(r'https?:',t): continue\n        path,_,anchor=t.partition('#'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'missing file')); continue\n        if anchor and target.endswith('.md') and anchor not in heads(target): bad.append((doc,t,'missing anchor'))\nprint(bad or 'links and anchors resolve'); sys.exit(bool(bad))\n"
+    ],
+    [
+      "python3.11",
+      "test_mangsang.py"
+    ],
+    [
+      "python3.11",
+      "test_running_agent.py"
+    ],
+    [
+      "python3.11",
+      "-c",
+      "import os,subprocess,sys,tempfile\nd=tempfile.mkdtemp(prefix='py311-path-'); os.symlink(sys.executable,os.path.join(d,'python3'))\nenv=dict(os.environ,PATH=d+os.pathsep+os.environ.get('PATH',''))\nv=subprocess.run(['python3','-c','import sys;print(sys.version.split()[0])'],env=env,capture_output=True,text=True).stdout.strip()\nprint('python3 on PATH:',v)\nrc={t:subprocess.run(['python3',t],env=env,capture_output=True,text=True) for t in ('test_mangsang.py','test_running_agent.py')}\nfor t,r in rc.items(): print(t,'exit',r.returncode,'|',(r.stdout+r.stderr).strip().splitlines()[-1])\nsys.exit(not v.startswith('3.11') or any(r.returncode for r in rc.values()))\n"
+    ],
+    [
+      "python3",
+      "-c",
+      "import subprocess,sys\nv=subprocess.run(['../.venv/bin/python','-c','import sys,hypothesis;print(sys.version.split()[0],hypothesis.__version__)'],capture_output=True,text=True).stdout.strip()\nr=subprocess.run(['../.venv/bin/python','test_properties.py'],capture_output=True,text=True); out=r.stdout+r.stderr\nprint('venv python, hypothesis:',v); print('PASS',out.count('\\nPASS ')+out.startswith('PASS '),'SKIP',out.count('SKIP '),'|',out.strip().splitlines()[-1])\nsys.exit(r.returncode or int('SKIP' in out))\n"
+    ],
+    [
+      "git",
+      "diff",
+      "--check"
+    ],
+    [
+      "python3",
+      "{plugin:hunsu}/hunsu.py",
+      "check",
+      "--target",
+      "."
+    ]
+  ],
+  "touched": [
+    ".claude-plugin/marketplace.json",
+    ".claude-plugin/plugin.json",
+    ".codex-plugin/plugin.json",
+    "README.md",
+    "plugin.json"
+  ],
+  "performed_by": {
+    "provider": "session",
+    "host": "claude-code",
+    "agent": "claude-code_2-1-314_agent",
+    "effort": "xhigh",
+    "model": "claude-opus-5-5",
+    "versions": {
+      "used": {
+        "chongdae": "1.24.0"
+      }
+    },
+    "trace": {
+      "changed": [
+        "edit ./README.md"
+      ],
+      "commands-run": 4,
+      "command-lines": "kept in the local session transcript, not in the record",
+      "window-from": "2026-10-30T09:41:39+00:00"
+    }
+  },
+  "done": {
+    "at": "2026-10-30T09:42:57+00:00",
+    "chongdae": "chongdae 1.24.0"
+  }
+}

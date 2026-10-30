@@ -1,0 +1,153 @@
+{
+  "artifact-type": "chongdae/request@1",
+  "written_by": "chongdae 1.24.0",
+  "stage": "verify",
+  "run": "run-20261030-075011-93ed",
+  "task": "final-checks",
+  "role": "verifier",
+  "target": ".",
+  "goal": "Owner-authorized prospective self-management of mangsang source with the released installed plugins: adopt the bootstrap environment with honest provenance; sync the reviewed vendored hostcall.py (hacheong 7aa70c6, sha256 fa06077c…); make running_agent() honor an explicit AGENT_HOST over opposite-host inherited markers (tests by the lock's nitpick, build by its implementer, read by its verifier); review and adopt the earlier authorized AGENTS/CLAUDE/README/skill/impact-adapter/>=3.11 manifest edits as prior work, not this run's authorship. No version bump, push, cache mutation or cross-project writes.",
+  "brief": "The full standard checks on the final tree (HEAD after identity-docstring): test_mangsang.py and test_running_agent.py on python3 (3.12) and python3.11 (the floor); the Hypothesis property suite with the outer venv interpreter (Hypothesis 6.168.1), failing on any SKIP; the vendored hostcall.py still equals hacheong 7aa70c6 (fa06077c…); git diff --check across the run. Nothing changes in the tree.",
+  "closes": [],
+  "contract": {},
+  "checks": [
+    [
+      "python3",
+      "test_mangsang.py"
+    ],
+    [
+      "python3.11",
+      "test_mangsang.py"
+    ],
+    [
+      "python3",
+      "test_running_agent.py"
+    ],
+    [
+      "python3.11",
+      "test_running_agent.py"
+    ],
+    [
+      "python3",
+      "-c",
+      "import subprocess,sys; r=subprocess.run(['../.venv/bin/python','test_properties.py'],capture_output=True,text=True); out=r.stdout+r.stderr; print(out[-3000:]); sys.exit(r.returncode or int('SKIP' in out))"
+    ],
+    [
+      "python3",
+      "-c",
+      "import hashlib,sys; h=hashlib.sha256(open('hostcall.py','rb').read()).hexdigest(); print(h); sys.exit(h!='fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b')"
+    ],
+    [
+      "git",
+      "diff",
+      "--check",
+      "bd8e2fa"
+    ]
+  ],
+  "tests": [],
+  "response": "./.chongdae/run-20261030-075011-93ed/local/final-checks.verify.response.json",
+  "touched": [],
+  "built": null,
+  "excluded": {
+    "record-paths": []
+  },
+  "since": {
+    ".": "739c6016afff1c0d07b776e099e15eb52189b931"
+  },
+  "checked": [
+    {
+      "command": "python3 test_mangsang.py",
+      "exit": 0,
+      "tail": [
+        "PASS test_show_names_the_declaration_an_anchor_reads_when_that_is_what_moved",
+        "PASS test_show_prints_every_end_that_moved",
+        "PASS test_spacing_and_comment_marks_inside_strings_and_blocks_are_content",
+        "PASS test_unseen_directories_are_capped_excludable_and_reach_files_beside_deeper_ones",
+        "PASS test_what_the_net_cannot_see_is_said_and_can_be_checked",
+        "all passed"
+      ],
+      "at": "2026-10-30T08:06:57+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3.11 test_mangsang.py",
+      "exit": 0,
+      "tail": [
+        "PASS test_show_names_the_declaration_an_anchor_reads_when_that_is_what_moved",
+        "PASS test_show_prints_every_end_that_moved",
+        "PASS test_spacing_and_comment_marks_inside_strings_and_blocks_are_content",
+        "PASS test_unseen_directories_are_capped_excludable_and_reach_files_beside_deeper_ones",
+        "PASS test_what_the_net_cannot_see_is_said_and_can_be_checked",
+        "all passed"
+      ],
+      "at": "2026-10-30T08:07:04+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 test_running_agent.py",
+      "exit": 0,
+      "tail": [
+        "Ran 33 tests in 0.134s",
+        "OK"
+      ],
+      "at": "2026-10-30T08:07:04+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3.11 test_running_agent.py",
+      "exit": 0,
+      "tail": [
+        "Ran 33 tests in 0.136s",
+        "OK"
+      ],
+      "at": "2026-10-30T08:07:04+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 -c 'import subprocess,sys; r=subprocess.run(['\"'\"'../.venv/bin/python'\"'\"','\"'\"'test_properties.py'\"'\"'],capture_output=True,text=True); out=r.stdout+r.stderr; print(out[-3000:]); sys.exit(r.returncode or int('\"'\"'SKIP'\"'\"' in out))'",
+      "exit": 0,
+      "tail": [
+        "PASS test_any_sequence_of_reconfirm_revise_and_rename_keeps_history_and_answerability",
+        "PASS test_coverage_and_projection_are_deterministic_and_monotone_in_relations",
+        "PASS test_reach_is_the_reverse_of_where_a_change_travels",
+        "PASS test_show_finds_the_earlier_text_at_any_depth_inside_a_repository",
+        "PASS test_stale_names_the_end_that_changed_and_only_when_it_propagates",
+        "all passed"
+      ],
+      "at": "2026-10-30T08:07:10+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 -c 'import hashlib,sys; h=hashlib.sha256(open('\"'\"'hostcall.py'\"'\"','\"'\"'rb'\"'\"').read()).hexdigest(); print(h); sys.exit(h!='\"'\"'fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b'\"'\"')'",
+      "exit": 0,
+      "tail": [
+        "fa06077c00e1aa8514be54689567bad7abcb5c5f21794e1b5f551ebb1e07873b"
+      ],
+      "at": "2026-10-30T08:07:10+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "git diff --check bd8e2fa",
+      "exit": 0,
+      "tail": [
+        ""
+      ],
+      "at": "2026-10-30T08:07:10+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    }
+  ]
+}

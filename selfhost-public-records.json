@@ -1,0 +1,306 @@
+{
+  "artifact": "selfhost/public-records@1",
+  "project": "mangsang",
+  "what": "The records of mangsang's 2.0.0 self-hosting: the four closed chongdae runs (plans, states, tasks, verifier packets) and the dwitbuk reviews written at their close, as public copies.",
+  "not": [
+    "42 records are byte-identical to the private originals; the 2 listed as derived are not: in each, one temporary execution path in a task brief was replaced by a placeholder, and nothing else changed.",
+    "Derived text is not original provider output, not a quote-validation input and not a person's review.",
+    "No person reviewed these records' content; the review below checked bytes, structure, status and scope."
+  ],
+  "source": {
+    "commit": "b4aee11b3acd26bfbe43afab44fbae3fd404ad85",
+    "tree": "51846445217211c4515bffb546bc76d8e7b1a868",
+    "note": "the source tree of this branch, records and this manifest aside, is that commit's tree"
+  },
+  "runs": [
+    {
+      "run": "run-20261030-075011-93ed",
+      "status": "complete",
+      "created": "2026-10-30T07:50:11+00:00",
+      "ended": "2026-10-30T08:07:50+00:00",
+      "reviewed": "review-20261030-170750-9957: 6 objection(s) (non-claim 2, unreviewed 4), 12 observation(s) since 594e42f"
+    },
+    {
+      "run": "run-20261030-081817-1b83",
+      "status": "complete",
+      "created": "2026-10-30T08:18:17+00:00",
+      "ended": "2026-10-30T08:20:21+00:00",
+      "reviewed": "review-20261030-172022-1ef2: 7 objection(s) (drift 1, non-claim 2, unreviewed 4), 3 observation(s) since 739c6016afff1c0d07b776e099e15eb52189b931"
+    },
+    {
+      "run": "run-20261030-083129-3e2a",
+      "status": "complete",
+      "created": "2026-10-30T08:31:29+00:00",
+      "ended": "2026-10-30T08:35:30+00:00",
+      "reviewed": "review-20261030-173531-296e: 7 objection(s) (non-claim 2, unreviewed 5), 2 observation(s) since 64108a960d09b1beb7f150af013b0d4d4f5590c6"
+    },
+    {
+      "run": "run-20261030-094024-0624",
+      "status": "complete",
+      "created": "2026-10-30T09:40:24+00:00",
+      "ended": "2026-10-30T09:43:33+00:00",
+      "reviewed": "review-20261030-184334-b7fc: 7 objection(s) (non-claim 2, unreviewed 5), 2 observation(s) since 743f8daeb85c58a3f3edba4b731945c6b395b8f8"
+    }
+  ],
+  "open": {
+    "latest_review": "review-20261030-184334-b7fc",
+    "undisposed_objections": 7,
+    "note": "undisposed findings stay as the reviews wrote them (hunsu resolutions marked reviewed:false; two non-claims of the first run)"
+  },
+  "excluded": [
+    "each run's local/ (requests, responses, transcripts, provider logs, pending files, launch locks)",
+    ".chongdae/sessions/ pointers",
+    ".dwitbuk/review.lock",
+    "the private run that prepared this publication"
+  ],
+  "derivation": {
+    "how": "a one-time exact-byte export outside this repository, from the session's record inventory",
+    "generator_sha256": "5e5aa708da4897429401afb899eefb53e21a154c801553a5863b9925dee18e8b",
+    "inventory_sha256": "707b30a0a80e3134848d9e83fcee0f76566e39692994f19eefcafd7733ee23f4",
+    "draft_manifest_sha256": "a9387ff27b46fc4855468daffec9814da62235ca4b69b0ea5c8e7e0b8b240a8e"
+  },
+  "review": {
+    "verdict": "accept",
+    "by": "a fresh read-only Claude Code subagent (claude-opus-5-5) dispatched by the mangsang project session; its answer is kept outside this repository",
+    "answer_sha256": "958271dbb2f607be018ceff5525a7b1ceea3a2ea9d4853dfc7e42e50f39e3b36",
+    "also": "the project session's exact-replacement comparator, run by chongdae, and the lock's verifier (dwitbuk eyes, claude-opus-5-5) accepted"
+  },
+  "records": [
+    {
+      "path": ".chongdae/.gitignore",
+      "sha256": "aafbe4ac09e3ce380be4f87c0cbab19e3601a71bc02a551a8aa6c48576dc0f3b",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/adopt-prior.verify.json",
+      "sha256": "e2bb0e597e8429c830e1481ab6f5dfb7c2d3035d53331e531a37a936fd20ede6",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/final-checks.verify.json",
+      "sha256": "899cc8f92b7a3c394cce50afc4f1057c6c1ea124ccb7487c8c95bc6b675e7279",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/hostcall-sync.verify.json",
+      "sha256": "bd9b2adc0aeb3ea386189424352ef55c1cb1576d847dd9df7a0566930e137954",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/identity-build.json",
+      "sha256": "57f164a3c02876db575d7740974fed0b9f7a8076bd87cb3e291239159c587544",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/identity-build.verify.json",
+      "sha256": "ae725693d3142f9dd83938ca7bfb77e4571af8b89467c3ca3e02667b9177d7fc",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/identity-docstring.verify.json",
+      "sha256": "6f91d643801f1f039b48a04d605aba285bf5e1c057a8ce83973be28a7b593953",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/identity-red.verify.json",
+      "sha256": "9529e8d961ef5f8a163716481177d710071c5ac70c99edcce76ce0ca9887e7b2",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/identity-tests.json",
+      "sha256": "82abf99f94f7c291c9f45d9dd42b538aa7188cf15e3dcce427bd83207d4bd33a",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/identity-verify.verify.json",
+      "sha256": "a1dd6ac5bcf932d61555551071f9e723a847a1f3ea8c115ba0517eedcdc82b49",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/move-example.verify.json",
+      "sha256": "798ee307dac77e3ac69d8bf6934c88433518f044f62d278ce955271a4b2220b2",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/asked/python3-floor-docs.verify.json",
+      "sha256": "39601af2981fff9abf48491e67ba85e6bfd743f4c3c3281e7996d882dd4a0fd9",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/plan.json",
+      "sha256": "5d9d427a68aa4cf614ba87c1216cc7e96d4d35e178f381dfa237660c7c0884af",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/state.json",
+      "sha256": "4275260a4ccd8586cfa111bf906e00acb6d65d860a7f43e6d18e4a6e3250176f",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/adopt-env.json",
+      "sha256": "6cae185bbb766b36344850726689c638053adb596e95dde79196f122c957e4d7",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/adopt-prior.json",
+      "sha256": "fe0458df0905792a60ac852ee3eb78de874b5af88dcc88b8aea85d40d5ef0f8a",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/env-local-records.json",
+      "sha256": "afb76f0d3e057c6401aea8dbc676e97663e189da7a9234f7b2514680f54bee3b",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/final-checks.json",
+      "sha256": "3a38f06e8156ac3a9f6e0afb8ed6692f59af52465fb6c67304f5f756dd2fc2a8",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/hostcall-sync.json",
+      "sha256": "8acaf88aa84497456162eb04c264966cb0a07cdbbdf5232a9d7fca3373a7574f",
+      "derivation": "derived public copy",
+      "original_sha256": "1b03422e248d7c854a839695b1364260092ee3f1ce4acd1dfd3297b3e9e89ae1",
+      "changed_json_leaves": [
+        [
+          "def",
+          "brief"
+        ]
+      ],
+      "placeholder": "<temporary-evidence>/hostcall-red-before-sync.txt"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/identity-build.json",
+      "sha256": "85b27e0451419eae8fe56061c66fc404b623db4105006a1cc679692e1d10636b",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/identity-docstring.json",
+      "sha256": "54894da9a0c3c11236413da326997c93581aade481bb52de57a8b1212e4e37fd",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/identity-red.json",
+      "sha256": "6cfe2507f86678a9190f8734c494674d5b88b0b2a806887d83f41063d0d74fdc",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/identity-tests.json",
+      "sha256": "50102de829f6b1472c02690fc9b7d826b1854b5ab4b1c0f23b871cdc14a8e674",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/identity-verify.json",
+      "sha256": "0ac0497bf28110598c3cdcda240c98751c273ba57a21063bcfa1d2f8d59edcf6",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/move-example.json",
+      "sha256": "c799725a55647333027cc0cc10eeaaab2bd9f99f50000ec61bc8d5765e769270",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-075011-93ed/tasks/python3-floor-docs.json",
+      "sha256": "33b4584c8f236f73cba390c36516f67b48aecfdb80b3076484c65c49c4bd0c2e",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-081817-1b83/asked/selfcheck-entrypoints.verify.json",
+      "sha256": "106e6ff01ada8e7b1ecc13dce2fb4239d467b0c2c5bb50c3a467d461e93b1440",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-081817-1b83/asked/versioning-major.verify.json",
+      "sha256": "f890ce4ca21a655016fa0939fb68e42951e0ec5079a038acf27743cc9b04aff1",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-081817-1b83/plan.json",
+      "sha256": "3f12d0d5f2e99723f8e322e359b2fc26a7cbf7d175adfd80688fece032efb066",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-081817-1b83/state.json",
+      "sha256": "87024d5c80c3300ad65a84956a50db4cffc08f556c38bd7f68087f7d38112144",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-081817-1b83/tasks/selfcheck-entrypoints.json",
+      "sha256": "00e4c314205909fa5e07ebb06c02d5ff107f5409b4ed10b641840e6c23499074",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-081817-1b83/tasks/versioning-major.json",
+      "sha256": "e9d1394873f6bb596e481a1a6c246d6846ccc5ffdbf3075f8eecac81129fc75c",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-083129-3e2a/asked/rejudge-stale.verify.json",
+      "sha256": "e13cd5aca59b335405eee8f46967b86da1a6a35e44651da11c05f066f059137f",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-083129-3e2a/plan.json",
+      "sha256": "38dbec215ef13f5d6deb408772b24503a7e2acb226440fd3868c2bad9720d5a8",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-083129-3e2a/state.json",
+      "sha256": "7034dbe43df36f1b8532d32f711f7d81970ef935ca33a9477744639c3240c79b",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-083129-3e2a/tasks/rejudge-stale.json",
+      "sha256": "23a37ad5d3a6d81151c9fa5a5fd672dc25da1c2b16a7924edb7975bf4b3a0a45",
+      "derivation": "derived public copy",
+      "original_sha256": "d591c70608285f4df09120fb1a8f06f6698dd1de75f71658cda106aaa4320857",
+      "changed_json_leaves": [
+        [
+          "def",
+          "brief"
+        ]
+      ],
+      "placeholder": "<temporary-judge-evidence>"
+    },
+    {
+      "path": ".chongdae/run-20261030-094024-0624/asked/v2-candidate.verify.json",
+      "sha256": "726aa54494df77515dea91f137a2e9c127700306ae4daa962bae04514239617d",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-094024-0624/plan.json",
+      "sha256": "78cb78cb592578d84a5d64da1c6479a1e55f629c29295b24c45662bd6a998f03",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-094024-0624/state.json",
+      "sha256": "b8d906136adb00dcd9c646969e7e7f32564c2a1c35a8be8e82538d1bf67d241c",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": ".chongdae/run-20261030-094024-0624/tasks/v2-candidate.json",
+      "sha256": "5a01ba9678b9e6eea5c484c1781aa8bc4679bc0eafbcc15108b006328eab938c",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": "reviews/review-20261030-170750-9957.json",
+      "sha256": "8db816475a02c6e82ce761d40c701ffcb5061632d68e96e031520992048c0397",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": "reviews/review-20261030-172022-1ef2.json",
+      "sha256": "5f928cf8df526f31f70809391c1fd34b4bb964faa12206747ec11dd86697610b",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": "reviews/review-20261030-173531-296e.json",
+      "sha256": "734370b0d577f9e7472e15586a6f1f104f3b2765a82552a57fc9b77fc46d7a75",
+      "derivation": "byte-identical copy"
+    },
+    {
+      "path": "reviews/review-20261030-184334-b7fc.json",
+      "sha256": "af3f06f8a3d60cdb4d945a9539266b92c6b9f311f57d8a3d470134f61907c5ab",
+      "derivation": "byte-identical copy"
+    }
+  ]
+}

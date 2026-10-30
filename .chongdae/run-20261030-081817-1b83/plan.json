@@ -1,0 +1,10 @@
+{
+  "artifact-type": "chongdae/plan@1",
+  "written_by": "chongdae 1.24.0",
+  "goal": "Bounded documentation followup before v2 (owner-authorized): README Versioning says a dropped Python or host version is major — the >=3.11 floor drops 3.9/3.10 and belongs to the planned 2.0, not a patch, while the manifests stay 1.19.3 until the coordinated release; the documented standard self-check names test_running_agent.py as its own entrypoint. Docs only: no version bump, push, cache mutation, hostcall change or record commits.",
+  "kind": "session",
+  "tasks": [],
+  "providers": {
+    "session": "session"
+  }
+}

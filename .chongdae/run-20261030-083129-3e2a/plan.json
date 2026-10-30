@@ -1,0 +1,10 @@
+{
+  "artifact-type": "chongdae/plan@1",
+  "written_by": "chongdae 1.24.0",
+  "goal": "Environment refresh (owner-authorized maintenance after the approved AGENTS.md self-check edit 64108a9): re-judge, with the installed released hunsu 1.15.1, the 8 situations whose judgments read the old AGENTS.md text — judge request --stale, the declared Claude judge per packet, consume — so hunsu check is clean again; resolutions change only as hunsu requires and stay reviewed:false where an agent proposed them; relock only through supported commands; no source, harness, doc, version, push or plugin-cache changes.",
+  "kind": "session",
+  "tasks": [],
+  "providers": {
+    "session": "session"
+  }
+}

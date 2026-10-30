@@ -1,0 +1,84 @@
+{
+  "artifact-type": "dwitbuk/review@1",
+  "id": "review-20261030-184334-b7fc",
+  "since": "743f8daeb85c58a3f3edba4b731945c6b395b8f8",
+  "head": "b4aee11b3acd26bfbe43afab44fbae3fd404ad85",
+  "findings": [
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['building a slice from a goal or plan']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['disputing, testing or trying a built slice']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection",
+      "first-seen": "review-20261030-173531-296e"
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['reviewing a change before merge']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['asking what happened or what is open']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "unreviewed",
+      "where": "hunsu.json resolutions['bringing a decision to the person']",
+      "text": "applied from the judge's proposal, marked reviewed: false — `hunsu policy` shows the conflict a person judges",
+      "standing": true,
+      "reporter": "hunsu",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "self-performed",
+      "where": "run-20261030-094024-0624/v2-candidate",
+      "text": "the session did this itself instead of the lock's implementer (decided by the session (claude-code claude-opus-5-5)): metadata and one README paragraph only (five version strings, the floor statement); the owner's brief allows a session role for metadata/doc work with a recorded reason, and nothing here is a build",
+      "layer": "observation"
+    },
+    {
+      "kind": "non-claim",
+      "where": "run-20261030-075011-93ed",
+      "text": "no check decides this task  [tasks env-local-records, adopt-env, identity-tests]",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "non-claim",
+      "where": "run-20261030-075011-93ed",
+      "text": "env-local-records: done on the session's word by name (`run env-local-records`), with nothing of its own in the tree and no `did`  [task env-local-records]",
+      "layer": "objection",
+      "first-seen": "review-20261030-170750-9957"
+    },
+    {
+      "kind": "unchanged",
+      "layer": "observation",
+      "where": "3 earlier review(s)",
+      "seen-in": [
+        "review-20261030-170750-9957",
+        "review-20261030-172022-1ef2",
+        "review-20261030-173531-296e"
+      ],
+      "text": "15 observation(s) written in full in 3 earlier review(s) and unchanged since (seen-non-claims 1, self-performed 11, session-judged 2, verifier-non-claim 1)"
+    }
+  ]
+}

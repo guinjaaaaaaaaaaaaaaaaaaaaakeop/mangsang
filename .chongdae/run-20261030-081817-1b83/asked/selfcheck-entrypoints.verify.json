@@ -1,0 +1,81 @@
+{
+  "artifact-type": "chongdae/request@1",
+  "written_by": "chongdae 1.24.0",
+  "stage": "verify",
+  "run": "run-20261030-081817-1b83",
+  "task": "selfcheck-entrypoints",
+  "role": "verifier",
+  "target": ".",
+  "goal": "Bounded documentation followup before v2 (owner-authorized): README Versioning says a dropped Python or host version is major — the >=3.11 floor drops 3.9/3.10 and belongs to the planned 2.0, not a patch, while the manifests stay 1.19.3 until the coordinated release; the documented standard self-check names test_running_agent.py as its own entrypoint. Docs only: no version bump, push, cache mutation, hostcall change or record commits.",
+  "brief": "The documented standard self-check (README '## Self-check' and AGENTS.md's run line) names test_mangsang.py and test_properties.py but not test_running_agent.py, the explicit-AGENT_HOST identity regressions added in eac9573 (33 stdlib unittest tests, run standalone). Document it as its own entrypoint — `python3 test_running_agent.py` (`python3 -m unittest test_running_agent.py` runs the same tests) — and say plainly that `test_mangsang.py` does not run it, so no count of one suite is read as covering the other. Not integrated into test_mangsang.py: that would change a suite the identity build protected, and needs a test-harness task of its own. Checks: every root test_*.py is named as `python3 <file>` in both README Self-check and AGENTS.md; the file's own docstring gives that command; README states test_mangsang.py does not run it; links and anchors resolve; git diff --check. Suites are not rerun: no code or test changes.",
+  "closes": [],
+  "contract": {},
+  "checks": [
+    [
+      "python3",
+      "-c",
+      "import glob,sys; r=open('README.md',encoding='utf-8').read(); sc=r.split('## Self-check',1)[1]; a=open('AGENTS.md',encoding='utf-8').read(); tests=sorted(glob.glob('test_*.py')); miss=[(t,w) for t in tests for w,txt in (('README Self-check',sc),('AGENTS.md',a)) if '\\x60python3 '+t+'\\x60' not in txt]; doc=open('test_running_agent.py',encoding='utf-8').read().split(chr(34)*3)[1]; ok=not miss and 'python3 test_running_agent.py' in doc and '\\x60test_mangsang.py\\x60 does not run it' in sc; print(tests, miss or 'every test entrypoint is named in README Self-check and AGENTS.md'); sys.exit(not ok)"
+    ],
+    [
+      "python3",
+      "-c",
+      "import os,re,sys\ndef slug(h): return re.sub(r'[^\\w\\- ]','',h.strip().lower().replace('`','')).replace(' ','-')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'^#+ +(.*)$',open(p,encoding='utf-8').read(),re.M)}\nbad=[]\nfor doc in ('README.md','AGENTS.md','skills/operate/SKILL.md'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\\]\\(([^)\\s]+)\\)',open(doc,encoding='utf-8').read()):\n        if re.match(r'https?:',t): continue\n        path,_,anchor=t.partition('#'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'missing file')); continue\n        if anchor and target.endswith('.md') and anchor not in heads(target): bad.append((doc,t,'missing anchor'))\nprint(bad or 'links and anchors resolve'); sys.exit(bool(bad))\n"
+    ],
+    [
+      "git",
+      "diff",
+      "--check"
+    ]
+  ],
+  "tests": [],
+  "response": "./.chongdae/run-20261030-081817-1b83/local/selfcheck-entrypoints.verify.response.json",
+  "touched": [
+    "AGENTS.md",
+    "README.md"
+  ],
+  "built": null,
+  "excluded": {
+    "record-paths": [
+      ".dwitbuk/review.lock",
+      "reviews/review-20261030-170750-9957.json"
+    ]
+  },
+  "since": {
+    ".": "6d852b8cef2195ade8920b4c8e71e63850eb1d41"
+  },
+  "checked": [
+    {
+      "command": "python3 -c 'import glob,sys; r=open('\"'\"'README.md'\"'\"',encoding='\"'\"'utf-8'\"'\"').read(); sc=r.split('\"'\"'## Self-check'\"'\"',1)[1]; a=open('\"'\"'AGENTS.md'\"'\"',encoding='\"'\"'utf-8'\"'\"').read(); tests=sorted(glob.glob('\"'\"'test_*.py'\"'\"')); miss=[(t,w) for t in tests for w,txt in (('\"'\"'README Self-check'\"'\"',sc),('\"'\"'AGENTS.md'\"'\"',a)) if '\"'\"'\\x60python3 '\"'\"'+t+'\"'\"'\\x60'\"'\"' not in txt]; doc=open('\"'\"'test_running_agent.py'\"'\"',encoding='\"'\"'utf-8'\"'\"').read().split(chr(34)*3)[1]; ok=not miss and '\"'\"'python3 test_running_agent.py'\"'\"' in doc and '\"'\"'\\x60test_mangsang.py\\x60 does not run it'\"'\"' in sc; print(tests, miss or '\"'\"'every test entrypoint is named in README Self-check and AGENTS.md'\"'\"'); sys.exit(not ok)'",
+      "exit": 0,
+      "tail": [
+        "['test_mangsang.py', 'test_properties.py', 'test_running_agent.py'] every test entrypoint is named in README Self-check and AGENTS.md"
+      ],
+      "at": "2026-10-30T08:19:57+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "python3 -c 'import os,re,sys\ndef slug(h): return re.sub(r'\"'\"'[^\\w\\- ]'\"'\"','\"'\"''\"'\"',h.strip().lower().replace('\"'\"'`'\"'\"','\"'\"''\"'\"')).replace('\"'\"' '\"'\"','\"'\"'-'\"'\"')\ndef heads(p): return {slug(m.group(1)) for m in re.finditer(r'\"'\"'^#+ +(.*)$'\"'\"',open(p,encoding='\"'\"'utf-8'\"'\"').read(),re.M)}\nbad=[]\nfor doc in ('\"'\"'README.md'\"'\"','\"'\"'AGENTS.md'\"'\"','\"'\"'skills/operate/SKILL.md'\"'\"'):\n    base=os.path.dirname(doc)\n    for t in re.findall(r'\"'\"'\\]\\(([^)\\s]+)\\)'\"'\"',open(doc,encoding='\"'\"'utf-8'\"'\"').read()):\n        if re.match(r'\"'\"'https?:'\"'\"',t): continue\n        path,_,anchor=t.partition('\"'\"'#'\"'\"'); target=os.path.normpath(os.path.join(base,path)) if path else doc\n        if not os.path.exists(target): bad.append((doc,t,'\"'\"'missing file'\"'\"')); continue\n        if anchor and target.endswith('\"'\"'.md'\"'\"') and anchor not in heads(target): bad.append((doc,t,'\"'\"'missing anchor'\"'\"'))\nprint(bad or '\"'\"'links and anchors resolve'\"'\"'); sys.exit(bool(bad))\n'",
+      "exit": 0,
+      "tail": [
+        "links and anchors resolve"
+      ],
+      "at": "2026-10-30T08:19:57+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0,
+      "tail": [
+        ""
+      ],
+      "at": "2026-10-30T08:19:57+00:00",
+      "chongdae": "chongdae 1.24.0",
+      "source": "the task's checks, run by chongdae to decide it",
+      "changed_since": []
+    }
+  ]
+}
