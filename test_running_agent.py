@@ -261,5 +261,86 @@ class TestProvenance(Env):
                                            "CLAUDE_CODE_SESSION_ID": SESSION}), {"agent": "Claude (%s)" % MODEL})
 
 
+import hostcall  # noqa: E402  (the vendored adapter beside this file)
+
+MARKER = "synthetic-parent-marker-not-a-real-session"
+HOST_NAMES = {"claude": "claude-code", "codex": "codex"}
+KEPT = {  # synthetic placeholders only, never a real credential
+    "ANTHROPIC_API_KEY": "synthetic-placeholder-anthropic-key",
+    "OPENAI_API_KEY": "synthetic-placeholder-openai-key",
+    "CLAUDE_CONFIG_DIR": "/synthetic/claude-config",
+    "CODEX_HOME": "/synthetic/codex-home",
+    "AGENT_CODEX_SANDBOX": "read-only",
+    "CODEX_SANDBOX": "synthetic-sandbox",
+    "CLAUDECODE": "1",
+    "CLAUDE_CODE_ENTRYPOINT": "synthetic-entrypoint",
+    "CODEX_SESSION_ID_NOTE": "synthetic-near-miss-note",
+    "PATH": "/synthetic/bin:/usr/bin:/bin",
+    "HOME": "/synthetic/home",
+}
+
+
+def parent_env():
+    return dict(KEPT, CODEX_SESSION_ID=MARKER, CODEX_THREAD_ID="synthetic-parent-thread",
+                CLAUDE_CODE_SESSION_ID="synthetic-parent-claude-session")
+
+
+class TestWorkerEnvDropsCodexSessionId(unittest.TestCase):
+    """2.0.1: a worker of either host never inherits the parent's CODEX_SESSION_ID (a Claude child once did)."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="mangsang-hostcall-test-")
+        self.addCleanup(shutil.rmtree, self.dir, True)
+
+    def test_hostcall_is_the_vendored_one(self):
+        self.assertEqual(os.path.dirname(os.path.abspath(hostcall.__file__)), HERE)
+
+    def test_worker_env_drops_codex_session_id_for_both_hosts(self):
+        for host in ("claude", "codex"):
+            with self.subTest(host=host):
+                with mock.patch.dict(os.environ, parent_env(), clear=True):
+                    env = hostcall.worker_env(host)
+                    after = dict(os.environ)
+                self.assertNotIn("CODEX_SESSION_ID", env)
+                self.assertNotIn("CODEX_THREAD_ID", env)
+                self.assertNotIn("CLAUDE_CODE_SESSION_ID", env)
+                for key, value in KEPT.items():
+                    self.assertEqual(env.get(key), value, key)
+                self.assertEqual(env.get("AGENT_HOST"), HOST_NAMES[host])
+                self.assertEqual(env.get("AGENT_WORKER"), "1")
+                self.assertEqual(after, parent_env())
+                self.assertEqual(after.get("CODEX_SESSION_ID"), MARKER)
+
+    def test_dispatch_env_drops_codex_session_id_for_both_hosts(self):
+        for host in ("claude", "codex"):
+            with self.subTest(host=host):
+                seen = []
+
+                def fake_run(cmd, **kw):
+                    seen.append(kw.get("env"))
+                    return hostcall.subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+                with mock.patch.dict(os.environ, parent_env(), clear=True), \
+                        mock.patch.object(hostcall.subprocess, "run", fake_run):
+                    if host == "claude":
+                        hostcall.run_claude("prompt", {"type": "object"}, cwd=self.dir)
+                    else:
+                        hostcall.run_codex("prompt", {"type": "object"}, self.dir,
+                                           beside=os.path.join(self.dir, "resp.json"))
+                    after = dict(os.environ)
+                self.assertEqual(len(seen), 1)
+                env = seen[0]
+                self.assertIsInstance(env, dict)
+                self.assertNotIn("CODEX_SESSION_ID", env)
+                self.assertNotIn("CODEX_THREAD_ID", env)
+                self.assertNotIn("CLAUDE_CODE_SESSION_ID", env)
+                for key, value in KEPT.items():
+                    self.assertEqual(env.get(key), value, key)
+                self.assertEqual(env.get("AGENT_HOST"), HOST_NAMES[host])
+                self.assertEqual(env.get("AGENT_WORKER"), "1")
+                self.assertEqual(after, parent_env())
+                self.assertEqual(after.get("CODEX_SESSION_ID"), MARKER)
+
+
 if __name__ == "__main__":
     unittest.main()

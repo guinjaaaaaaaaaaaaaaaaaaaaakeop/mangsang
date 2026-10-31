@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "mangsang on its own: `claude plugin marketplace add guinjaaaaaaaaaaaaaaaaaaaaakeop/mangsang` then `claude plugin install mangsang@mangsang`.",
-    "version": "2.0.0"
+    "version": "2.0.1"
   },
   "plugins": [
     {
       "name": "mangsang",
       "source": "./",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "description": "The coherence manager for every artifact in a project — plan, code, tests."
     }
   ]
