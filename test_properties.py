@@ -20,7 +20,8 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
+PLUGIN = os.path.join(HERE, "plugin")   # the installed payload; the root mangsang.py is only its CLI wrapper
+sys.path.insert(0, PLUGIN)
 import mangsang  # noqa: E402
 
 try:

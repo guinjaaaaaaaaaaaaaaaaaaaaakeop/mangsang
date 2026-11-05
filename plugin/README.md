@@ -1,0 +1,521 @@
+# mangsang
+
+The net-shaped (網狀) coherence model of a project. The net is primary: named concepts are its nodes, declared once
+(`concept add NAME --means "..."`) and living at the anchor `concept:NAME`; documents, code and tests are projections
+of them (`realizes`), and prose is one projection of the net, not the source of truth. A concept survives any rename
+of the files and sections that realize it; revising what it *means* stales every projection — on purpose. Relations
+also tie artifacts to each other (`documents`, `verifies`); each is confirmed by a human, fingerprinted, and reported
+stale when an end changed. Machines keep the net because the next agent has no memory and nobody can read everything.
+
+A model can also start from people rather than from a plan: what was said in a planning talk or an interview — by the
+person and by the agent they talked to — is kept verbatim as a source (`source:ID`), an answer with the turn it
+answers;
+a concept is grounded in it by a quote, and what the talk asked but did not answer is kept as an open question until
+something does.
+
+Navigation: [Install](#install) · [Shared guidance](#shared-claude-and-codex-guidance) · [Commands](#commands) ·
+[Project records](#files-in-your-project) · [Model rules](#anchors-predicates-quotes) ·
+[Invariants and questions](#invariants-and-competency-questions) · [Limits](#limits) · [Versions](#versions)
+
+## Install
+
+Python **3.11 or later** is required on both hosts. Ensure `python3` on the host's PATH meets this floor;
+the engine and command adapters use that executable.
+
+```
+claude plugin marketplace add guinjaaaaaaaaaaaaaaaaaaaaakeop/mangsang
+claude plugin install mangsang@mangsang
+```
+
+Codex: `codex plugin marketplace add guinjaaaaaaaaaaaaaaaaaaaaakeop/mangsang`, `codex plugin add mangsang@mangsang`
+(the skill is `$mangsang:operate`).
+
+What a host installs is this directory alone — the engine, its command adapters, the skill, the vendored mermaid, the
+manifests, this README and the LICENSE. The source repository's development material (its suites, maintenance guide and
+agent environment) stays in the repository and is not part of an installation.
+
+## Shared Claude and Codex guidance
+
+The installed workflow for both hosts is [skills/operate/SKILL.md](skills/operate/SKILL.md).
+The host manifests ([Claude](.claude-plugin/plugin.json), [Codex](.codex-plugin/plugin.json)) expose that same
+skill directory. The [Claude command adapters](commands/) retain the individual command behavior described below;
+they are not separate copies of the workflow. Host invocation syntax differs, but both use the same Python engine:
+`python3 "/path/to/plugin/mangsang.py" <command> --target "/path/to/project"` with the real paths and command
+(`--help` lists its arguments). Consult the shared skill for the operation and this README for command and host details.
+The source repository's maintenance guide (`AGENTS.md`, which its `CLAUDE.md` imports) is not part of an installation
+and is never loaded into a consuming project.
+
+## Commands
+
+The `/mangsang:*` entries below are Claude command adapters; `move` is CLI-only. Both hosts can call every
+engine command through Python. `python3 mangsang.py --help` lists commands; `<command> --help` lists arguments.
+
+### `/mangsang:register`
+
+Watch these files (anchors: file; file#heading for Markdown; file:symbol for code, styles, markup, schemas and Dockerfiles; file:key for JSON, YAML, TOML, INI and .env files — the table under Anchors)
+
+### `/mangsang:source`
+
+Keep what was said or written, verbatim, as the anchor `source:ID` (`add ID --file F|- --speaker WHO [--locator WHERE]
+[--replies-to ID]`; `-` reads stdin — or `--from-transcript SESSION.jsonl --match "phrase" [--kind
+person|agent|question|answer]`, which takes the one turn containing the phrase from the host's own session record,
+verbatim, the agent's turn under its model's name, the locator filled in; `--turn ID` names the turn by the host's id when
+a phrase cannot — a short approval recurs — and the ids are listed, latest last, when `--match` finds several). An
+answer is the person's turn after the agent's turn it replies to: a choice picked in a question, or a reply typed
+("ㄱㄱ", "1번") — a typed reply right after the agent's turn matches `--kind person` and `--kind answer` both, and its
+locator names the turn it answers; an agent's text turn that asks the person (a line of it ends with `?`) matches
+`--kind agent` and `--kind question` both — a question is not only a question-form call. The person's turn needs no
+`--speaker` when `people.json` lists exactly one person: it is theirs, and the line says so. A choice picked in a question form is only what the person picked or typed (and
+a note they typed beside it) — never the tool's wrapper ("Your questions have been answered: …"): each question of a
+form is its own answer turn (`ID#1`, `ID#2`, … when the form asked several; `--turn ID` lists them), its locator names
+the question it answers, and it replies to the form's source when that is kept. `--kind answer` finds an answer by what
+it answers too: a phrase of its question (`--match "1/6"`), or the form's own id (`--turn` the question's id) — sagoforce
+10-26: both were refused as "no answer turn", and the agent read the transcript by hand for the result's id. When nothing matches, the error says what is there: turns of another kind that
+contain the phrase, or where in the record it is (the agent's thinking, a tool call, a tool's output — none of it said)
+and the turns around it, each with the id to pass as `--turn`. Both sides of a conversation are sources,
+and an answer is kept with the turn it answers. `--excerpt "sentence"` (repeatable) keeps only those sentences of the turn —
+whole sentences, verbatim, a cut mid-sentence refused, parts that sat side by side keeping their spacing — when a turn clearly splits into what the record needs and what
+it does not (an approval followed by a new request); the source says it is an excerpt, and its locator names the whole
+turn. The same id with other text is refused — a correction is a new source.
+`--from-transcript` currently parses Claude Code JSONL only; it does not parse Codex session JSONL.
+Either host can run the importer on a Claude transcript. For a Codex turn, supply the exact original text with
+`--file -`, an explicit roster-admitted `--speaker` (for example `Codex (thread <thread id>)`), and a `--locator`
+identifying the original session and turn. Do not reconstruct missing words or identify a Codex turn as Claude's.
+
+`list` shows what each source grounds
+
+### `/mangsang:concept`
+
+The net's own nodes: `add NAME --means "..."` declares one (with `--by` or `--delegated`); `revise` changes its
+meaning and stales every projection; `reaffirm` says the sentence still holds after a projection of it was retired
+(or after it was marked drifted); `drift NAME --why "..."` marks a sentence known not to hold whose revision waits;
+`rename` moves the name under every relation and every question that names it, in one command; `list` shows each
+concept with its projections, and what it owes; `show NAME` is one concept whole — its meaning and signer, every
+relation on it in and out with its state now, quote and signer (`lookup concept:NAME`'s lines), what it owes, the
+questions it answers or that ask about it (with their state) and the sources that ground it; `list --brief` is the net as a map in a line or two — `N concept(s):
+a, b, … ; M open question(s)` (names cut to fit ~300 characters), then how many relations are stale or broken, and how
+many concepts owe a re-read, when any do, and how many tracked files the net cannot see — `64 tracked file(s) unseen
+(plan/ 2 changed after the net, lexicons/ 8 changed after the net, write/* 1, … +13)`, the recently changed first, as
+`check` groups them — and how many registered files nothing relates to (`23 registered file(s) nothing relates to
+(lexicons/com/…/ 8 changed after the net, …)`) — what a reader (jokbo) shows an agent at session start; an empty net
+prints nothing
+
+A concept's sentence is affirmed over the projections it had. Retiring one leaves the concept owing a re-read (`owes`):
+the questions it answers are FAILED until `revise` gives it a new sentence or `reaffirm` (signed) says the old one still
+holds — reconfirming the projections that remain does not answer it, since each reconfirm asks only "does this still
+realize the concept?". `impact` counts each such concept in `unresolved_total` (an `owed` line with both commands; exit 1),
+and `check` says it beside its invariants — on guin-site two retires printed the debt, `impact` said 0, `check` held, and
+it surfaced 22 hours later as two failed questions in review. Nothing is owed for adding a projection, for a `move`, for a projection still there in another
+form (the same file under a narrower anchor, the same name in another file — a refactoring done by hand), or for a
+source. Measured on one project's history (guin-site): 73 retired projections, 15 debts in 3 commits — a deploy that
+moved from GitHub Pages to Workers while the sentence still said Pages, a rewrite from Python to Astro, tags leaving the
+post header.
+
+A sentence that no longer says what the project does, while its revision waits (a later stage, a person's word), is
+marked: `concept drift NAME --why "..."` — signed `--by`, `--delegated`, or, with neither, as the agent's own. Until
+`revise` (or `reaffirm`, when the old sentence holds after all) clears it: `cq` says DRIFTED for every question the
+concept answers or that stands on it (exit 1); `concept list`, `list --brief`, `lookup` and the report show the mark
+beside the sentence; `impact` puts its stale relations on one line; `reconfirm`, `confirm` and `move` of a relation on
+it are refused, and the judge is not asked about them. A question that also fails for another reason says both. Without it (guin-site, after the site moved off D1) the stale relations were
+re-confirmed "to be revised at stage 5" and two questions answered green with a sentence false in production.
+
+### `/mangsang:confirm`
+
+Store proposed relations after checking anchors, vocabulary, evidence (a quote that appears in one anchor's text —
+paraphrase is rejected) and duplicates. The confirmed leave the proposals file; the rejected stay in it, each with
+`rejected: <why>` — a file in the tree that is not registered named with its `register` command — so the route is to fix
+them and run the same `confirm` again (the file is removed when nothing was rejected)
+
+### `/mangsang:observe`
+
+Fingerprint every anchor; `--reset` takes a new baseline, `--reset --at REV` takes it from git (a merge base)
+
+### `/mangsang:impact`
+
+Report stale and broken relations, and the concepts that owe a re-read (`owed`: a projection retired, every question
+the concept answers failing in `cq` until `concept revise` or `concept reaffirm`); exit 1 when anything is unresolved. Broken relations whose file is gone from the
+tree (and whose symbol or section is in no other registered file) are grouped by that file, with the one `retire --gone
+FILE.. --why WHY` that disposes of them. `--only ANCHOR-PREFIX..` judges only the
+relations touching those anchors — a slice's check; the whole-tree invariant belongs to the merge and goal checks.
+`--findings` prints `dwitbuk/findings@1` (stale, broken, `owed-reread`, and — as `delegated`, an observation — relations re-confirmed
+with no person reading them: by delegation, by a judge's verdict applied, or by an agent on its own). `--show` prints,
+for each stale relation, what changed: the anchor's text as it was when the relation was confirmed (from git, the
+commit that last wrote the relation) against now; `reconfirm` prints the same before it records
+
+### `/mangsang:judge`
+
+The judge round for stale relations: `request` packs, per relation, the text that may be stale, the text that changed,
+the change itself (the diff since the confirming commit, when git has it) with the declarations the changed side reads
+now — a function stale because its constant moved shows the constant, not two unchanged texts — and the quote confirmed;
+when the stale side is a concept, the item is marked and the sentence under judgment is the concept's whole meaning, the
+quote only context. `--out DIR` is a directory (an existing one is used as is; a name ending in `.json` is refused, since
+the packet is written into it): the packet is `DIR/judge-request.json`, and `request` prints its path, the response's,
+and the two commands to run next. An earlier round's `judge-request.*` and `judge-response.*` there are moved aside first,
+named by their time (`judge-response.20261012T093038Z.json`), and said — so the `next:` line never points at an older
+round's verdicts (guin-site reused a directory holding a 3-day-old response) — and `consume` refuses a response older than
+the request beside it. Each response must copy the packet’s `request-id`; the worker does this automatically, and
+`--prompt-only` asks the host subagent to return it. Consumption also checks the target, relation, predicate definition,
+full anchor and dependency text (including comments), and dependency fingerprints against the request. If any changed, the relation remains stale and needs
+a fresh request and judgment. Older packets without this binding must be regenerated. Git commits alone do not invalidate
+a judgment of unchanged content. `judge_worker.py` runs it in a fresh read-only session; `consume` validates (drifted must
+quote the stale text verbatim) and applies only still-true, recorded on the relation as
+`{"judge": "<host> <model>", "applied-by": "<who>", "why": "<the judge's evidence>"}` and reported to the reviewer. The
+judgment's author is the judge — the model, from the response's worker record (`--judge "<host> <model>"` when there is
+none, e.g. a host subagent answered `--prompt-only`); who applied it is a second fact: the agent running `consume` by
+default, or `--by NAME`. A person's name there, at an agent's hand, needs `--approved-in source:ID`, the turn where that
+person read the verdicts — on guin-site 120 of 120 and 65 of 65 still-true were applied in the owner's name, rounds the
+owner never read. Drifted and cannot-tell wait for a person
+
+### `/mangsang:cq`
+
+Ask the domain questions (`answered-by`: a concept's `means` carries the answer); audit that answers are alive, both
+directions (see below). `add`/`revise`/`retire` declare questions and invariants alike. `--findings` prints the red as
+`dwitbuk/findings@1`
+
+### `/mangsang:check`
+
+Ask the net's invariants (`coverage`/`projection`/`resolved`) — its health, not its questions. `--findings` prints the
+red as `dwitbuk/findings@1`, plus two facts of the record that never fail the check: `unreleased-writer` (a committed
+record written by a build that is no release) and `agent-proposed` (an observation: declarations signed in a person's
+name on their yes to the agent's own proposal — `approval-of`)
+
+### `/mangsang:lookup`
+
+Before touching a file: the confirmed relations standing on it, and which ones the edit would make stale — size the
+task as the edit plus those relations. Grouped by what each relation reaches: a concept's meaning once, then each
+relation with its anchor, predicate, the confirmed quote, who confirmed it (`by NAME`, `judged by <host> <model>, applied by
+WHO`, `by the agent NAME, on its own`, or `delegated:` and the reason's first clause) and whether it is fresh, stale or broken now — what an agent otherwise opens `concepts/` and `relations/`
+for by hand. A file with nothing on it says which case it is: not registered (and, when git tracks it beside
+registered files, that the net cannot see it and how to register it), registered with no relations, or not in the
+tree. Read-only. It also takes an anchor — `concept:NAME` (the meaning, then what stands on it), `file:symbol` — and a
+relation id: that relation whole, its concept's meaning, its state, quote and signer (a retired one says so, with why)
+
+`lookup PATH --brief` is the same fact for an agent's first look at a file: one line per concept (or other end) the
+file's relations reach — `concept:NAME — <its meaning's first sentence, cut at ~160 characters>` (a first sentence that is
+only a name, like "첫 화면.", is followed by the next, so the line says something), with `(N relation(s);
+K stale)` when any is stale — at most five lines, no ids, no quotes. A tracked file the net does not see gets one line
+saying so; registered with nothing on it, or not in the tree, prints nothing. Whole outputs pasted into an agent's
+context went unread (~43k characters in one cycle); a line per fact is read
+
+### `move` (Python CLI)
+
+There is no `/mangsang:move` command adapter. Use `python3 "/path/to/plugin/mangsang.py" move --by NAME --target "/path/to/project"`
+(or `--delegated WHY` instead of `--by NAME`; `--dry-run` previews and needs neither). After a refactoring moved symbols or sections: every broken relation whose dead `file:symbol` / `file#heading` has
+exactly one new home among the registered files is retired (`why: moved …`) and re-confirmed on the new anchor with
+the same evidence (`moved-from` names the old id) — the evidence must still be a quote there, or that relation is
+left; two homes or none are left too, named. `--dry-run` reports only. A site's refactoring moved 21 relations by hand
+in four tasks and missed three; this is one command
+
+### `/mangsang:report`
+
+The net on one page for a person: each concept with its meaning, who declared it and on what (`by lee (approved in
+source:…, answering the agent's source:…)` or `delegated: why`), and what realizes it (fresh, stale or broken, with
+the confirmed quote, who confirmed it, how many times it was re-confirmed); each question with its state and author;
+the sources in full where they ground something, and under **Approvals**, one line each, the ones that only approve
+declarations (a "yes, go" is not a description); a Mermaid graph of concepts, projections and questions — sources are
+not drawn. Read-only; `--out FILE` writes it as Markdown, `--html FILE` as one self-contained page whose graph draws
+in any browser with no network and nothing installed — anywhere but the record or a registered file. Derived:
+regenerate it rather than edit it; a project that keeps the page in git (to show the graph on GitHub) runs `report
+--check FILE`, which exits 1 when the page is behind the record
+
+### `/mangsang:retire`
+
+Drop a relation, keeping it and the reason in retired/. `retire --gone FILE.. --why WHY` (or `--deleted`) is for files
+deleted on purpose: every relation with an anchor in them is retired with the one reason (each kept in retired/ with
+`gone` naming the file), the files leave the registry, and the concepts that lost a projection with them owe a re-read
+(the `owes` rule). A path still in the tree is refused; a deleted directory names every file under it the net knew.
+`impact` groups such broken relations by the deleted file and prints the command — a contract that retired a backend
+left 28 broken relations on guin-site with no route but one retire each. A dead symbol or section that is in another
+registered file now is a rename, not a deletion: `move` it first
+
+### `/mangsang:reconfirm`
+
+A human re-read stale relations and they still hold: `seen` becomes what the tree has now. Refused on a dead anchor
+(retire) or when the evidence quote is gone from the text (`--evidence` gives the sentence that holds now)
+
+## Files in your project
+
+### `mangsang/registry.json`, `vocabulary.json`
+
+Committed: yes.
+
+what is watched; what a predicate means and which way it propagates
+
+### `mangsang/concepts/<name>.json`
+
+Committed: yes.
+
+the net's nodes — one per file, each a name, its `means` sentence, who declared it, `owes` (retired projections not yet
+answered by a `revise` or `reaffirm`), `drift` (the sentence marked as known wrong: why, when, who), and under `history` every earlier meaning a `revise` replaced and every
+`reaffirm`, each with what it answered
+
+### every record file
+
+Committed: yes.
+
+`written_by: mangsang <version>` — a field, read as one: which mangsang wrote this object (`+g<sha>[-dirty]` when a
+working source did; `check --findings` names a committed record so written as `unreleased-writer`). It names who wrote
+the content: a newer build re-saving a record it did not change leaves the file, stamp and all, as it was. The three
+`--findings` documents (`impact`, `check`, `cq`) say `"standing": true` — they read the model as it is now, so a finding
+they stop reporting is gone.
+
+### `mangsang/relations/<id>.json`, `mangsang/retired/<id>.json`
+
+Committed: yes.
+
+one relation per file, so relations added on different branches merge as distinct files; each carries `seen`, the
+anchor fingerprints its confirmer saw; a `reconfirm` keeps what it replaces (`confirmed`, `seen`, `evidence`) under
+`history`, so who first confirmed it and how often it was re-read stay in the file
+
+### `mangsang/cq/<id>.json` (and legacy `cq.json`, kept only where it already exists)
+
+Committed: yes.
+
+one competency question per file: text for people, a verify spec for the engine, its author, and under `history` what
+a `revise` replaced; retired questions keep the record
+
+### `mangsang/people.json`
+
+Committed: yes.
+
+optional roster: `{"people": [names], "agents": [speaker prefixes]}` — when present, a `--by` or `--speaker` not on it
+is refused. mangsang never writes it. For both hosts, use `"agents": ["Claude (", "Codex ("]`: these are
+speaker prefixes, admitting names such as `Claude (<model>)` and `Codex (thread <thread id>)`.
+Use the actual host and known identity, never an invented model. A bare name such as `--speaker Claude` is refused
+with that roster. On a Claude transcript turn, omit `--speaker` to use the model recorded by the importer;
+Codex turns use the explicit-file path described above. An entry that names nobody (empty, not a string — an empty prefix would
+admit every speaker) is left out and said, with the repair. Run by an agent (Claude Code, Codex, a worker), `--by NAME` also needs `--approved-in source:ID` — a
+source NAME spoke, where they approved — and records it; otherwise the agent signs `--delegated`
+
+### `mangsang/sources/<id>.json`
+
+Committed: yes.
+
+what a person said or wrote, verbatim, with the speaker and where — one per file, never rewritten. Committed like
+every record: in a public repository, their words are public
+
+### `.mangsang/`
+
+Committed: no. One file, `baseline.json`: the anchors as this machine last saw them, for `observe` to print what moved
+since — a working aid, not a judgment. Staleness is judged against `seen` in each relation, so a fresh clone with no
+`.mangsang/` answers `impact`, `check` and `cq` exactly as the machine that confirmed did. The one thing the baseline
+decides: a relation from before `seen` existed has nothing else to be judged by, and is `unjudged` until
+`observe --reset --at REV` takes a baseline from the revision it was confirmed at. (`events.json` and `impact.json` were
+written here until 1.12.1 and read by nothing — what a command prints is its record.)
+
+## Anchors, predicates, quotes
+
+`file`, `file#Heading text` (Markdown; a section runs to the next heading of its level or higher — the title heading
+only to the next heading of any level, since as a section it would be the whole file, a duplicate of `file`),
+`file:symbol` (a declaration of a code, style, markup or schema file), `file:key` (a key of a JSON, YAML, TOML, INI or
+`.env` file), `concept:NAME` and `source:ID` — concepts and sources pass through the same machinery as files, a
+concept's `means` sentence or a source's words as the anchor's text. The separator is the leftmost `#` or `:`, so a
+key may hold both (`styles.css:#hero`, `plan.md#Q1: add`).
+
+One rule cuts every kind of file (`anchors.py` holds it, one scanner per kind):
+
+- **A declaration is an anchor**: something named at the file's top level. What that is, per kind:
+
+  | kind | anchors (`file:…`) | reads (what the fingerprint follows in the same file) |
+  |---|---|---|
+  | Python | `def`/`async def`/`class`; an assignment or annotated assignment (`LIMIT: int = 10`, `a, b = …`), also under a top-level `if`/`try`; a registration — a call statement whose first argument is a string, named `callee("string")` (`app.add_url_rule("/users")`) | `ast.Name` loads: other declarations, import bindings |
+  | JS/TS (`.js .mjs .cjs .jsx .ts .tsx .mts .cts`) | `function`, `class`, `const`/`let`/`var` (destructured names too), `interface`, `type`, `enum`, `namespace`, `export default` (as `default`), `module.exports`/`exports.x`; a registration — `app.get("/users")`, `router.post("/login")`, `describe("auth")`, `it("rejects a bad password")` (inside a registration's callbacks too, each by its own string) | identifiers not after `.`, not before `:`: declarations, import bindings |
+  | CSS/SCSS (`.css .scss .sass .less`) | a rule per selector (`.btn`, `.nav a`; `a, b` is two anchors with the same text; a rule inside `@media` is the same selector's anchor — `.nav a` holds its mobile branch); at-rules by prelude (`@media (max-width: 600px)`, `@keyframes fade`, `@font-face`, `@mixin card`); custom properties and SCSS variables (`--color-primary`, `$gutter`) | `var(--x)`, `$x`, `@include m` → `@mixin m`, `@extend`, `animation: fade` → `@keyframes fade` |
+  | HTML (`.html .htm`) and components (`.astro .vue .svelte`) | elements with an `id` (`#hero`, the element's text), `title`; whatever inline `<style>`/`<script>` and an Astro frontmatter declare, by their own scanners | an element reads its classes' rules (`class="card"` → `.card`) |
+  | JSON, YAML, TOML | keys, nested to depth 3 as dotted paths — `package.json:scripts.test`, `compose.yaml:services.web`, `openapi.yaml:paths./users/{id}`, `pyproject.toml:project.dependencies`; a YAML list item's keys and a block scalar's lines are content, not keys | — |
+  | INI/cfg, `.env*` | sections; `KEY=` lines (with the comment lines above the key — its documentation, quotable) | — |
+  | SQL | `CREATE`/`ALTER`/`DROP` statements by object (`schema.sql:users` is the table and every ALTER on it; an index, a function) | `REFERENCES t`, `ON t` |
+  | Prisma, GraphQL, protobuf (`.prisma .graphql .gql .proto`) | named blocks (`model User`, `type Query`, `enum Role`, `message Ping`, `service Echo`), `extend type` merged; nameless by keyword (`datasource`) | the blocks its fields name |
+  | Dockerfile (`Dockerfile*`, `*.dockerfile`) | instructions by kind (`FROM`, `ENV`, `EXPOSE`, `CMD`…), continuations joined | `$VAR` → the `ARG`/`ENV` that declares it |
+  | Markdown (`.md .mdx`) | `file#Heading` sections | — |
+
+  Methods, nested functions, an `rpc` inside a `service`, keys below depth 3 are inside the declaration that holds
+  them, not anchors of their own. A name declared twice (an `if`/`else` pair, a table and its ALTERs, a selector and
+  its `@media` branch) is one anchor holding both texts. `@import`/`@use`, `export { a as b }`, an `INSERT`,
+  `console.log("…")` declare nothing and fall to the file anchor.
+- **Its extent runs to its body's end**: in JS/TS a function's body is the `{` after its generics, parameters and return
+  type, any of which may hold braces of their own (`function f(env: Env): Promise<{ rows: unknown[] }> { … }` — before
+  1.19 cut at the return type's `{`, so the body was neither fingerprinted nor quotable; a relation confirmed on such a
+  function then reads stale once, its body now in the fingerprint); a class's or interface's after `<…>` and `extends Base<{ … }>`.
+- **Its extent starts at its first attachment**: a decorator, `export`/`async`/`declare`, the comment lines above an
+  env key. `@require_admin` is what the function does before its body does anything; a fingerprint of the `def` lines
+  alone read its removal as nothing. A registration's extent is the statement — the route and its handler, the `it`
+  and its body.
+- **Its fingerprint covers what it reads in its file**: the free names of the declaration that resolve, in the same
+  file, to another declaration or to an import binding — transitively. Raise `LIMIT = 10` to `999`, change the helper
+  a function calls, swap `from auth import guard` for `from noauth import guard`: every function that reads them is
+  stale, though its own lines did not move; `impact --show` names and diffs the part that did (`p.py:LIMIT, read by
+  p.py:handle`). The reading is lexical — a name that appears, `ast.Name` loads in Python, identifier tokens not after
+  `.` and not before `:` in JS/TS — so it over-includes (a parameter that shadows a module name) and never
+  under-includes. An anchor that reads nothing has the fingerprint of its own text, as before. A `main` that calls
+  everything reads everything: relate to the narrowest declaration that carries the meaning, not to the dispatcher.
+- **What stops at the file.** A declaration that reads another *file* — an import's target, a value in a config file,
+  a subclass in another module, the call sites that make a function dead code, the CSS cascade (which rule wins is
+  order and specificity across the sheet, not a read) — is not followed: `seen` must be
+  reproducible from what the confirmer had open, and a fingerprint reaching across files would tie a relation to
+  text nobody read. Across files the net is the mechanism: register the other file and relate the anchor that is
+  read — `config.yaml:limits realizes concept:rate-limit` beside `api.py:handle realizes concept:rate-limit`; or add
+  a predicate that says it (`depends-on`, `propagates: dst->src`) to `vocabulary.json`. Tests (`verifies`) remain the
+  last line: a behavior change no fingerprint can see is one a test fails on.
+- **The file is an anchor too** (`""`): side effects, unnamed statements, `export { a as b }`, whatever a scanner
+  cannot name — noisy to relate to, never blind. A source never changes, so a relation on it goes stale only from its other end: revise the
+concept a conversation grounded, and someone must re-read the words against the new sentence. In a `projection`
+invariant `source:` is a medium like any prefix — `{"said": ["source:"]}` asks that every concept be grounded in
+something someone said.
+`documents` and `verifies` propagate `dst->src` (when the code changes, the section or test may be stale); `realizes`
+propagates both ways (a revised meaning stales the projection; a changed projection may have outgrown the meaning);
+`references` propagates nothing.
+A relation id is the hash of (src, predicate, dst); the same relation proposed twice is a duplicate.
+Every judgment (`confirm`, `reconfirm`, `concept`, `cq`) carries `--by` or `--delegated` — except a `reconfirm` an agent
+runs with neither, which is the agent's own re-read and is signed as such: an explicit `AGENT_HOST` (surrounding
+whitespace stripped, case-sensitive) takes precedence over inherited markers from the other host — `codex` gives
+`Codex (thread <thread id>)` when `CODEX_THREAD_ID` is non-empty, otherwise `Codex`, ignoring Claude markers and its
+session model; `claude-code` gives `Claude (<model>)` from its session record, or `Claude Code` when unavailable,
+ignoring `CODEX_THREAD_ID` and not requiring `CLAUDECODE`; an unknown non-empty host gives `an agent worker` when
+`AGENT_WORKER` is set, otherwise `an agent`, consulting neither the thread nor the session model. With `AGENT_HOST`
+absent or empty after stripping, the legacy order is `CODEX_THREAD_ID`, then `CLAUDECODE` (the same Claude names),
+then `AGENT_WORKER` (`an agent worker`), otherwise no agent (a person's terminal). The same identity is used by a judge round's
+`applied-by`, so an agent that
+read the change itself does not sign in the person's name; a `--delegated` value that
+is a delegation id (`D-xxxx`, chongdae's `delegate`) is stored as `{delegated: {ref}}` — machine-readable, declared
+once, never a pasted paragraph — though mangsang does not resolve it (whose delegation it is stays the record
+reader's audit, not a coupling).
+
+A relation's `evidence` is a **quote**: the machine checks that it appears in one anchor's text — for a concept, that
+it quotes its `means` — not that it is true; truth is the confirmer's.
+A relation is stale when an anchor it propagates from differs from what its confirmer saw (`seen`) — the same verdict
+on every machine and across a merge. Broken when an anchor is gone.
+Fingerprints are per anchor, LF-normalized, of *content*: Python and JS/TS anchors hash the token stream (comments and
+formatting out; strings, regexes and template literals in — Python by token *name*, the same across 3.9–3.12, whose
+numeric token types were renumbered), CSS and SQL and schema blocks their comment-free whitespace-collapsed text, HTML
+its comment-free collapsed text, JSON anchors the canonical value (key order and spacing are not content),
+YAML/TOML/INI/env/Dockerfile anchors their comment-free stripped lines, Markdown and unknown files their text: in prose,
+wording *is* the content — a Markdown section without its trailing blank lines, which belong to the layout of what follows.
+Spacing and comment marks *inside* content stay in all of them: a YAML block scalar's lines (its blank and `#` lines
+too), TOML multi-line strings, SQL, CSS, Prisma, GraphQL and proto strings and a CSS `url(…)`, an HTML `<pre>` or
+`<textarea>` body, a quoted attribute value; a `<script>` body and a component's frontmatter are read as JS/TS tokens and
+a `<style>` body as CSS, so their strings are content and their formatting is not — 1.15–1.19.0 collapsed or stripped
+all of these, so a changed string could hash the same and its relations stayed fresh. A file with none of
+these hashes as before; one with any comes up stale once after the upgrade, its bytes unchanged — read it and
+`reconfirm`. An anchor that reads other declarations hashes its parts' fingerprints together. Older `seen`
+shapes — a text hash, a numeric-token hash, an own-tokens-only hash — are still answered for compatibility (unchanged
+bytes are not stale) and never written; such a record cannot see what its anchor reads until a `reconfirm` upgrades it.
+
+## Invariants and competency questions
+
+Two layers, two commands — they used to share one name, and the name lied: a lint is not a question.
+
+**`check` asks the net's invariants** — its health, `git fsck` not code review. Verify kinds: `coverage` (anchors
+matching a pattern each carry a relation — `*` matches across `.` too, so `compose.yaml:*` counts every nested key to
+depth 3; name the level you mean, `compose.yaml:services.*`, or the keys themselves), `projection` (every concept realized in each named medium — doc, code,
+test), `resolved` (no relation on a dead anchor), `registered` (every file git tracks under `paths` is in the registry,
+`except` globs aside — `{"kind": "registered", "paths": ["src/", "tests/", "db/"]}`). Three reds: **FAILED** (the invariant does not hold — propose the
+missing relations), **UNASKABLE** (the net moved out from under it — its predicate or anchors are gone; revise it),
+**UNWATCHED** (the net holds something no invariant watches — a used predicate, concepts without a projection
+invariant; declare one or say why not).
+
+Two observations, never red: **unseen** — with no `registered` invariant, the tracked files beside registered ones that
+are not registered (guin-site built a whole backend outside the net, and impact, check and cq were all green over it),
+and — invariant or not — each directory of tracked code or config that holds no registered file at all, with its count
+(guin-site's write app and its schemas were new top-level directories the first observation never looked in; markdown and
+text there are content; hidden directories, lockfiles, the records `record-paths` in hunsu.lock.json declares and what a
+`registered` invariant's `except` globs leave out are left out; files directly in a directory whose registered files are
+all deeper are said as `dir/*`; the root's own files are not — every project's manifests; six are named, the rest counted).
+Both are grouped by directory, and a group changed since the net's record (`mangsang/`) last changed — or in the last 20
+commits, in a history longer than that — is said first, with when (`lexicons/ 8 file(s) [changed 11 commits ago, after
+the net's last change]`). Then `next`: why once (a file nothing relates to is invisible to impact), the exact `register`
+for each directory nothing is registered in and each recently changed group beside registered files (three at most, the
+recent first), and the step after it — relate what they carry (`realizes concept:NAME` with a quote) in a proposals.json,
+show the person, `confirm`. A statement, never a stop: `check`'s exit is what its invariants say. guin-site, 10-16 → 10-19:
+`lexicons/` became a published atproto contract after the net last changed, `check` said it only as `lexicons/ 8 file(s)`
+among the unseen, and three runs finished without touching the net. **unrelated** — a registered file no relation stands
+on is as invisible to impact (an edit there makes nothing stale): said the same way, by directory, the recent first, and
+`next` names its files to relate — so a group registered from `next` moves from unseen to unrelated instead of going
+quiet. Left out, as registered on purpose or already asked: a file gone from the tree (`impact`'s), a document citing a
+kept source by id (`source:ID` — registered as the evidence `ungrounded` reads) and a file a `coverage` invariant's
+anchors reach (that invariant says FAILED itself). On guin-site: 26 registered files with nothing on them, 11 of them gone
+from the tree — 15 said. **gone** — those registry entries: a registered file gone from the tree that no relation stands on
+(`impact` says a gone file only through the relations broken on it, and keeps doing so), one grouped line with the exact
+`mangsang retire --gone FILE.. --why "..."` that drops them (it unregisters a file with no relation as well); guin-site: 11;
+**ungrounded** — a person's words kept as a source that no relation uses, no signature cites (`approved-in`,
+`approval-of`) and no registered document cites by id: a decision the model does not carry yet. Measured there: 73 of
+the owner's sources, 37 related to nothing, 32 of those cited by the plan; the 5 left included the backend's two
+decisions, which only an unregistered document cited.
+
+**`cq` asks the domain questions** — what the model can answer, after Grüninger & Fox. A domain CQ names its answer:
+`{"kind": "answered-by", "concepts": ["NAME"]}` — the concept's `means` sentence carries the answer, and `cq` prints
+it. The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every
+confirm); it audits that the answer is *alive*. Three reds: **FAILED** (the answering concept is realized nowhere, or
+its projections moved since confirmation, or it owes a re-read for a retired projection — the promise's reality
+shifted; re-read before trusting the sentence),
+**UNANSWERABLE** (the concept a question names is gone: the model cannot answer this of the domain), **UNQUESTIONED**
+(a concept no question names — the model holds a meaning nobody asks for; write the question or say why not).
+A question may also be asked before anything answers it — `{"kind": "open"}`, naming no answer: `cq` lists it
+**OPEN**, and `--findings` reports it as an observation, not a red. It may say what it asks about — `{"kind": "open",
+"about": ["venue"]}` — and those concepts are questioned, not answered: a planning model starts with most of its
+questions open, and without `about` every concept it holds read as UNQUESTIONED. When a concept carries the answer,
+`cq revise` to `answered-by`.
+
+Both layers' declarations live in `mangsang/cq/` and are judgments alike: `cq add ID --text "..." --verify '{...}'
+--by WHO` records the author, is refused when the current model cannot support it, and `cq retire --why` keeps the
+record. Structural kinds declared there answer to `check`; `answered-by` answers to `cq`. Both exit 1 on any red.
+
+### Relations between concepts: what a question stands on
+
+A project may add its own predicates between concepts to `mangsang/vocabulary.json` — `requires` (an activity needs a
+fixture, `propagates: dst->src`), `is-a` (a kind, `propagates: none`), whatever its domain says. mangsang does not know
+what they mean; it reads their `propagates`, the same rule `impact` judges staleness by:
+
+- **A question stands on what its answer stands on.** `cq` follows, from each concept a question names, every relation
+  between concepts along which a change travels toward it, and counts what it reaches as asked for (`through requires:
+  …` in the output) — no longer `UNQUESTIONED`. When one of those concepts, or a relation on the way, moved since it was
+  confirmed, the question is `FAILED`, naming the path. Relations to sections, code or sources are projections, not
+  dependencies, and are not followed. A project with no relations between concepts sees no difference.
+- **A coverage invariant can choose its targets by a relation.** `{"kind": "coverage", "predicate": "requires",
+  "members": {"predicate": "is-a", "of": "fixture"}, "as": "dst"}` asks that every concept that is-a fixture (followed
+  transitively along is-a) be the `dst` of some `requires` — every fixture needed by something. Kinds are concepts, with
+  a meaning and a ground like any other; mangsang has no classification of its own.
+
+## Limits
+
+- Never proposes a relation and never judges meaning — not even between two sources that disagree; that is a person's
+  question, asked with both quotes. A stale relation is a question for a human (or a judge role); the answer is
+  `retire` or `reconfirm`, after reading.
+- Optional for a project. Absent, what it would have watched is a non-claim.
+- The judge is a proposal: still-true is applied as the judge's (`confirmed: {judge: "<host> <model>", applied-by: …}`),
+  never as a person's confirmation; drifted is a quote a person acts on. The old product's judge measured recall 1.00 /
+  specificity 1.00 on planted drift; this port is not re-measured.
+- `report --html` inlines mermaid 11.17.2, vendored unmodified under `vendor/mermaid/` (MIT; provenance and hash in
+  `SOURCE.md`) — the one piece of code here not written for mangsang, pinned so that it changes only with a mangsang
+  version.
+- The JS/TS scanner is a tokenizer and a statement walker, not a parser: it names top-level declarations and their extents
+  by brackets and the ASI line rule; a regex is read where one can stand. Odd code (a statement ending in `)` continued
+  on the next line by `(`) can mis-cut an extent — never lose a declaration, since the file anchor holds it all.
+- The CSS, HTML, SQL, schema and Dockerfile scanners are regular expressions over comment-stripped text with bracket
+  matching — enough to name declarations and their extents in files written by people and formatters; a minified sheet
+  or a `$$` body with a `;` inside a string may be cut wrong, never lost (the file anchor holds it all). Tailwind classes
+  and CSS-in-JS live inside the component's tokens: the component anchor moves, no rule anchor exists for them.
+- Content inside a string or block is known by its syntax alone: an `.env` value quoted across lines, a Dockerfile
+  heredoc, a delimiter inside a trailing comment or escaped, an element made `white-space: pre` by CSS elsewhere, and
+  `.a :hover` against `.a:hover` are still read as formatting; a `<script>` of a template type is read as JS.
+- Not built yet: repair candidates after a rename; methods, keys below depth 3 and object members (`tailwind.config.js`'s
+  `theme.colors`) as anchors of their own; languages beyond these (a scanner returning `Scan(texts, deps, hidden)` in
+  `anchors.py` is the whole of adding one); reads across files (see above — a relation, today).
+
+- `judge_worker.py` starts its host session through `hostcall.py` — one host call for every worker of this family (hunsu's judge, mangsang's judge, dwitbuk's eyes,
+  hacheong's members), vendored: the same file in each plugin, since a plugin imports no other plugin. The umbrella checkout's `tools/same-file.py` says when the copies drift.
+
+- mangsang declares `reads` in its plugin.json — what a reader (jokbo) runs, kind -> argv: `file` (`lookup {path}`),
+  `decision` (`cq`), `note` (`lookup {path} --brief`: a line per fact at an agent's first look at a file) and `map`
+  (`concept list --brief`: the net in a line or two at session start).
+
+- mangsang declares `records: ["mangsang/", ".mangsang/"]` in its plugin.json; hunsu's lock carries it as `record-paths`, so the
+  runner, the builder and the eyes leave the record alone without naming it.
+
+## Versions
+
+Semver: a **patch** changes behavior or wording with every interface unchanged; a **minor** adds a command, skill, field,
+hook or artifact key while what exists keeps working; a **major** changes the shape of a record, lock or artifact other
+products read, or drops a supported Python or host version. The version is the one in this
+directory's three manifests. The full policy and the release procedure are kept with the source repository, not in an
+installation.

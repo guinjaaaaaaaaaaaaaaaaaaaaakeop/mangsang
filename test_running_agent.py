@@ -14,7 +14,8 @@ import unittest
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
+PLUGIN = os.path.join(HERE, "plugin")   # the installed payload; the root mangsang.py is only its CLI wrapper
+sys.path.insert(0, PLUGIN)
 import mangsang  # noqa: E402
 
 PLAN = "# plan\n\n## Q1 add\n\n`add` appends and prints `#<id>`.\n\n### detail\n\nmore\n\n## Q2 list\n\nlists.\n"
@@ -261,7 +262,7 @@ class TestProvenance(Env):
                                            "CLAUDE_CODE_SESSION_ID": SESSION}), {"agent": "Claude (%s)" % MODEL})
 
 
-import hostcall  # noqa: E402  (the vendored adapter beside this file)
+import hostcall  # noqa: E402  (the vendored adapter beside the engine, in plugin/)
 
 MARKER = "synthetic-parent-marker-not-a-real-session"
 HOST_NAMES = {"claude": "claude-code", "codex": "codex"}
@@ -293,7 +294,7 @@ class TestWorkerEnvDropsCodexSessionId(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.dir, True)
 
     def test_hostcall_is_the_vendored_one(self):
-        self.assertEqual(os.path.dirname(os.path.abspath(hostcall.__file__)), HERE)
+        self.assertEqual(os.path.dirname(os.path.abspath(hostcall.__file__)), PLUGIN)
 
     def test_worker_env_drops_codex_session_id_for_both_hosts(self):
         for host in ("claude", "codex"):
