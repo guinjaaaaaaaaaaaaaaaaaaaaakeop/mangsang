@@ -105,6 +105,8 @@ installation stops running.
 (`unseen` beside registered files a `registered` invariant does not ask of, `files-only`, `except`, `unverified`,
 `impact`'s `moved only through` and `shared`); no existing invariant, glob, fingerprint or staleness decision changed.
 A model that declares `required` needs 2.2.0 or later (an older `cq` says it UNANSWERABLE, an unknown kind).
+2.2.1 is a patch: the operate skill says the `required` kind replaces rebuilding the engine's semantics in a
+project's checker, not every check a project keeps (2.2.0 said "instead of a checker of its own"); no interface changed.
 hunsu's `check` fails a linked plugin whose source differs from the
 installed
 copy under one version; for a locally linked plugin, `hunsu install --refresh <plugin>` re-snapshots after the bump.
