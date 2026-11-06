@@ -2536,6 +2536,175 @@ def test_an_except_says_what_it_hides_and_a_star_that_crosses_a_slash():
     assert mangsang.glob_crosses("src/gen/deep/y.py", "src/gen/*.py") and mangsang.glob_crosses("tests/x/a.json", "tests/*.json")
 
 
+def test_an_except_carries_its_reason_and_a_malformed_one_is_refused():
+    """mangsang M1, 11-06: an `except` entry could only be a glob string, so every project kept each except's reason
+    elsewhere (MODEL.md, scope.json) and wrote checker code to hold the two together; `cq add` wrote any except unvalidated
+    — an object, 7, "" — and `check` then died in fnmatch (TypeError), and a bare string was iterated by character, its
+    `*` excepting every file. Now an entry is a glob string or {"glob", "why"}: both match the same, check says the reason
+    where it says what the except hides, and cq refuses (check: UNASKABLE) an except of any other shape."""
+    import traceback
+    # the two engine functions exist (asked first, so the missing feature fails here as an assertion, not as an AttributeError)
+    assert callable(getattr(mangsang, "except_entries", None)), "mangsang.except_entries is missing"
+    assert callable(getattr(mangsang, "except_shape", None)), "mangsang.except_shape is missing"
+
+    def run2(*argv):   # stdout and stderr both: a refusal may say why on either; a crash is a failed assertion, not an error
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            try:
+                code, out = run(*argv)
+            except Exception:
+                raise AssertionError("%s crashed:\n%s" % (" ".join(argv[:2]), traceback.format_exc()))
+        return code, out + err.getvalue()
+
+    def verify(excepts, paths=("src/",)):
+        return json.dumps({"kind": "registered", "paths": list(paths), "except": excepts})
+
+    def block_under(out, label, qid):
+        """The 6-space lines directly under the invariant's `label` line."""
+        lines = out.split("\n")
+        at = [i for i, l in enumerate(lines) if l.startswith("  %-12s %s " % (label, qid))]
+        assert len(at) == 1, (label, qid, out)
+        got = []
+        for l in lines[at[0] + 1:]:
+            if not l.startswith("      "):
+                break
+            got.append(l)
+        return got
+
+    def reasons_under(out, label, qid):
+        return [l for l in block_under(out, label, qid) if l.startswith("      except ")]
+
+    def without_reasons(out, whys):
+        """The output as all-strings excepts print it: no reason line, no reason after an `except` observation."""
+        kept = []
+        for l in out.split("\n"):
+            if l.startswith("      except "):
+                continue
+            for w in whys:
+                if l.startswith("  except ") and l.endswith(" — its reason: " + w):
+                    l = l[:-len(" — its reason: " + w)]
+            kept.append(l)
+        return "\n".join(kept)
+
+    BAD = ["src/gen/*", {"glob": "src/gen/*", "why": "x"}, 7, None,
+           [{"glob": "src/gen/*"}], [{"glob": "src/gen/*", "why": ""}], [{"glob": "src/gen/*", "why": "   "}],
+           [{"glob": "src/gen/*", "why": "x", "note": "y"}], [{"pattern": "src/gen/*", "reason": "x"}], [{"glob": "", "why": "x"}],
+           [{"why": "x"}], [{"glob": 7, "why": "x"}], [{"glob": "src/gen/*", "why": 7}], [{}],
+           [7], [""], [None], [["src/gen/*"]], ["src/vendor/lib.js", 7],
+           ["src/gen/*", "src/gen/*"], [{"glob": "src/gen/*", "why": "a"}, {"glob": "src/gen/*", "why": "b"}],
+           ["src/gen/*", {"glob": "src/gen/*", "why": "a"}], [{"glob": "src/gen/*", "why": "a"}, "src/vendor/lib.js", "src/gen/*"]]
+
+    # C6: the engine's two functions, asked directly
+    E, S = mangsang.except_entries, mangsang.except_shape
+    assert E({"kind": "registered", "paths": ["src/"]}) == [] and S({"kind": "registered", "paths": ["src/"]}) == []
+    assert E({"except": []}) == [] and S({"except": []}) == []
+    assert E({"except": "src/gen/*"}) == [] and E({"except": {"glob": "a", "why": "b"}}) == [] and E({"except": 7}) == []
+    mixed = {"except": ["src/*.js", {"glob": "src/gen/*", "why": "written by the generator"}, "b", {"glob": "c/**", "why": "kept"}]}
+    assert E(mixed) == [("src/*.js", None), ("src/gen/*", "written by the generator"), ("b", None), ("c/**", "kept")], E(mixed)
+    assert S(mixed) == [], S(mixed)
+    assert E({"except": ["a", 7, {"glob": "b"}, "", {"glob": "c", "why": "r"}, {"glob": "d", "why": " "}, None, {"glob": "e", "why": "s", "x": 1}]}) \
+        == [("a", None), ("c", "r")]
+    for bad in BAD:
+        probs = S({"kind": "registered", "paths": ["src/"], "except": bad})
+        assert isinstance(probs, list) and probs and all(isinstance(p, str) and p.strip() for p in probs), (bad, probs)
+
+    with Project() as pj:
+        git = git_in(pj)
+        write(os.path.join(pj.dir, "src", "a.py"), "def a():\n    return 1\n")
+        write(os.path.join(pj.dir, "src", "gen", "x.py"), "X = 1\n")
+        write(os.path.join(pj.dir, "src", "gen", "deep", "y.py"), "Y = 1\n")
+        write(os.path.join(pj.dir, "src", "gen", "deep", "README.md"), "# generated\n")
+        write(os.path.join(pj.dir, "src", "vendor", "lib.js"), "export const v = 1\n")
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run2("register", "src/a.py", "--target", pj.dir)[0] == 0
+        rec = os.path.join(pj.dir, "mangsang", "cq", "scope.json")
+        GEN, NONE = "written by the generator", "reserved for later"
+        strings = ["src/*.js", "src/gen/*", "src/gen/deep/*.md", "src/none/*"]
+        reasoned = ["src/*.js", {"glob": "src/gen/*", "why": GEN}, "src/gen/deep/*.md", {"glob": "src/none/*", "why": NONE}]
+
+        # C4 (strings only): exactly what 2.2.1 printed — the holds line, nothing under it, the two observations as they were
+        assert run2("cq", "add", "scope", "--text", "Is src registered?", "--verify", verify(strings), "--by", "kim", "--target", pj.dir)[0] == 0
+        code_s, out_s = run2("check", "--target", pj.dir)
+        assert code_s == 0, out_s
+        assert "  holds        scope  Is src registered? — 0 unregistered tracked file(s); its excepts hide 4 (src/*.js 1, src/gen/* 3, src/gen/deep/*.md 1)\n" \
+               "  except       scope `src/*.js` hides 1 code/config file(s) only because `*` matches across `/` (src/vendor/lib.js) — it hides every later file at any depth there: name the files it means instead (any glob also hides files added below it later), or write `src/**.js` to say every depth is meant (it matches the same)\n" \
+               "  except       scope `src/gen/*` hides 1 code/config file(s) only because `*` matches across `/` (src/gen/deep/y.py) — it hides every later file at any depth there: name the files it means instead (any glob also hides files added below it later), or write `src/gen/**` to say every depth is meant (it matches the same)\n" \
+               in out_s, out_s
+        assert not reasons_under(out_s, "holds", "scope") and "its reason" not in out_s, out_s
+        doc_s = json.loads(run2("check", "--findings", "--target", pj.dir)[1])
+        crosses_s = [(f["where"], f["text"]) for f in doc_s["findings"] if f["kind"] == "except-crosses"]
+        assert [w for w, _ in crosses_s] == ["scope src/*.js", "scope src/gen/*"] and not any("reason" in t for _, t in crosses_s), crosses_s
+        hides_s = mangsang.except_hides(pj.dir, mangsang.decl(pj.dir), json.loads(verify(strings)))
+
+        # C1 + C4 + C5: one list mixing strings and objects — the same answer, the same files hidden, a reason line per object in order
+        assert run2("cq", "revise", "scope", "--verify", verify(reasoned), "--by", "kim", "--target", pj.dir)[0] == 0
+        assert json.load(io.open(rec, encoding="utf-8"))["verify"]["except"] == reasoned, "the record keeps the entries as written"
+        code_m, out_m = run2("check", "--target", pj.dir)
+        assert code_m == code_s == 0, out_m
+        assert reasons_under(out_m, "holds", "scope") == ["      except src/gen/* hides 3: " + GEN, "      except src/none/* hides 0: " + NONE], out_m
+        assert line_of(out_m, "holds")[0] == line_of(out_s, "holds")[0], "the invariant's own line keeps its form"
+        crossed = line_of(out_m, "except")
+        assert len(crossed) == 2 and crossed[0] == line_of(out_s, "except")[0], "a string entry's observation is unchanged"
+        assert crossed[1] == line_of(out_s, "except")[1] + " — its reason: " + GEN, crossed
+        assert without_reasons(out_m, [GEN, NONE]) == out_s, (out_m, out_s)
+        doc_m = json.loads(run2("check", "--findings", "--target", pj.dir)[1])
+        crosses_m = [(f["where"], f["text"]) for f in doc_m["findings"] if f["kind"] == "except-crosses"]
+        assert crosses_m == [crosses_s[0], (crosses_s[1][0], crosses_s[1][1] + "; its reason: " + GEN)], crosses_m
+        d = mangsang.decl(pj.dir)
+        assert mangsang.except_hides(pj.dir, d, json.loads(verify(reasoned))) == hides_s, "an object hides exactly what its glob string does"
+        assert sorted(mangsang.unregistered(pj.dir, d, ["src/"], reasoned) or []) == sorted(mangsang.unregistered(pj.dir, d, ["src/"], strings) or []) == []
+        assert sorted(mangsang.unregistered(pj.dir, d, ["src/"], [{"glob": "src/gen/*", "why": GEN}]) or []) == ["src/vendor/lib.js"]
+
+        # FAILED: the reasons are said under the FAILED line too, and the answer is the strings' answer
+        assert run2("cq", "revise", "scope", "--verify", verify(["src/gen/*"]), "--by", "kim", "--target", pj.dir)[0] == 0
+        code_s, out_s = run2("check", "--target", pj.dir)
+        assert run2("cq", "revise", "scope", "--verify", verify([{"glob": "src/gen/*", "why": GEN}]), "--by", "kim", "--target", pj.dir)[0] == 0
+        code_m, out_m = run2("check", "--target", pj.dir)
+        assert code_m == code_s == 1 and "FAILED       scope" in out_m and "src/vendor/lib.js" in line_of(out_m, "FAILED")[0], out_m
+        assert reasons_under(out_m, "FAILED", "scope") == ["      except src/gen/* hides 3: " + GEN], out_m
+        assert without_reasons(out_m, [GEN]) == out_s, (out_m, out_s)
+
+        # C1 in `unseen`: an invariant naming only a file — its object except keeps the generated files out of unseen as the string does
+        assert run2("cq", "revise", "scope", "--verify", verify(["src/gen/*"], paths=["src/a.py"]), "--by", "kim", "--target", pj.dir)[0] == 0
+        code_s, out_s = run2("check", "--target", pj.dir)
+        assert run2("cq", "revise", "scope", "--verify", verify([{"glob": "src/gen/*", "why": GEN}], paths=["src/a.py"]), "--by", "kim", "--target", pj.dir)[0] == 0
+        code_m, out_m = run2("check", "--target", pj.dir)
+        assert code_m == code_s and line_of(out_m, "unseen") == line_of(out_s, "unseen"), (out_m, out_s)
+        assert line_of(out_s, "unseen") and not any("src/gen/" in l for l in line_of(out_m, "unseen")), out_m
+        assert reasons_under(out_m, "holds", "scope") == ["      except src/gen/* hides 3: " + GEN], out_m
+        assert without_reasons(out_m, [GEN]) == out_s, (out_m, out_s)
+
+        # C2: cq add and cq revise refuse each malformed except — no record on add, the record unchanged on revise, "except" said
+        assert run2("cq", "revise", "scope", "--verify", verify(reasoned), "--by", "kim", "--target", pj.dir)[0] == 0
+        before = io.open(rec, encoding="utf-8").read()
+        for bad in BAD:
+            code, out = run2("cq", "add", "bad", "--text", "?", "--verify", verify(bad), "--by", "kim", "--target", pj.dir)
+            assert code != 0 and "except" in out, ("add accepted", bad, out)
+            assert not os.path.exists(os.path.join(pj.dir, "mangsang", "cq", "bad.json")), ("add wrote a record", bad)
+            code, out = run2("cq", "revise", "scope", "--verify", verify(bad), "--by", "kim", "--target", pj.dir)
+            assert code != 0 and "except" in out, ("revise accepted", bad, out)
+            assert io.open(rec, encoding="utf-8").read() == before, ("revise changed the record", bad)
+
+        # C3: the same excepts written into the record by hand — UNASKABLE with the problem under it, and nothing crashes
+        good = json.loads(before)
+        for bad in BAD:
+            r = json.loads(before)
+            r["verify"]["except"] = bad
+            write(rec, json.dumps(r, indent=2, ensure_ascii=False) + "\n")
+            code, out = run2("check", "--target", pj.dir)
+            unask = line_of(out, "UNASKABLE")
+            assert code == 1 and len(unask) == 1 and "scope" in unask[0], ("not unaskable", bad, out)
+            under = block_under(out, "UNASKABLE", "scope")
+            assert under and under[0].strip(), ("no problem under UNASKABLE", bad, out)
+            assert not line_of(out, "holds") and not line_of(out, "FAILED"), ("answered anyway", bad, out)
+            code, out = run2("check", "--findings", "--target", pj.dir)
+            doc = json.loads(out)
+            assert [f["where"] for f in doc["findings"] if f["kind"] == "invariant-unaskable"] == ["scope"], (bad, doc)
+            code, out = run2("concept", "list", "--brief", "--target", pj.dir)
+        write(rec, json.dumps(good, indent=2, ensure_ascii=False) + "\n")
+        assert run2("check", "--target", pj.dir)[0] == 0
+
+
 def test_a_required_invariant_keeps_named_content_and_require_model_fails_an_empty_one():
     """Umbrella audit, 11-06 (R2): retiring a concept's projection, a question, an invariant or a relation, or emptying the
     model, left check, cq and impact green, so every source model wrote its own acceptance checker (about 1,100 lines) —

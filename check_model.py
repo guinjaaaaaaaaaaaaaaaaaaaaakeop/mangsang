@@ -2,17 +2,22 @@
 
   python3 check_model.py [--target DIR] [--engine PATH]
 
-First it reads mangsang/ itself and fails when the model is absent or has lost what it was built to carry: the expected
-concepts, questions, invariants, registered files, a doc/code/test projection of each concept, the verifies on each
-verified symbol, and the registered scope — inv-registered-scope still asks of every file under plugin/ and test_ (and
-AGENTS.md, MODEL.md), and holds no except that EXCEPTS below does not classify or MODEL.md's Not claimed does not name.
-Then it asks the installed, released mangsang engine `check`, `cq` and `impact` of the target and fails when any of them
-does; `check` fails on a tracked file in that scope that is neither registered nor excepted. Exit 0 only when all of it
-holds; 1 when something does not; 2 when there is no usable engine.
+What the engine says, the engine says: it asks the installed, released mangsang engine (2.2.0 or later) `check
+--require-model` — an absent or empty model fails there — `cq` and `impact`, and fails when any of them does. The model's
+inv-required invariant (a `required` invariant over CONCEPTS, QUESTIONS and INVARIANTS below) makes `check` fail, with the
+engine's own semantics, when one of them is missing, retired, marked drifted, owing a re-read or realized by nothing;
+`check` also fails on a tracked file in the registered scope that is neither registered nor excepted.
+What the engine cannot say, it reads from mangsang/ itself: that inv-required is there and still names every expected
+concept, question and invariant; a concept with an empty meaning; which concept answers each question and each
+invariant's kind; the registry and its files; a doc/code/test projection of each concept; the verifies on each verified
+symbol; and the registered scope — inv-registered-scope still asks of every file under plugin/ and test_ (and AGENTS.md,
+MODEL.md), and holds no except that EXCEPTS below does not classify or MODEL.md's Not claimed does not name. Exit 0 only
+when all of it holds; 1 when something does not; 2 when there is no usable engine.
 
 The engine is the released one, never this checkout's plugin/: --engine, else MANGSANG_ENGINE, else the version
 hunsu.json pins at the Claude Code plugin cache (CLAUDE_CONFIG_DIR or ~/.claude), then the Codex one (CODEX_HOME or
-~/.codex). An engine inside the target is refused.
+~/.codex). An engine inside the target is refused, and so is one older than 2.2.0 (it has no `required` kind or
+`--require-model`).
 """
 import argparse
 import json
@@ -26,6 +31,10 @@ QUESTIONS = {"cq-relation-stored": "evidence-gate", "cq-stale-or-broken": "stale
 INVARIANTS = {"inv-registered-scope": "registered", "inv-projection": "projection", "inv-resolved": "resolved",
               "inv-verified-confirm": "coverage", "inv-verified-impact": "coverage", "inv-verified-parts": "coverage",
               "inv-verified-answer-health": "coverage", "inv-verified-owe-for": "coverage"}
+# the engine keeps the three lists above through this invariant (missing, retired, drifted, owed, unrealized); this guard keeps
+# that the invariant itself is there and names them all — the one thing a `required` invariant cannot say of itself
+REQUIRED = "inv-required"
+ENGINE_FLOOR = (2, 2, 0)   # the `required` kind and `check --require-model`
 FILES = ("plugin/mangsang.py", "plugin/anchors.py", "plugin/README.md", "test_mangsang.py", "AGENTS.md", "MODEL.md")
 MEDIA = {"doc": ("plugin/README.md#",), "code": ("plugin/mangsang.py:", "plugin/anchors.py:"), "test": ("test_mangsang.py:",)}
 VERIFIED = ("plugin/mangsang.py:cmd_confirm", "plugin/mangsang.py:compute_impact", "plugin/anchors.py:parts",
@@ -111,27 +120,40 @@ def engine_version(path):
 
 
 def guard(target):
-    """What the model was built to carry, read from mangsang/ directly. [] when it holds."""
+    """What the engine cannot say about the model, read from mangsang/ directly. [] when it holds — and for an absent model,
+    which the engine's `check --require-model` fails, naming it."""
     root = os.path.join(target, "mangsang")
-    if not os.path.isdir(root) or read_json(os.path.join(root, "registry.json")) is None:
-        return ["the model is absent: no mangsang/ with a registry.json in %s" % target]
+    if not os.path.isdir(root):
+        return []
+    if read_json(os.path.join(root, "registry.json")) is None:
+        return ["mangsang/registry.json is absent or not JSON — the model registers nothing"]
     problems = []
     concepts, cq = records(os.path.join(root, "concepts")), records(os.path.join(root, "cq"))
     relations = list(records(os.path.join(root, "relations")).values())
+    # presence, retirement, a drift mark, an owed re-read and a realization are inv-required's, in the engine; what it cannot
+    # say of itself — that it is there and names everything — and the pairings and kinds below are this guard's
+    req = cq.get(REQUIRED)
+    rv = (req or {}).get("verify") or {}
+    if req is None or req.get("retired") or rv.get("kind") != "required":
+        problems.append("invariant %s is missing, retired or no longer a required invariant — nothing asks the engine to keep the "
+                        "model's concepts, questions and invariants" % REQUIRED)
+    else:
+        for part, want in (("concepts", CONCEPTS), ("questions", tuple(QUESTIONS)), ("invariants", tuple(INVARIANTS))):
+            for x in want:
+                if x not in (rv.get(part) or []):
+                    problems.append("invariant %s no longer requires %s %s" % (REQUIRED, part[:-1], x))
     for name in CONCEPTS:
-        if not str((concepts.get(name) or {}).get("means", "")).strip():
-            problems.append("concept %s is missing or has no meaning" % name)
+        if name in concepts and not str(concepts[name].get("means", "")).strip():
+            problems.append("concept %s has no meaning" % name)
     for qid, concept in QUESTIONS.items():
         q = cq.get(qid)
         verify = (q or {}).get("verify") or {}
-        if q is None or q.get("retired"):
-            problems.append("question %s is missing or retired" % qid)
-        elif verify.get("kind") != "answered-by" or concept not in (verify.get("concepts") or []):
+        if q is not None and not q.get("retired") and (verify.get("kind") != "answered-by" or concept not in (verify.get("concepts") or [])):
             problems.append("question %s is not answered by concept %s" % (qid, concept))
     for qid, kind in INVARIANTS.items():
         q = cq.get(qid)
-        if q is None or q.get("retired") or ((q.get("verify") or {}).get("kind") != kind):
-            problems.append("invariant %s is missing, retired or no longer a %s invariant" % (qid, kind))
+        if q is not None and not q.get("retired") and (q.get("verify") or {}).get("kind") != kind:
+            problems.append("invariant %s is no longer a %s invariant" % (qid, kind))
     scope = ((cq.get("inv-registered-scope") or {}).get("verify") or {})
     if scope.get("kind") == "registered":
         for p in SCOPE:
@@ -175,21 +197,30 @@ def main(argv=None):
     if engine == target or engine.startswith(target.rstrip(os.sep) + os.sep):
         print("check_model: refusing engine %s — it is inside the target, a working source, not the released engine" % engine)
         return 2
-    print("engine: mangsang %s at %s" % (engine_version(engine), engine))
+    version = engine_version(engine)
+    print("engine: mangsang %s at %s" % (version, engine))
+    try:
+        floor = tuple(int(x) for x in version.split("+")[0].split(".")[:3]) >= ENGINE_FLOOR
+    except ValueError:
+        floor = False
+    if not floor:
+        print("check_model: refusing engine mangsang %s — this model declares a `required` invariant and the guard asks "
+              "`check --require-model`, both mangsang %s or later; pass --engine with such a release" % (version, ".".join(map(str, ENGINE_FLOOR))))
+        return 2
     problems = guard(target)
     for p in problems:
         print("guard FAILED: %s" % p)
-    print("guard: %s" % ("holds — concepts %d, questions %d, invariants %d, files %d, verified symbols %d, scope %s with %d classified except(s)"
-                         % (len(CONCEPTS), len(QUESTIONS), len(INVARIANTS), len(FILES), len(VERIFIED), " ".join(SCOPE), len(EXCEPTS))
+    absent = not os.path.isdir(os.path.join(target, "mangsang"))
+    print("guard: %s" % ("no model here — the engine's `check --require-model` fails it" if absent else
+                         "holds — %s keeps concepts %d, questions %d, invariants %d; files %d, verified symbols %d, scope %s with %d classified except(s)"
+                         % (REQUIRED, len(CONCEPTS), len(QUESTIONS), len(INVARIANTS), len(FILES), len(VERIFIED), " ".join(SCOPE), len(EXCEPTS))
                          if not problems else "%d problem(s)" % len(problems)))
-    if not os.path.isdir(os.path.join(target, "mangsang")):
-        return 1
     codes = {}
-    for command in ("check", "cq", "impact"):
-        print("--- mangsang %s" % command, flush=True)
-        codes[command] = subprocess.run([sys.executable, engine, command, "--target", target]).returncode
+    for command in (["check", "--require-model"], ["cq"], ["impact"]):
+        print("--- mangsang %s" % " ".join(command), flush=True)
+        codes[" ".join(command)] = subprocess.run([sys.executable, engine] + command + ["--target", target]).returncode
     print("engine: " + ", ".join("%s exit %d" % kv for kv in codes.items()))
-    return 0 if not problems and not any(codes.values()) else 1
+    return 0 if not problems and not absent and not any(codes.values()) else 1
 
 
 if __name__ == "__main__":

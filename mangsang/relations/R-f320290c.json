@@ -5,11 +5,11 @@
   "dst": "concept:living-answer",
   "evidence": "The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every confirm); it audits that the answer is *alive*.",
   "seen": {
-    "plugin/README.md#Invariants and competency questions": "501d305c9f5e",
+    "plugin/README.md#Invariants and competency questions": "efeb14a7a4de",
     "concept:living-answer": "abb31bece10e"
   },
   "confirmed": {
-    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's 2026-11-06 Stage B engine request (mangsang 2.2.0), after round 3 of the eyes review: the section's observation paragraph now says the root's own files are never said unseen and that files-only covers an invariant naming root files; its cq paragraph, which carries the quoted audit that the answer is alive, is unchanged — the projection still realizes living-answer"
+    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's 2026-11-06 Stage C request (M1, mangsang 2.3.0): the section's registered paragraph now says an except entry may be {glob, why}, which check prints and cq refuses in any other shape; its cq paragraph, which carries the quoted audit that the answer is alive and never judged true, is unchanged — the projection still realizes living-answer"
   },
   "history": [
     {
@@ -71,7 +71,17 @@
         "concept:living-answer": "abb31bece10e"
       },
       "evidence": "The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every confirm); it audits that the answer is *alive*."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's 2026-11-06 Stage B engine request (mangsang 2.2.0), after round 3 of the eyes review: the section's observation paragraph now says the root's own files are never said unseen and that files-only covers an invariant naming root files; its cq paragraph, which carries the quoted audit that the answer is alive, is unchanged — the projection still realizes living-answer"
+      },
+      "seen": {
+        "plugin/README.md#Invariants and competency questions": "501d305c9f5e",
+        "concept:living-answer": "abb31bece10e"
+      },
+      "evidence": "The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every confirm); it audits that the answer is *alive*."
     }
   ],
-  "written_by": "mangsang 2.0.1"
+  "written_by": "mangsang 2.2.1"
 }

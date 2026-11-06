@@ -1090,6 +1090,7 @@ def cq_presuppositions(d, files, q):
     elif v.get("kind") == "resolved":
         pass   # asks only about the relations themselves; always askable
     elif v.get("kind") == "registered":
+        missing += except_shape(v)
         if not v.get("paths"):
             missing.append("presupposes `paths` — the tracked prefixes whose every file must be registered (\"src/\", \"tests/\" …)")
     elif v.get("kind") == "required":
@@ -1197,13 +1198,15 @@ def tracked_files(target):
 
 
 def unregistered(target, d, paths, excepts=()):
-    """Tracked files under `paths` the registry does not hold — what the net cannot see. None without git."""
+    """Tracked files under `paths` the registry does not hold — what the net cannot see. None without git. `excepts` are
+    the invariant's except entries as written (glob strings, {"glob", "why"} objects); only the well-formed ones except."""
     import fnmatch
     have = {e["path"] for e in d["registry"]}
     got = tracked_files(target)
     if got is None:
         return None
-    return [f for f in got if f.startswith(tuple(paths)) and f not in have and not any(fnmatch.fnmatch(f, g) for g in excepts)
+    globs = [g for g, _ in except_entries({"except": list(excepts) if isinstance(excepts, tuple) else excepts})]
+    return [f for f in got if f.startswith(tuple(paths)) and f not in have and not any(fnmatch.fnmatch(f, g) for g in globs)
             and not f.startswith((DECL + "/", OBS + "/"))]
 
 
@@ -1333,7 +1336,7 @@ def unseen_groups(target, d, active, files=None):
             by.setdefault(f.rsplit("/", 1)[0] + "/", []).append(f)
         near = order(group(k, v) for k, v in by.items())
     covered = beside + [p for v in asks for p in v.get("paths") or []]
-    globs = [g for v in asks for g in v.get("except") or []]
+    globs = [g for v in asks for g, _ in except_entries(v)]
     blind = unseen_directories(target, d, covered, globs, with_files=True)
     if asks:
         # a `registered` invariant asks only of its paths. Four of six source models (umbrella audit, 11-06) named the files
@@ -1371,6 +1374,46 @@ def glob_crosses(path, glob):
     return len(ps) != len(gs) or not all(fnmatch.fnmatch(p, g) for p, g in zip(ps, gs))
 
 
+def except_entries(v):
+    """Keep the glob and its reason together: mangsang M1, 11-06 — six source models kept their except reasons in
+    MODEL.md/scope.json and checker code. Readers use only well-formed entries, even when a hand-written invariant is
+    UNASKABLE; one malformed except must not crash observations gathered across the whole model."""
+    entries = v.get("except", [])
+    if not isinstance(entries, list):
+        return []
+    out = []
+    for e in entries:
+        if isinstance(e, str) and e:
+            out.append((e, None))
+        elif isinstance(e, dict) and set(e) == {"glob", "why"} and isinstance(e["glob"], str) and e["glob"] \
+                and isinstance(e["why"], str) and e["why"].strip():
+            out.append((e["glob"], e["why"]))
+    return out
+
+
+def except_shape(v):
+    """What is wrong with a `registered` invariant's `except` — said when it is declared (`cq add`/`revise` refuse it) and
+    by `check` (UNASKABLE), never matched: a list, each entry a non-empty glob string or exactly {"glob", "why"} with both
+    non-empty (a why of spaces gives no reason), no glob twice. 2.2.1 wrote any shape unvalidated: an object then crashed
+    fnmatch in `check`, and a bare string was read character by character — its `*` excepted every file. A key other than
+    glob and why is refused: a misspelt `reason` would carry nothing."""
+    entries = v.get("except", [])
+    if not isinstance(entries, list):
+        return ["`except` is %s — a list of glob strings or {\"glob\": \"...\", \"why\": \"...\"} objects" % json.dumps(entries, ensure_ascii=False)[:80]]
+    out, seen = [], set()
+    for i, e in enumerate(entries):
+        parsed = except_entries({"except": [e]})
+        if not parsed:
+            out.append("`except` entry %d (%s) is neither a non-empty glob string nor exactly {\"glob\", \"why\"}, both non-empty strings "
+                       "(a why not only spaces)" % (i + 1, json.dumps(e, ensure_ascii=False)[:80]))
+            continue
+        g, _ = parsed[0]
+        if g in seen:
+            out.append("`except` names the glob %s more than once — one entry, one reason" % json.dumps(g, ensure_ascii=False))
+        seen.add(g)
+    return out
+
+
 def except_hides(target, d, v):
     """{glob: [files]} — for a `registered` invariant, the tracked files the registry does not hold that each of its `except`
     globs keeps out of the net: out of the invariant's own answer under its paths, and out of `unseen` anywhere (an except
@@ -1378,7 +1421,7 @@ def except_hides(target, d, v):
     import fnmatch
     have, skip = {e["path"] for e in d["registry"]}, record_prefixes(target)
     loose = [f for f in tracked_files(target) or [] if f not in have and not f.startswith(skip)]
-    return {g: [f for f in loose if fnmatch.fnmatch(f, g)] for g in v.get("except") or []}
+    return {g: [f for f in loose if fnmatch.fnmatch(f, g)] for g, _ in except_entries(v)}
 
 
 def files_only_invariants(target, active):
@@ -1606,7 +1649,7 @@ def eval_invariant(d, files, all_anchors, q, target="."):
                     missing.append("%s lacks %s" % (c["name"], medium))
         return not missing, "%d concept(s), %d gap(s)%s" % (len(d["concepts"]), len(missing), ("; ".join([": "] + missing).replace(": ; ", ": ") if missing else ""))
     if v.get("kind") == "registered":
-        missing = unregistered(target, d, v.get("paths") or [], v.get("except") or [])
+        missing = unregistered(target, d, v.get("paths") or [], v.get("except", []))
         if missing is None:
             return False, "no git here — which files are tracked cannot be told"
         # how much the excepts leave out, said with the answer: a glob's `*` crosses `/`, so its reach is not read off its text
@@ -1665,6 +1708,11 @@ def cmd_check(args):
         if not ok:
             findings.append({"kind": "invariant-failed", "where": q["id"], "source": "mangsang", "text": detail})
         say("  %-12s %s  %s — %s" % ("holds" if ok else "FAILED", q["id"], q["text"], detail))
+        if q.get("verify", {}).get("kind") == "registered":
+            hidden = except_hides(args.target, d, q["verify"])
+            for g, why in except_entries(q["verify"]):
+                if why is not None:
+                    say("      except %s hides %d: %s" % (g, len(hidden[g]), why))
     # the audit: parts of the net no invariant watches (was cq's predicate-level `unquestioned` — it belongs here:
     # 'no lint covers this predicate' is a health gap, not a domain question nobody asked)
     questioned = set()
@@ -1738,17 +1786,21 @@ def cmd_check(args):
     for q in active:
         if q.get("verify", {}).get("kind") != "registered":
             continue
-        for g, fs in except_hides(args.target, d, q["verify"]).items():
+        hidden = except_hides(args.target, d, q["verify"])
+        for g, why in except_entries(q["verify"]):
+            fs = hidden[g]
             deep = [f for f in fs if glob_crosses(f, g) and anchors.kind_of(f) in UNSEEN_KINDS and f.rsplit("/", 1)[-1] not in LOCKFILES]
             if not deep:
                 continue
             anydepth = re.sub(r"(?<!\*)\*(?!\*)", "**", g)
             say("  %-12s %s `%s` hides %d code/config file(s) only because `*` matches across `/` (%s%s) — it hides every later file at any "
                 "depth there: name the files it means instead (any glob also hides files added below it later), or write `%s` to say every depth "
-                "is meant (it matches the same)"
-                % ("except", q["id"], g, len(deep), ", ".join(deep[:6]), " … and %d more" % (len(deep) - 6) if len(deep) > 6 else "", anydepth))
+                "is meant (it matches the same)%s"
+                % ("except", q["id"], g, len(deep), ", ".join(deep[:6]), " … and %d more" % (len(deep) - 6) if len(deep) > 6 else "", anydepth,
+                   " — its reason: " + why if why is not None else ""))
             findings.append({"kind": "except-crosses", "layer": "observation", "where": "%s %s" % (q["id"], g), "source": "mangsang",
-                             "text": "the except hides %d code/config file(s) below its own depth (%s): `*` crosses `/`" % (len(deep), ", ".join(deep[:12]))})
+                             "text": "the except hides %d code/config file(s) below its own depth (%s): `*` crosses `/`%s" %
+                             (len(deep), ", ".join(deep[:12]), "; its reason: " + why if why is not None else "")})
     if blind:
         # named up to a few: a monorepo with one package registered has thousands of such directories, and one line naming
         # them all is no line anyone reads

@@ -107,6 +107,12 @@ installation stops running.
 A model that declares `required` needs 2.2.0 or later (an older `cq` says it UNANSWERABLE, an unknown kind).
 2.2.1 is a patch: the operate skill says the `required` kind replaces rebuilding the engine's semantics in a
 project's checker, not every check a project keeps (2.2.0 said "instead of a checker of its own"); no interface changed.
+2.3.0 is minor: a new field shape for an `except` entry (`{"glob": "...", "why": "..."}`), its reason printed by
+`check` beside what it hides, and validation by `cq add`/`cq revise` and `check`. A glob string keeps working
+and matches as before. A model using the object form needs 2.3.0 or later (an older `check` stops with a TypeError
+on it). An except 2.2 accepted that is not a list of distinct non-empty strings — a bare string, read character by
+character; a non-string entry; a glob twice — is now UNASKABLE. None of the six
+source models held one of those malformed excepts.
 hunsu's `check` fails a linked plugin whose source differs from the
 installed
 copy under one version; for a locally linked plugin, `hunsu install --refresh <plugin>` re-snapshots after the bump.
@@ -151,7 +157,7 @@ earlier judgment and never makes a question unanswerable; coverage and projectio
 get
 worse from another relation; beside a registered file below the root no code or config is silent (registered, asked by
 the invariant, excepted, or said unseen — once; the root's own files are never said unseen); writing `**` for `*` matches the same, and an except crosses a `/` exactly when a
-segment-by-segment match refuses; a `required` invariant holds exactly while what it names stands. Four of the seven defects a day on a playground found (2026-09-24) were of this kind — in
+segment-by-segment match refuses; an except written `{"glob", "why"}` hides exactly what its glob does; a `required` invariant holds exactly while what it names stands. Four of the seven defects a day on a playground found (2026-09-24) were of this kind — in
 situations nobody had written an example for.
 
 `python3 test_package.py` — the installation boundary: `plugin/` holds exactly the payload (no suite, maintenance guide,
@@ -167,11 +173,14 @@ from a payload that merely sits in a directory named `plugin`, the same through 
 root `--help` entrypoints equal to the payload's. Its own entrypoint, stdlib `unittest`;
 `test_mangsang.py` does not run it. No network or model calls.
 
-`python3 check_model.py` — the source model ([MODEL.md](MODEL.md)): fails when `mangsang/` is absent or has lost an
-expected concept, question, invariant, registered file, projection or verified symbol, or when its registered scope no
-longer asks of every file under `plugin/` and `test_` or holds an `except` the guard does not classify or MODEL.md does
-not name; then runs the released engine's `check`, `cq` and `impact` and fails when any of them does — `check` fails on a
-committed payload file or root suite that is neither registered nor excepted. It never writes a record; the engine comes
+`python3 check_model.py` — the source model ([MODEL.md](MODEL.md)): runs the released engine's `check --require-model`
+(an absent or empty model fails), `cq` and `impact` and fails when any of them does — the model's `inv-required`
+invariant makes `check` fail when an expected concept, question or invariant is missing, retired, drifted, owing a
+re-read or realized by nothing, and `check` fails on a committed payload file or root suite that is neither registered
+nor excepted; and fails on what the engine cannot say: `inv-required` gone or no longer naming one of them, a question
+answered by another concept, an invariant of another kind, a lost registered file, projection or verified symbol, a
+registered scope that no longer asks of every file under `plugin/` and `test_`, or an `except` the guard does not
+classify or MODEL.md does not name. An engine older than 2.2.0 is refused. It never writes a record; the engine comes
 from `--engine`, `MANGSANG_ENGINE` or the `hunsu.json` pin in the host's plugin cache, never this checkout's `plugin/`.
 `python3 test_model_guard.py` proves those failures on disposable copies (it needs that released engine and fails,
 never skips, without one).

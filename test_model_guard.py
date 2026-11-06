@@ -28,6 +28,7 @@ QUESTIONS = ["cq-relation-stored", "cq-stale-or-broken", "cq-edit-reach", "cq-qu
              "cq-retired-projection"]
 INVARIANTS = ["inv-registered-scope", "inv-projection", "inv-resolved", "inv-verified-confirm",
               "inv-verified-impact", "inv-verified-parts", "inv-verified-answer-health", "inv-verified-owe-for"]
+REQUIRED = "inv-required"   # the required invariant over the three lists above (mangsang 2.2.0 or later)
 
 NO_ENGINE = ("no released mangsang engine found: set MANGSANG_ENGINE to the installed released "
              "mangsang.py (e.g. ~/.claude/plugins/cache/mangsang/mangsang/<version>/mangsang.py)")
@@ -699,6 +700,73 @@ class ModelGuard(unittest.TestCase):
         self.assertEqual(r.code, 1, "impact should exit 1 after owe_for changed:\n%s" % r.out)
         self.assertTrue(any(rid in l and "stale" in l and "plugin/mangsang.py:owe_for" in l for l in r.out.splitlines()),
                         "impact should name the verifies %s on owe_for stale:\n%s" % (rid, r.out))
+
+
+    # (16) the model's content is kept by the engine — inv-required and `check --require-model`; the guard keeps inv-required
+    def required_path(self):
+        return os.path.join(self.repo, "mangsang", "cq", REQUIRED + ".json")
+
+    def test_16_the_guard_asks_check_with_require_model(self):
+        engine, repo = self.prepare()
+        self.assert_guard_present()
+        r = self.guard()
+        self.assertEqual(r.code, 0, "guard should pass on the pristine copy:\n%s" % r.out)
+        self.assertIn("--- mangsang check --require-model", r.out)
+        self.assertTrue(any("holds" in l and REQUIRED in l for l in r.out.splitlines()), "inv-required should hold:\n%s" % r.out)
+
+    def test_16_a_retired_required_invariant_fails_the_guard_while_the_engine_holds(self):
+        engine, repo = self.prepare()
+        self.assertTrue(edit_json(self.required_path(), lambda d: dict(d, retired={"why": "disposable test copy"})))
+        r = self.engine_cmd("check", "--require-model")
+        self.assertEqual(r.code, 0, "a retired invariant is asked by nobody, so the engine cannot say it:\n%s" % r.out)
+        self.assert_guard_fails_naming(REQUIRED)
+
+    def test_16_a_narrowed_required_invariant_fails_the_guard_naming_what_it_dropped(self):
+        engine, repo = self.prepare()
+
+        def drop(d):
+            d["verify"]["concepts"] = [c for c in d["verify"]["concepts"] if c != "owed-reread"]
+            d["verify"]["invariants"] = [i for i in d["verify"]["invariants"] if i != "inv-verified-parts"]
+            return d
+        self.assertTrue(edit_json(self.required_path(), drop))
+        r = self.engine_cmd("check", "--require-model")
+        self.assertEqual(r.code, 0, "what it no longer names, the engine no longer asks:\n%s" % r.out)
+        self.assert_guard_fails_naming(REQUIRED, "owed-reread", "inv-verified-parts")
+
+    def test_16_a_drifted_concept_fails_through_the_engine(self):
+        engine, repo = self.prepare()
+        r = self.engine_cmd("concept", "drift", "living-answer", "--why", "disposable test copy", "--delegated", "disposable test copy")
+        self.assertEqual(r.code, 0, "the released engine could not mark the concept drifted:\n%s" % r.out)
+        r = self.engine_cmd("check", "--require-model")
+        self.assertEqual(r.code, 1, "inv-required should fail on a drifted concept:\n%s" % r.out)
+        self.assertTrue(any("FAILED" in l and REQUIRED in l and "concept:living-answer is marked drifted" in l for l in r.out.splitlines()), r.out)
+        self.assert_guard_fails_naming("living-answer")
+
+    def test_16_an_owed_reread_fails_through_the_engine(self):
+        engine, repo = self.prepare()
+        hits = relation_files(repo, src="plugin/mangsang.py:owe_for", predicate="realizes")
+        self.assertEqual(len(hits), 1, "expected one realizes relation from plugin/mangsang.py:owe_for")
+        r = self.engine_cmd("retire", hits[0][1]["id"], "--why", "disposable test copy")
+        self.assertEqual(r.code, 0, r.out)
+        r = self.engine_cmd("check", "--require-model")
+        self.assertTrue(r.code == 1 and any(REQUIRED in l and "concept:owed-reread owes a re-read" in l for l in r.out.splitlines()), r.out)
+        self.assert_guard_fails_naming("owed-reread")
+
+    def test_16_an_engine_before_2_2_0_is_refused(self):
+        engine, repo = self.prepare()
+        self.assert_guard_present()
+        old = tempfile.mkdtemp(prefix="mangsang-guard-oldengine-")
+        self.addCleanup(shutil.rmtree, old, True)
+        copy = os.path.join(old, "mangsang")
+        shutil.copytree(os.path.dirname(os.path.realpath(engine)), copy, ignore=shutil.ignore_patterns("__pycache__"))
+        for mf in ("plugin.json", os.path.join(".claude-plugin", "plugin.json"), os.path.join(".codex-plugin", "plugin.json")):
+            if os.path.isfile(os.path.join(copy, mf)):
+                self.assertTrue(edit_json(os.path.join(copy, mf), lambda d: dict(d, version="2.1.0")))
+        before = snapshot_model(repo)
+        r = self.guard("--engine", os.path.join(copy, "mangsang.py"), env=base_env(None, drop=("MANGSANG_ENGINE",)))
+        self.assertEqual(r.code, 2, "an engine without the required kind must be refused with exit 2:\n%s" % r.out)
+        self.assertIn("2.2.0", r.out)
+        self.assertEqual(snapshot_model(repo), before)
 
 
 if __name__ == "__main__":

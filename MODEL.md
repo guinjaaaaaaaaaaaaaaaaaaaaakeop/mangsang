@@ -7,7 +7,8 @@ in `mangsang/` ships in `plugin/`.
 
 The records are written by the installed, released mangsang engine (the version `hunsu.json` pins), never by this
 checkout's `plugin/` runtime. Every meaning, question and relation is an agent's judgment, signed `--delegated` under
-the owner's Stage 1 model-application task (and the registered scope under the owner's 2026-11-06 Stage A request); no
+the owner's Stage 1 model-application task (the registered scope under the owner's 2026-11-06 Stage A request, and
+`inv-required` under its Stage B request); no
 person approved the wording, and no conversation or transcript is a source of this model.
 
 ## Covered contracts
@@ -34,7 +35,10 @@ under the prefixes `plugin/` (the payload, every subdirectory included) and `tes
 and `MODEL.md`, is registered unless an `except` under [Not claimed](#not-claimed) names it, so a new file committed
 there fails `check` until it is registered and related or classified there with its reason; every concept realized in
 doc (`plugin/README.md`), code (`plugin/mangsang.py`, `plugin/anchors.py`) and test (`test_mangsang.py`); no relation
-on a dead anchor; each of the five verified symbols the `dst` of a `verifies`.
+on a dead anchor; each of the five verified symbols the `dst` of a `verifies`; and `inv-required`, a `required` invariant
+(mangsang 2.2.0 or later) over the five concepts, the five questions and the eight invariants before it — `check` fails,
+with the engine's own semantics, when one of them is missing, retired, marked drifted, owing a re-read or realized by
+nothing.
 
 ## Not claimed
 
@@ -46,7 +50,8 @@ on a dead anchor; each of the five verified symbols the `dst` of a `verifies`.
 - The other commands and records: `move`, `judge` and `judge_worker.py`, `source` and the transcript importer, the
   people roster and agent signing, `lookup`, `report`, `check`'s observations (unseen — with a `registered` invariant
   or without — unrelated, gone, ungrounded, files-only, except, unverified), the `required` invariant kind and
-  `check --require-model`, what `impact` says of a stale relation beyond its staleness (`--show`, `moved only through`,
+  `check --require-model`, a `registered` invariant's `except` entries (the glob string, the `{"glob", "why"}` object
+  whose reason `check` prints, the shapes `cq` refuses — mangsang 2.3.0), what `impact` says of a stale relation beyond its staleness (`--show`, `moved only through`,
   `shared`), drift, the vendored `hostcall.py`, the command adapters, the skill, the manifests and the packaging. The
   suites exercise them; no relation here makes an edit to them stale.
 - The rest of the payload and the other suites. Each is an `except` of the registered scope, named exactly or by a glob
@@ -79,10 +84,13 @@ Before editing a registered file, run `lookup PATH` with the released engine and
 relations it stales. The owning or orchestrating session makes those model updates within the same change; a bounded
 worker reports the anchors and relations its edit affects and writes no record unless its task contract authorizes it. Re-read a stale relation before `reconfirm`; change the projection, `retire` it with a reason, or
 `concept revise` when the sentence no longer holds; never reconfirm unread. Before calling covered work complete, run
-`python3 check_model.py` — it fails when the model is absent or has lost an expected concept, question, invariant,
-registered file, projection or verified symbol, when the registered scope no longer asks of `plugin/`, `test_`,
-`AGENTS.md` and `MODEL.md`, or when it holds an `except` that `check_model.py` does not classify or
-[Not claimed](#not-claimed) does not name, then runs the released engine's `check`, `cq` and `impact` and fails when any
-of them does — and `python3 test_model_guard.py`, which proves those failures on disposable copies. Classifying another
+`python3 check_model.py` — it runs the released engine's `check --require-model` (an absent or empty model fails),
+`cq` and `impact` and fails when any of them does, `inv-required` making `check` fail when an expected concept, question
+or invariant stops standing; and it fails on what the engine cannot say: `inv-required` gone or no longer naming one of
+them, a concept with no meaning, a question answered by another concept, an invariant of another kind, a missing
+registered file, projection or verified symbol, a registered scope that no longer asks of `plugin/`, `test_`,
+`AGENTS.md` and `MODEL.md`, or an `except` that `check_model.py` does not classify or [Not claimed](#not-claimed) does
+not name; an engine older than 2.2.0 is refused — and `python3 test_model_guard.py`, which proves those failures on
+disposable copies. Classifying another
 file is a change to both: its reason under Not claimed and its entry in `check_model.py`. Neither
 writes, regenerates or reconfirms a record; the engine comes from `--engine`, `MANGSANG_ENGINE` or the `hunsu.json` pin.

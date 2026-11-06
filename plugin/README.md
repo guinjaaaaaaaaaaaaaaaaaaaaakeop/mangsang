@@ -190,6 +190,12 @@ that never fail the check: `unreleased-writer` (a committed record written by a 
 no active relation or no active invariant (`model-required` in `--findings`). Without it nothing changes: for a project
 that declares nothing, an absent model is a non-claim
 
+For a `registered` invariant, each object `except` entry prints under its line as `except GLOB hides N: WHY`.
+N counts the tracked files the registry does not hold that the glob matches (the products' records are left out),
+including 0. An object's `except` observation ends with its reason; with `--findings`, the `except-crosses`
+text carries it too. A string entry prints as before. A malformed `except` is UNASKABLE, never a crash; the
+accepted shapes and their limits are below.
+
 ### `/mangsang:lookup`
 
 Before touching a file: the confirmed relations standing on it, and which ones the edit would make stale — size the
@@ -427,11 +433,24 @@ model keeps — `{"kind": "required", "concepts": [...], "questions": [...], "in
 realized by no relation, a named question or invariant is missing, retired or of the other layer, or a named relation is
 missing, retired or broken; staleness stays `impact`'s. It must hold when declared, and an unknown key or nothing named
 is UNASKABLE. A model using it needs mangsang 2.2.0 or later: an older `check` does not ask it, and an older `cq` says
-it UNANSWERABLE, an unknown kind). An `except` is matched by fnmatch, whose `*` matches `/` too: `src/gen/*` excepts
+it UNANSWERABLE, an unknown kind). An `except` entry is a glob string or `{"glob": "...", "why": "..."}`:
+the object carries the reason the net does not claim what the glob matches. Both match by fnmatch, whose `*` matches
+`/` too: `src/gen/*` excepts
 every file below `src/gen/` at any depth, now and later. So a `registered` line says how many files its excepts hide
 (each wildcard glob's count), and a `*` that hides code or config only by crossing a `/` is said once per glob
 (**except**, an observation) — name the files it means instead (any glob, at any level, also hides every file added
-below it later), or write `**` (`src/gen/**`), which matches the same and says every depth is meant. Three reds:
+below it later), or write `**` (`src/gen/**`), which matches the same and says every depth is meant.
+
+`cq add` and `cq revise` refuse an `except` that is not a list, an entry that is neither a non-empty string nor
+an object with exactly `glob` and `why`, both non-empty strings, or a glob named twice. A `why` of spaces gives
+no reason; a misspelt key such as `reason` is refused. `check` says UNASKABLE for these shapes, never crashes.
+Six source models (11-06) kept each except's reason in MODEL.md or scope.json and wrote checker code to keep the two
+lists equal. 2.2.1 wrote any shape unvalidated: an object crashed `check` in fnmatch, and a bare string was read
+character by character, its `*` excepting every file. A model using the object form needs mangsang 2.3.0 or later:
+an older `check` stops with a TypeError on it, and an older `cq add` writes any shape unvalidated. The reason is
+the declarer's judgment — the engine checks that one is there, never that it is true.
+
+Three reds:
 **FAILED** (the invariant does not hold — propose the missing relations), **UNASKABLE** (the net moved out from under it — its predicate or anchors are gone; revise it),
 **UNWATCHED** (the net holds something no invariant watches — a used predicate, concepts without a projection
 invariant; declare one or say why not).
