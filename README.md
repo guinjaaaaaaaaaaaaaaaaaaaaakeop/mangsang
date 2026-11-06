@@ -37,8 +37,12 @@ A clone is for working on mangsang. Its layout:
 - this root — development and self-management: the maintenance guide [AGENTS.md](AGENTS.md) (which
   [CLAUDE.md](CLAUDE.md) imports), the suites (`test_*.py`, below), this checkout's own agent environment
   ([hunsu.json](hunsu.json), [hunsu.lock.json](hunsu.lock.json), [hunsu-judgments.json](hunsu-judgments.json); the local
-  overlay and run, review and coherence records are not committed), the two catalogs, the repository's
+  overlay and run and review records are not committed), the two catalogs, the repository's
   [LICENSE](LICENSE) (the same text as `plugin/LICENSE`), and the source entrypoints `mangsang.py` and `judge_worker.py`.
+- the source model — a bounded mangsang model of this repository's core contracts in `mangsang/` (committed, written by
+  the released engine), its scope and non-claims in [MODEL.md](MODEL.md), and its guard [check_model.py](check_model.py)
+  with [test_model_guard.py](test_model_guard.py) (below). Maintaining it is part of a change to a file it registers;
+  [AGENTS.md](AGENTS.md) says who does what.
 
 The root `mangsang.py` and `judge_worker.py` keep a clone's source entrypoints, as wrappers, never second copies:
 run (`python3 mangsang.py <command> ... --target <project>`, `python3 judge_worker.py --request ... --response ...`, or
@@ -97,6 +101,10 @@ and the checkout gained its root source entrypoints and the package suite — wh
 `{plugin:mangsang}/…` and `${CLAUDE_PLUGIN_ROOT}/…` path, every record and the Python floor stayed. Not a patch, since what
 an installation holds and where a local link must point changed; not a major, since nothing that ran from an
 installation stops running.
+2.2.0 is minor: a new invariant kind (`required`), a new `check` flag (`--require-model`) and new observations
+(`unseen` beside registered files a `registered` invariant does not ask of, `files-only`, `except`, `unverified`,
+`impact`'s `moved only through` and `shared`); no existing invariant, glob, fingerprint or staleness decision changed.
+A model that declares `required` needs 2.2.0 or later (an older `cq` says it UNANSWERABLE, an unknown kind).
 hunsu's `check` fails a linked plugin whose source differs from the
 installed
 copy under one version; for a locally linked plugin, `hunsu install --refresh <plugin>` re-snapshots after the bump.
@@ -139,7 +147,9 @@ finds the earlier text wherever the target sits in a repository; any sequence of
 every
 earlier judgment and never makes a question unanswerable; coverage and projection are functions of the net and never
 get
-worse from another relation. Four of the seven defects a day on a playground found (2026-09-24) were of this kind — in
+worse from another relation; beside a registered file below the root no code or config is silent (registered, asked by
+the invariant, excepted, or said unseen — once; the root's own files are never said unseen); writing `**` for `*` matches the same, and an except crosses a `/` exactly when a
+segment-by-segment match refuses; a `required` invariant holds exactly while what it names stands. Four of the seven defects a day on a playground found (2026-09-24) were of this kind — in
 situations nobody had written an example for.
 
 `python3 test_package.py` — the installation boundary: `plugin/` holds exactly the payload (no suite, maintenance guide,
@@ -154,3 +164,12 @@ from a payload that merely sits in a directory named `plugin`, the same through 
 `import mangsang` and `import judge_worker` from the checkout are the `plugin/` modules, one instance each, with both
 root `--help` entrypoints equal to the payload's. Its own entrypoint, stdlib `unittest`;
 `test_mangsang.py` does not run it. No network or model calls.
+
+`python3 check_model.py` — the source model ([MODEL.md](MODEL.md)): fails when `mangsang/` is absent or has lost an
+expected concept, question, invariant, registered file, projection or verified symbol, or when its registered scope no
+longer asks of every file under `plugin/` and `test_` or holds an `except` the guard does not classify or MODEL.md does
+not name; then runs the released engine's `check`, `cq` and `impact` and fails when any of them does — `check` fails on a
+committed payload file or root suite that is neither registered nor excepted. It never writes a record; the engine comes
+from `--engine`, `MANGSANG_ENGINE` or the `hunsu.json` pin in the host's plugin cache, never this checkout's `plugin/`.
+`python3 test_model_guard.py` proves those failures on disposable copies (it needs that released engine and fails,
+never skips, without one).

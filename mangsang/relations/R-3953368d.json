@@ -1,0 +1,67 @@
+{
+  "id": "R-3953368d",
+  "src": "test_mangsang.py:test_a_python_anchor_covers_its_attachments_and_what_it_reads_in_its_file",
+  "predicate": "realizes",
+  "dst": "concept:same-file-reads",
+  "evidence": "Now the extent starts at the first decorator, and the fingerprint covers, transitively, the same-file declarations and import bindings the anchor reads. Comments there still change nothing.",
+  "seen": {
+    "test_mangsang.py:test_a_python_anchor_covers_its_attachments_and_what_it_reads_in_its_file": "5607c08830be",
+    "concept:same-file-reads": "03258cde77c8"
+  },
+  "confirmed": {
+    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence corrected after the verifier and the closing non-author review"
+  },
+  "history": [
+    {
+      "confirmed": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      },
+      "seen": {
+        "test_mangsang.py:test_a_python_anchor_covers_its_attachments_and_what_it_reads_in_its_file": "5607c08830be",
+        "concept:same-file-reads": "baea4b3aac0e"
+      },
+      "evidence": "Now the extent starts at the first decorator, and the fingerprint covers, transitively, the same-file declarations and import bindings the anchor reads. Comments there still change nothing."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence revised after the non-author semantic review (dwitbuk eyes, contract lens)"
+      },
+      "seen": {
+        "test_mangsang.py:test_a_python_anchor_covers_its_attachments_and_what_it_reads_in_its_file": "5607c08830be",
+        "concept:same-file-reads": "bdcf9401672d"
+      },
+      "evidence": "Now the extent starts at the first decorator, and the fingerprint covers, transitively, the same-file declarations and import bindings the anchor reads. Comments there still change nothing."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the narrowed sentence after the root's independent review"
+      },
+      "seen": {
+        "test_mangsang.py:test_a_python_anchor_covers_its_attachments_and_what_it_reads_in_its_file": "5607c08830be",
+        "concept:same-file-reads": "b14743b3821f"
+      },
+      "evidence": "Now the extent starts at the first decorator, and the fingerprint covers, transitively, the same-file declarations and import bindings the anchor reads. Comments there still change nothing."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence narrowed after the follow-up non-author review"
+      },
+      "seen": {
+        "test_mangsang.py:test_a_python_anchor_covers_its_attachments_and_what_it_reads_in_its_file": "5607c08830be",
+        "concept:same-file-reads": "dfb0110af754"
+      },
+      "evidence": "Now the extent starts at the first decorator, and the fingerprint covers, transitively, the same-file declarations and import bindings the anchor reads. Comments there still change nothing."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence narrowed to the tokenizer rule after the final non-author review"
+      },
+      "seen": {
+        "test_mangsang.py:test_a_python_anchor_covers_its_attachments_and_what_it_reads_in_its_file": "5607c08830be",
+        "concept:same-file-reads": "70f8eb9dba2f"
+      },
+      "evidence": "Now the extent starts at the first decorator, and the fingerprint covers, transitively, the same-file declarations and import bindings the anchor reads. Comments there still change nothing."
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

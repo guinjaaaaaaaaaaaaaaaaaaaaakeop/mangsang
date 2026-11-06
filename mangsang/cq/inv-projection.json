@@ -1,0 +1,23 @@
+{
+  "id": "inv-projection",
+  "text": "Is every concept realized in the user documentation, the engine code and the example suite?",
+  "verify": {
+    "kind": "projection",
+    "media": {
+      "doc": [
+        "plugin/README.md"
+      ],
+      "code": [
+        "plugin/mangsang.py",
+        "plugin/anchors.py"
+      ],
+      "test": [
+        "test_mangsang.py"
+      ]
+    }
+  },
+  "declared": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+  },
+  "written_by": "mangsang 2.0.1"
+}

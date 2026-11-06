@@ -1,0 +1,71 @@
+{
+  "id": "inv-registered-scope",
+  "text": "Is every file git tracks in the payload (plugin/, every subdirectory included) or as a root suite (test_*), and AGENTS.md and MODEL.md, registered — unless an except names it as one of MODEL.md's non-claims (the three manifests, the license, the command adapters, the operate skill, the vendored hostcall.py, the judge worker, the vendored mermaid, the four other suites)? A new payload file or suite fails until it is registered or classified there.",
+  "verify": {
+    "kind": "registered",
+    "paths": [
+      "plugin/",
+      "test_",
+      "AGENTS.md",
+      "MODEL.md"
+    ],
+    "except": [
+      "plugin/.claude-plugin/plugin.json",
+      "plugin/.codex-plugin/plugin.json",
+      "plugin/plugin.json",
+      "plugin/LICENSE",
+      "plugin/commands/*.md",
+      "plugin/skills/operate/SKILL.md",
+      "plugin/hostcall.py",
+      "plugin/judge_worker.py",
+      "plugin/vendor/mermaid/*",
+      "test_package.py",
+      "test_properties.py",
+      "test_running_agent.py",
+      "test_model_guard.py"
+    ]
+  },
+  "declared": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against git's tracked payload and root suites, the released engine's registered check and MODEL.md's non-claims, under the owner's 2026-11-06 Stage A request (umbrella audit F1: a new payload file or root suite must fail check unless an except classifies it with a reason); no person read or approved this wording"
+  },
+  "history": [
+    {
+      "text": "Is every file in the model's declared scope registered?",
+      "verify": {
+        "kind": "registered",
+        "paths": [
+          "plugin/mangsang.py",
+          "plugin/anchors.py",
+          "plugin/README.md",
+          "test_mangsang.py",
+          "AGENTS.md",
+          "MODEL.md"
+        ]
+      },
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      }
+    },
+    {
+      "text": "Is every file in the model's declared scope registered? (The vendored third-party mermaid under plugin/vendor/ is outside the scope on purpose.)",
+      "verify": {
+        "kind": "registered",
+        "paths": [
+          "plugin/mangsang.py",
+          "plugin/anchors.py",
+          "plugin/README.md",
+          "test_mangsang.py",
+          "AGENTS.md",
+          "MODEL.md"
+        ],
+        "except": [
+          "plugin/vendor/*"
+        ]
+      },
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      }
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

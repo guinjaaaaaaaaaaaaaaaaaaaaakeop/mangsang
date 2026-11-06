@@ -1,0 +1,28 @@
+{
+  "name": "living-answer",
+  "means": "A concept's means sentence is the answer to each domain question that names it; cq audits that the answer is alive and not known wrong — the concept is realized somewhere, none of its realizing projections moved since confirmation, it owes no re-read and is not marked drifted, and no concept it stands on through relations between concepts has moved projections, owes a re-read or is marked drifted, nor has a relation on the way moved — and never judges whether the sentence is true.",
+  "declared": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; revised after the second non-author semantic review round (dwitbuk eyes) found the reached-concept conditions incomplete"
+  },
+  "history": [
+    {
+      "means": "A concept's means sentence is the answer to each domain question that names it; cq audits only that the answer is alive — the concept is realized somewhere, none of its realizing projections moved since confirmation and it owes no re-read — and never judges whether the sentence is true.",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      }
+    },
+    {
+      "means": "A concept's means sentence is the answer to each domain question that names it; cq audits only that the answer is alive — the concept is realized somewhere, none of its realizing projections moved since confirmation, it owes no re-read, and the concepts it stands on through relations between concepts have not moved either — and never judges whether the sentence is true.",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; revised after the lock's verifier (dwitbuk eyes) found the earlier sentence incomplete against the code"
+      }
+    },
+    {
+      "means": "A concept's means sentence is the answer to each domain question that names it; cq audits that the answer is alive and not known wrong — the concept is realized somewhere, none of its realizing projections moved since confirmation, it owes no re-read, it is not marked drifted, and the concepts it stands on through relations between concepts have neither moved nor drifted — and never judges whether the sentence is true.",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; revised after the non-author semantic review (dwitbuk eyes, contract lens) found the earlier sentence incomplete against the code"
+      }
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

@@ -2404,6 +2404,314 @@ def test_judge_binds_response_to_request_and_rejects_legacy_packets():
         assert run("impact", "--target", pj.dir)[0] == 1
 
 
+def git_in(pj):
+    import subprocess
+    return lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=pj.dir, capture_output=True, text=True)
+
+
+def line_of(out, label):
+    """The output lines that start with `label` (as check and impact print them: two spaces, the label padded)."""
+    return [l for l in out.split("\n") if l.startswith("  " + label + " ") or l.startswith("  %-12s " % label)]
+
+
+def test_a_registered_invariant_naming_files_still_sees_a_new_sibling():
+    """Umbrella audit, 11-06 (R1): four of six source models declared `registered` over the exact files they had registered,
+    and a new committed plugin/resolver.py beside them was asked by nothing — check exit 0, no line, no next step. Now the
+    code and config beside registered files that no invariant's paths or excepts classify is said as unseen (never red),
+    with its register and the revise that gives the invariant its folder; once the folder is asked, it is a FAILED invariant
+    as before and the unseen line goes. An invariant that names only files is said once, before any sibling exists."""
+    with Project() as pj:
+        git = git_in(pj)
+        write(os.path.join(pj.dir, "plugin", "x.py"), "def x():\n    return 1\n")
+        write(os.path.join(pj.dir, "plugin", "y.py"), "def y():\n    return 2\n")
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run("register", "plan/PLAN.md", "plugin/x.py", "plugin/y.py", "--target", pj.dir)[0] == 0
+        assert run("cq", "add", "scope", "--text", "Is the payload registered?", "--verify",
+                   '{"kind": "registered", "paths": ["plugin/x.py", "plugin/y.py"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 0 and not line_of(out, "unseen"), out
+        only = line_of(out, "files-only")
+        assert len(only) == 1 and "scope names only files (2)" in only[0] and "`plugin/`" in only[0], out
+        # the probe: a committed sibling (and one a level down); prose and a lockfile there are not code or config
+        write(os.path.join(pj.dir, "plugin", "resolver.py"), "def resolve():\n    return 3\n")
+        write(os.path.join(pj.dir, "plugin", "lib", "util.py"), "def util():\n    return 4\n")
+        write(os.path.join(pj.dir, "plugin", "notes.md"), "# notes\n")
+        write(os.path.join(pj.dir, "plugin", "package-lock.json"), "{}\n")
+        git("add", "-A"); git("commit", "-qm", "siblings")
+        code, out = run("check", "--target", pj.dir)
+        unseen = line_of(out, "unseen")
+        assert code == 0, "an observation, never red"
+        # the sibling beside the registered files, and — as before — the subdirectory nothing is registered in, each said once
+        assert len(unseen) == 2 and "1 tracked code/config file(s) beside registered ones that no `registered` invariant asks" in unseen[0], out
+        assert "plugin/resolver.py" in unseen[0] and "1 directory with code or config and nothing registered (plugin/lib/ 1 file(s))" in unseen[1], out
+        assert not any(x in out for x in ("notes.md", "package-lock")), out
+        assert "mangsang register plugin/resolver.py" in out and "mangsang register plugin/lib/util.py" in out, out
+        assert "mangsang cq revise scope --verify" in out and '"plugin/x.py", "plugin/y.py", "plugin/"' in out, out
+        doc = json.loads(run("check", "--findings", "--target", pj.dir)[1])
+        seen = [f for f in doc["findings"] if f["kind"] == "unregistered" and "plugin/resolver.py" in f["where"]]
+        assert len(seen) == 1 and seen[0]["layer"] == "observation" and "asked by no `registered` invariant" in seen[0]["text"], doc
+        assert [f["where"] for f in doc["findings"] if f["kind"] == "registered-files-only"] == ["scope"], doc
+        # an except classifies a file as on purpose: it is no longer said
+        assert run("cq", "revise", "scope", "--verify", '{"kind": "registered", "paths": ["plugin/x.py", "plugin/y.py"], "except": ["plugin/lib/util.py"]}',
+                   "--by", "kim", "--target", pj.dir)[0] == 0
+        unseen = line_of(run("check", "--target", pj.dir)[1], "unseen")
+        assert len(unseen) == 1 and "plugin/resolver.py" in unseen[0] and "util.py" not in unseen[0], unseen
+        # the folder asked: a file under the invariant's paths is a FAILED invariant as before, and nothing is unseen or files-only
+        assert run("cq", "revise", "scope", "--verify", '{"kind": "registered", "paths": ["plugin/"], "except": ["plugin/*.md", "plugin/package-lock.json"]}',
+                   "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "FAILED       scope" in out and "2 unregistered tracked file(s): plugin/lib/util.py, plugin/resolver.py" in out, out
+        assert not line_of(out, "unseen") and not line_of(out, "files-only"), out
+        assert run("register", "plugin/resolver.py", "plugin/lib/util.py", "--target", pj.dir)[0] == 0
+        assert run("check", "--target", pj.dir)[0] == 0
+    # without a `registered` invariant the old beside advice is what it was: every tracked file there, said once
+    with Project() as pj:
+        git = git_in(pj)
+        write(os.path.join(pj.dir, "plugin", "x.py"), "def x():\n    return 1\n")
+        write(os.path.join(pj.dir, "plugin", "notes.md"), "# notes\n")
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run("register", "plugin/x.py", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        unseen = line_of(out, "unseen")
+        assert code == 0 and len(unseen) == 1 and "plugin/notes.md" in unseen[0] and "to make it a check" in unseen[0], out
+        assert not line_of(out, "files-only") and "cq revise" not in out, out
+    # an invariant naming only root files: the root's own files are never said unseen (every project's manifests), so that
+    # invariant is the one place they are asked — said once as files-only, with the advice for the root
+    with Project() as pj:
+        git = git_in(pj)
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run("register", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert run("cq", "add", "roots", "--text", "?", "--verify", '{"kind": "registered", "paths": ["memo.py", "test_memo.py"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, "resolver.py"), "def r():\n    return 1\n")
+        git("add", "-A"); git("commit", "-qm", "a root sibling")
+        code, out = run("check", "--target", pj.dir)
+        only = line_of(out, "files-only")
+        assert code == 0 and len(only) == 1 and "roots names only files (2) — a file added beside them in the root is asked by nothing" in only[0], out
+        assert "the root's own files are never said unseen" in only[0] and "`test_`" in only[0] and not line_of(out, "unseen"), out
+        assert run("cq", "revise", "roots", "--verify", '{"kind": "registered", "paths": ["memo.py", "test_"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        assert not line_of(run("check", "--target", pj.dir)[1], "files-only"), "a prefix is no file: the invariant asks of the next suite"
+
+
+def test_an_except_says_what_it_hides_and_a_star_that_crosses_a_slash():
+    """hacheong, 11-06 (R1b): an except's `*` matches across `/`, so `plugin/domains/*` also hid a committed
+    plugin/domains/code/resolver.py, and check passed. What an except matches is unchanged (consumers' excepts keep their
+    meaning); what it hides is said — the invariant's detail counts each wildcard glob's files, and a glob that hides code or
+    config only because its `*` crossed a `/` is an observation once. `**` matches the same and says the depth is meant."""
+    with Project() as pj:
+        git = git_in(pj)
+        write(os.path.join(pj.dir, "src", "a.py"), "def a():\n    return 1\n")
+        write(os.path.join(pj.dir, "src", "gen", "x.py"), "X = 1\n")
+        write(os.path.join(pj.dir, "src", "gen", "deep", "y.py"), "Y = 1\n")
+        write(os.path.join(pj.dir, "src", "gen", "deep", "README.md"), "# generated\n")
+        write(os.path.join(pj.dir, "src", "vendor", "lib.js"), "export const v = 1\n")
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run("register", "src/a.py", "--target", pj.dir)[0] == 0
+        assert run("cq", "add", "scope", "--text", "Is src registered?", "--verify",
+                   '{"kind": "registered", "paths": ["src/"], "except": ["src/gen/*", "src/vendor/lib.js"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 0 and "holds        scope" in out and "0 unregistered tracked file(s); its excepts hide 4 (src/gen/* 3)" in out, out
+        crossed = line_of(out, "except")
+        assert len(crossed) == 1 and "scope `src/gen/*` hides 1 code/config file(s)" in crossed[0] and "src/gen/deep/y.py" in crossed[0], out
+        assert "src/gen/x.py" not in crossed[0] and "README.md" not in crossed[0] and "`src/gen/**`" in crossed[0], crossed
+        doc = json.loads(run("check", "--findings", "--target", pj.dir)[1])
+        assert [f["where"] for f in doc["findings"] if f["kind"] == "except-crosses"] == ["scope src/gen/*"], doc
+        # `**` says every depth on purpose: the same files are excepted (it still holds), and nothing is said
+        assert run("cq", "revise", "scope", "--verify", '{"kind": "registered", "paths": ["src/"], "except": ["src/gen/**", "src/vendor/lib.js"]}',
+                   "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 0 and "its excepts hide 4 (src/gen/** 3)" in out and not line_of(out, "except"), out
+        # narrowed to the files of each level: the same files excepted, no `*` crossing a `/`, nothing said
+        assert run("cq", "revise", "scope", "--verify", '{"kind": "registered", "paths": ["src/"], "except": ["src/gen/x.py", "src/gen/deep/*", "src/vendor/lib.js"]}',
+                   "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 0 and "holds        scope" in out and "its excepts hide 4 (src/gen/deep/* 2)" in out and not line_of(out, "except"), out
+        # what a glob matches is what it matched: `src/gen/*.py` still excepts src/gen/deep/y.py (fnmatch), and says so
+        assert run("cq", "revise", "scope", "--verify", '{"kind": "registered", "paths": ["src/"], "except": ["src/gen/*.py", "src/gen/deep/*.md", "src/vendor/lib.js"]}',
+                   "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        crossed = line_of(out, "except")
+        assert code == 0 and len(crossed) == 1 and "`src/gen/*.py` hides 1" in crossed[0] and "`src/gen/**.py`" in crossed[0], out
+    assert mangsang.glob_crosses("src/gen/deep/y.py", "src/gen/*") and not mangsang.glob_crosses("src/gen/x.py", "src/gen/*")
+    assert not mangsang.glob_crosses("src/gen/deep/y.py", "src/gen/**") and not mangsang.glob_crosses("src/a.py", "src/a.py")
+    assert mangsang.glob_crosses("src/gen/deep/y.py", "src/gen/*.py") and mangsang.glob_crosses("tests/x/a.json", "tests/*.json")
+
+
+def test_a_required_invariant_keeps_named_content_and_require_model_fails_an_empty_one():
+    """Umbrella audit, 11-06 (R2): retiring a concept's projection, a question, an invariant or a relation, or emptying the
+    model, left check, cq and impact green, so every source model wrote its own acceptance checker (about 1,100 lines) —
+    three of them passed falsely (retired questions counted, an empty required scope, a retired-only model). Now a project
+    that keeps its model declares it: `{"kind": "required", ...}` fails, with the engine's own semantics, when what it names
+    is missing, retired, drifted, owing a re-read, realized nowhere, of the other layer or broken; `check --require-model`
+    fails an absent or empty model. Neither changes anything for a project that declares nothing."""
+    with Project() as pj:
+        code, out = run("check", "--target", pj.dir)
+        assert code == 0, "optional when absent: no model, nothing red"
+        code, out = run("check", "--require-model", "--target", pj.dir)
+        assert code == 1 and "FAILED       --require-model  the model is required and absent: no mangsang/ here" in out, out
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--require-model", "--target", pj.dir)
+        assert code == 1 and "empty: no concept, no active relation, no active invariant" in out, out
+        assert run("concept", "add", "alpha", "--means", "add appends and prints its id.", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("memo.py:add", "realizes", "concept:alpha", ev="def add(store, text):"),
+                          rel("plan/PLAN.md#Q1 add", "realizes", "concept:alpha"))[0] == 0
+        assert run("cq", "add", "q1", "--text", "What does add do?", "--verify", '{"kind": "answered-by", "concepts": ["alpha"]}', "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--require-model", "--target", pj.dir)
+        assert code == 1 and "empty: no active invariant" in out and "--require-model FAILED (no active invariant)" in out, out
+        assert run("cq", "add", "projected", "--text", "Every concept planned?", "--verify", '{"kind": "projection", "media": {"doc": ["plan/"]}}',
+                   "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run("cq", "add", "inv-resolved", "--text", "Living anchors?", "--verify", '{"kind": "resolved"}', "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--require-model", "--target", pj.dir)
+        assert code == 0 and "--require-model" not in out, out
+        keep = {"kind": "required", "concepts": ["alpha"], "questions": ["q1"], "invariants": ["inv-resolved", "keep"],
+                "relations": [{"src": "memo.py:add", "predicate": "realizes", "dst": "concept:alpha"}]}
+        # what it names must stand when it is declared; a misspelt key or nothing named is not askable
+        for bad in ({"kind": "required"}, {"kind": "required", "concept": ["alpha"]}, {"kind": "required", "relations": [{"src": "memo.py:add"}]}):
+            code, out = run("cq", "add", "keep", "--text", "?", "--verify", json.dumps(bad), "--by", "kim", "--target", pj.dir)
+            assert code != 0 and "cannot be asked" in out, (bad, out)
+        code, out = run("cq", "add", "keep", "--text", "?", "--verify", json.dumps(dict(keep, concepts=["alpha", "beta"])), "--by", "kim", "--target", pj.dir)
+        assert code != 0 and "concept:beta is missing" in out, out
+        code, out = run("cq", "add", "keep", "--text", "?", "--verify", json.dumps(dict(keep, questions=["inv-resolved"])), "--by", "kim", "--target", pj.dir)
+        assert code != 0 and "question inv-resolved is an invariant (kind resolved), not a question" in out, out
+        assert run("cq", "add", "keep", "--text", "Does the model keep what it was built to carry?", "--verify", json.dumps(keep), "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 0 and "holds        keep" in out and "1 concepts, 1 questions, 2 invariants, 1 relations named, 0 not standing" in out, out
+        assert "keep" not in run("cq", "--target", pj.dir)[1], "an invariant answers to check, not cq"
+        shown = next(l for l in run("report", "--target", pj.dir)[1].split("\n") if l.startswith("- **keep**"))
+        assert "invariant (`check`) ·" in shown and "answered by" not in shown, shown   # it names concepts; it answers nothing
+        # each way content stops standing is said, the engine's own semantics
+        assert run("cq", "retire", "q1", "--why", "asked elsewhere", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "FAILED       keep" in out and "question q1 is retired — asked elsewhere" in out, out
+        assert run("cq", "revise", "q1", "--by", "kim", "--target", pj.dir)[0] == 0   # a revise asks it again
+        assert run("concept", "drift", "alpha", "--why", "add no longer prints", "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "concept:alpha is marked drifted — add no longer prints" in out, out
+        assert run("concept", "reaffirm", "alpha", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run("check", "--target", pj.dir)[0] == 0
+        rid = mangsang.rel_id(keep["relations"][0])
+        assert run("retire", rid, "--why", "moved", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "%s (memo.py:add realizes concept:alpha) is retired — moved" % rid in out, out
+        assert "concept:alpha owes a re-read" in out and "2 not standing" in out, out
+        doc = json.loads(run("check", "--findings", "--target", pj.dir)[1])
+        assert [f["where"] for f in doc["findings"] if f["kind"] == "invariant-failed"] == ["keep"], doc
+        # a broken relation: the anchor it stands on is gone
+        assert pj.propose(rel("memo.py:add", "realizes", "concept:alpha", ev="def add(store, text):"))[0] == 0
+        assert run("concept", "reaffirm", "alpha", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run("check", "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, "memo.py"), CODE.replace("def add(store, text):\n    return 1\n", ""))
+        code, out = run("check", "--target", pj.dir)
+        assert code == 1 and "is broken — dead anchor(s) memo.py:add" in out, out
+        # emptied: every relation retired leaves no active relation — --require-model says it, whatever else holds
+        write(os.path.join(pj.dir, "memo.py"), CODE)
+        for r in mangsang.decl(pj.dir)["relations"]:
+            assert run("retire", r["id"], "--why", "emptied", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--require-model", "--target", pj.dir)
+        assert code == 1 and "empty: no active relation" in out and "is realized by no relation" in out, out
+
+
+def test_impact_says_a_relation_moved_only_through_a_read_with_no_relation_of_its_own():
+    """Umbrella audit, 11-06 (R3): editing chongdae's plugin_root staled five relations of three unrelated concepts, and
+    hunsu's materialize_codex_hooks staled cmd_lock's four — each re-read against its own sentence, found true and
+    reconfirmed, while the read's own contract (the defect) was examined by nobody. Now impact says, with each such stale
+    relation, that it moved only through reads that carry no relation of their own and that reconfirming does not read
+    them, and groups a read that staled relations of two or more concepts as a candidate shared contract. Silent when the
+    anchor's own text moved and when the read is related itself."""
+    src = ("ROOT = '/a'\n\n\ndef plugin_root():\n    return ROOT\n\n\ndef fmt(x):\n    return x\n\n\n"
+           "def load():\n    return fmt(plugin_root() + 'x')\n\n\ndef save():\n    return plugin_root() + 'y'\n")
+    with Project() as pj:
+        git = git_in(pj)
+        git("init", "-q")
+        write(os.path.join(pj.dir, "p.py"), src)
+        assert run("register", "plan/PLAN.md", "p.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "loading", "--means", "load reads the root.", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "saving", "--means", "save writes beside the root.", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("p.py:load", "realizes", "concept:loading", ev="def load():"),
+                          rel("p.py:save", "realizes", "concept:saving", ev="def save():"))[0] == 0
+        git("add", "-A"); git("commit", "-qm", "confirmed")
+        r_load = mangsang.rel_id({"src": "p.py:load", "predicate": "realizes", "dst": "concept:loading"})
+        # a read of one concept's anchor only: said with that relation, no shared line
+        write(os.path.join(pj.dir, "p.py"), src.replace("    return x\n", "    return x.strip()\n"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and out.count("moved only through") == 1 and "p.py:load moved only through what it reads, not its own text: p.py:fmt" in out, out
+        assert "reconfirming re-reads concept:loading against p.py:load, not that read's own contract" in out and "shared" not in out, out
+        # a read both concepts' anchors stand on: said with each, and grouped once
+        write(os.path.join(pj.dir, "p.py"), src.replace("    return ROOT\n", "    return ROOT + '/'\n"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and out.count("moved only through") == 2 and len(line_of(out, "shared")) == 1, out
+        assert "p.py:plugin_root, read with no relation of its own, staled 2 relation(s) of 2 concepts (concept:loading, concept:saving" in out, out
+        code, show = run("impact", "--show", "--target", pj.dir)
+        assert show.count("moved only through") == 2 and "p.py:plugin_root, read by p.py:load @ now" in show, show
+        doc = json.loads(run("impact", "--findings", "--target", pj.dir)[1])
+        st = [f for f in doc["findings"] if f["kind"] == "stale"]
+        assert len(st) == 2 and all("moved only through what it reads: p.py:plugin_root, with no relation of its own" in f["text"] for f in st), doc
+        assert [f["where"] for f in doc["findings"] if f["kind"] == "unmodeled-read"] == ["p.py:plugin_root"], doc
+        assert all(f.get("layer") == "observation" for f in doc["findings"] if f["kind"] == "unmodeled-read"), doc
+        # its own text moved too: the re-read reads the change — nothing more is said for that relation
+        write(os.path.join(pj.dir, "p.py"), src.replace("    return ROOT\n", "    return ROOT + '/'\n").replace("'x')", "'z')"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and out.count("moved only through") == 1 and "p.py:save moved only through" in out and "shared" not in out, out
+        # related on its own, the read is no longer unmodeled: its own relation goes stale, re-read against its own sentence
+        write(os.path.join(pj.dir, "p.py"), src)
+        assert run("concept", "add", "root", "--means", "plugin_root is where the plugin lives.", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("p.py:plugin_root", "realizes", "concept:root", ev="def plugin_root():"))[0] == 0
+        git("add", "-A"); git("commit", "-qm", "root related")
+        write(os.path.join(pj.dir, "p.py"), src.replace("    return ROOT\n", "    return ROOT + '/'\n"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and out.count("stale   ") == 3 and "moved only through" not in out and "shared" not in out, out
+        # a related read and an unrelated one moved together: the line names both, each for what it is — never "only" the one
+        write(os.path.join(pj.dir, "p.py"), src.replace("    return ROOT\n", "    return ROOT + '/'\n").replace("    return x\n", "    return x.strip()\n"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and out.count("moved only through") == 1 and "shared" not in out, out
+        assert "p.py:load moved only through what it reads, not its own text: p.py:fmt, with no relation of its own (and p.py:plugin_root, related itself)" in out, out
+        assert run("reconfirm", r_load, "--by", "kim", "--target", pj.dir)[0] == 0
+    # without a commit holding what the confirmer saw, nothing is claimed about which part moved
+    with Project() as pj:
+        write(os.path.join(pj.dir, "p.py"), src)
+        assert run("register", "p.py", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "loading", "--means", "load reads the root.", "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("p.py:load", "realizes", "concept:loading", ev="def load():"))[0] == 0
+        write(os.path.join(pj.dir, "p.py"), src.replace("    return ROOT\n", "    return ROOT + '/'\n"))
+        code, out = run("impact", "--target", pj.dir)
+        assert code == 1 and "stale" in out and "moved only through" not in out, out
+
+
+def test_check_says_a_concept_whose_code_no_test_verifies():
+    """Umbrella audit, 11-06 (R4): a projection invariant holds on `realizes` alone, and three source models (118 relations)
+    had no `verifies` — a code change never asked whether its test still proves it. Now check observes (never red) each
+    concept realized in the `code` and `test` media whose code anchors no `verifies` reaches, once per concept."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        for name, means in (("adding", "add appends."), ("listing", "list lists.")):
+            assert run("concept", "add", name, "--means", means, "--by", "kim", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("memo.py:add", "realizes", "concept:adding", ev="def add(store, text):"),
+                          rel("plan/PLAN.md#Q1 add", "realizes", "concept:adding"),
+                          rel("test_memo.py:test_Q1_add", "realizes", "concept:adding", ev="def test_Q1_add():"),
+                          rel("memo.py:list_", "realizes", "concept:listing", ev="def list_(store):"),
+                          rel("plan/PLAN.md#Q2 list", "realizes", "concept:listing", ev="lists."),
+                          rel("test_memo.py:test_Q1_add", "realizes", "concept:listing", ev="def test_Q1_add():"))[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        assert "unverified" not in out, "no projection invariant names a code and a test medium: nothing to say"
+        assert run("cq", "add", "projected", "--text", "Every concept in doc, code and test?", "--verify",
+                   '{"kind": "projection", "media": {"doc": ["plan/"], "code": ["memo.py"], "test": ["test_memo.py"]}}', "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        lines = line_of(out, "unverified")
+        assert len(lines) == 2 and "concept:adding — 1 test projection(s), and no `verifies` reaches any of its 1 code anchor(s) (memo.py:add)" in lines[0], out
+        assert "concept:listing" in lines[1] and "holds        projected" in out, out
+        assert pj.propose(rel("test_memo.py:test_Q1_add", "verifies", "memo.py:add", ev="def test_Q1_add():"))[0] == 0
+        code, out = run("check", "--target", pj.dir)
+        lines = line_of(out, "unverified")
+        assert len(lines) == 1 and "concept:listing" in lines[0], out
+        doc = json.loads(run("check", "--findings", "--target", pj.dir)[1])
+        assert [(f["where"], f["layer"]) for f in doc["findings"] if f["kind"] == "unverified-code"] == [("concept:listing", "observation")], doc
+        # a `verifies` of the whole file is no test of a symbol in it: it silences nothing; one of the symbol does
+        assert pj.propose(rel("test_memo.py:test_Q1_add", "verifies", "memo.py", ev="def test_Q1_add():"))[0] == 0
+        lines = line_of(run("check", "--target", pj.dir)[1], "unverified")
+        assert len(lines) == 1 and "concept:listing" in lines[0], lines
+        assert pj.propose(rel("test_memo.py:test_Q1_add", "verifies", "memo.py:list_", ev="def test_Q1_add():"))[0] == 0
+        assert "unverified" not in run("check", "--target", pj.dir)[1]
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")

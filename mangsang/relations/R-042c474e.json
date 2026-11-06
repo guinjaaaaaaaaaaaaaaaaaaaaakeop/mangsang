@@ -1,0 +1,15 @@
+{
+  "id": "R-042c474e",
+  "src": "test_mangsang.py:test_a_python_anchor_covers_its_attachments_and_what_it_reads_in_its_file",
+  "predicate": "verifies",
+  "dst": "plugin/anchors.py:parts",
+  "evidence": "assert [l for l, _ in mangsang.anchor_parts(\"p.py\", src)[\":handle\"]] == [\":handle\", \":LIMIT\", \":helper\", \"import require_admin\", \":RATE\"]",
+  "seen": {
+    "test_mangsang.py:test_a_python_anchor_covers_its_attachments_and_what_it_reads_in_its_file": "5607c08830be",
+    "plugin/anchors.py:parts": "0674575aaa23"
+  },
+  "confirmed": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+  },
+  "written_by": "mangsang 2.0.1"
+}

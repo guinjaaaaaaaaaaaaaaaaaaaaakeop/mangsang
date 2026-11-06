@@ -1,0 +1,37 @@
+{
+  "id": "R-bb9befea",
+  "src": "plugin/README.md#Anchors, predicates, quotes",
+  "predicate": "realizes",
+  "dst": "concept:staleness-against-seen",
+  "evidence": "Older `seen` shapes — a text hash, a numeric-token hash, an own-tokens-only hash — are still answered for compatibility (unchanged bytes are not stale) and never written; such a record cannot see what its anchor reads until a `reconfirm` upgrades it.",
+  "seen": {
+    "plugin/README.md#Anchors, predicates, quotes": "984912942f37",
+    "concept:staleness-against-seen": "950826697842"
+  },
+  "confirmed": {
+    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence revised after the non-author semantic review (dwitbuk eyes, contract lens)"
+  },
+  "history": [
+    {
+      "confirmed": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      },
+      "seen": {
+        "plugin/README.md#Anchors, predicates, quotes": "984912942f37",
+        "concept:staleness-against-seen": "8aa6eb853517"
+      },
+      "evidence": "A relation is stale when an anchor it propagates from differs from what its confirmer saw (`seen`) — the same verdict on every machine and across a merge. Broken when an anchor is gone."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it"
+      },
+      "seen": {
+        "plugin/README.md#Anchors, predicates, quotes": "984912942f37",
+        "concept:staleness-against-seen": "499eceaf2f1c"
+      },
+      "evidence": "A relation is stale when an anchor it propagates from differs from what its confirmer saw (`seen`) — the same verdict on every machine and across a merge. Broken when an anchor is gone."
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

@@ -1,0 +1,37 @@
+{
+  "id": "R-27f1fb38",
+  "src": "plugin/README.md#`/mangsang:concept`",
+  "predicate": "realizes",
+  "dst": "concept:owed-reread",
+  "evidence": "Retiring one leaves the concept owing a re-read (`owes`): the questions it answers are FAILED until `revise` gives it a new sentence or `reaffirm` (signed) says the old one still holds — reconfirming the projections that remain does not answer it, since each reconfirm asks only \"does this still realize the concept?\". `impact` counts each such concept in `unresolved_total`",
+  "seen": {
+    "plugin/README.md#`/mangsang:concept`": "55734a8915d7",
+    "concept:owed-reread": "99e847bd6c54"
+  },
+  "confirmed": {
+    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence revised after the second non-author semantic review round"
+  },
+  "history": [
+    {
+      "confirmed": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      },
+      "seen": {
+        "plugin/README.md#`/mangsang:concept`": "55734a8915d7",
+        "concept:owed-reread": "02fd25783c29"
+      },
+      "evidence": "Retiring one leaves the concept owing a re-read (`owes`): the questions it answers are FAILED until `revise` gives it a new sentence or `reaffirm` (signed) says the old one still holds — reconfirming the projections that remain does not answer it"
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it"
+      },
+      "seen": {
+        "plugin/README.md#`/mangsang:concept`": "55734a8915d7",
+        "concept:owed-reread": "02fd25783c29"
+      },
+      "evidence": "Retiring one leaves the concept owing a re-read (`owes`): the questions it answers are FAILED until `revise` gives it a new sentence or `reaffirm` (signed) says the old one still holds — reconfirming the projections that remain does not answer it, since each reconfirm asks only \"does this still realize the concept?\". `impact` counts each such concept in `unresolved_total`"
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

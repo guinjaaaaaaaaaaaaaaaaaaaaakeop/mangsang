@@ -1,0 +1,27 @@
+{
+  "id": "R-2a8d0f14",
+  "src": "test_mangsang.py:test_confirm_checks_anchors_vocabulary_evidence_and_duplicates_and_stores_one_file_per_relation",
+  "predicate": "realizes",
+  "dst": "concept:evidence-gate",
+  "evidence": "for needle in (\"does not resolve\", \"not in the vocabulary\", \"no evidence\", \"not a quote from either anchor\", \"duplicate of\"):",
+  "seen": {
+    "test_mangsang.py:test_confirm_checks_anchors_vocabulary_evidence_and_duplicates_and_stores_one_file_per_relation": "439498b3f8b7",
+    "concept:evidence-gate": "0df3ad2f66e7"
+  },
+  "confirmed": {
+    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it"
+  },
+  "history": [
+    {
+      "confirmed": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      },
+      "seen": {
+        "test_mangsang.py:test_confirm_checks_anchors_vocabulary_evidence_and_duplicates_and_stores_one_file_per_relation": "439498b3f8b7",
+        "concept:evidence-gate": "05bc41e42583"
+      },
+      "evidence": "for needle in (\"does not resolve\", \"not in the vocabulary\", \"no evidence\", \"not a quote from either anchor\", \"duplicate of\"):"
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

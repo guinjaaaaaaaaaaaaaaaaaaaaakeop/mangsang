@@ -1,0 +1,37 @@
+{
+  "id": "R-f466bf27",
+  "src": "plugin/mangsang.py:compute_impact",
+  "predicate": "realizes",
+  "dst": "concept:staleness-against-seen",
+  "evidence": "Stale = an anchor the relation propagates from differs from what its confirmer saw (`seen`); relations without `seen` are judged against this machine's baseline, or listed as unjudged when there is none.",
+  "seen": {
+    "plugin/mangsang.py:compute_impact": "e5a32190c7e8",
+    "concept:staleness-against-seen": "950826697842"
+  },
+  "confirmed": {
+    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence revised after the non-author semantic review (dwitbuk eyes, contract lens)"
+  },
+  "history": [
+    {
+      "confirmed": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      },
+      "seen": {
+        "plugin/mangsang.py:compute_impact": "e5a32190c7e8",
+        "concept:staleness-against-seen": "8aa6eb853517"
+      },
+      "evidence": "Stale = an anchor the relation propagates from differs from what its confirmer saw (`seen`)"
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it"
+      },
+      "seen": {
+        "plugin/mangsang.py:compute_impact": "e5a32190c7e8",
+        "concept:staleness-against-seen": "499eceaf2f1c"
+      },
+      "evidence": "Stale = an anchor the relation propagates from differs from what its confirmer saw (`seen`); relations without `seen` are judged against this machine's baseline, or listed as unjudged when there is none."
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

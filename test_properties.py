@@ -307,6 +307,140 @@ def test_reach_is_the_reverse_of_where_a_change_travels():
 
     prop()
 
+
+# ---------------------------------------------------------------- 7. beside a registered file, no code or config is silent
+
+POOL = ["plugin/a.py", "plugin/b.py", "plugin/c.json", "plugin/d.md", "plugin/sub/e.py", "plugin/sub/f.yaml", "plugin/sub/deep/g.py", "plugin/sub/h.md"]
+EXCEPTS = ["plugin/sub/*", "plugin/*.json", "plugin/sub/deep/g.py", "plugin/*.md", "plugin/b.py"]
+
+
+def test_beside_a_registered_file_no_code_or_config_is_silent():
+    """Whatever the registered files, the `registered` invariant's paths (the registered files, a folder, or both) and its
+    excepts: every tracked code or config file in a registered file's folder below the root is registered, asked by the
+    invariant (FAILED lists it), excepted by a glob, or said unseen — and said at most once (beside, or as a directory
+    nothing is registered in). The root's own files are never said unseen (every project's manifests), so none is drawn. The umbrella's probe, 11-06, generalized: four source models named files and a new sibling was asked by nothing."""
+    need_hypothesis()
+
+    @given(reg=st.sets(st.sampled_from(POOL[1:]), max_size=4), files_only=st.booleans(), folder=st.sampled_from(["", "plugin/sub/", "plugin/"]),
+           excepts=st.sets(st.sampled_from(EXCEPTS), max_size=3))
+    @settings(**dict(PROPERTY, max_examples=40))
+    def prop(reg, files_only, folder, excepts):
+        tmp = tempfile.mkdtemp(prefix="mangsang-prop-")
+        try:
+            for p in POOL:
+                write(os.path.join(tmp, p), "{}\n" if p.endswith(".json") else "k: 1\n" if p.endswith(".yaml") else "# t\n" if p.endswith(".md") else "X = 1\n")
+            git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=tmp, capture_output=True, text=True)
+            git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+            registered = sorted({"plugin/a.py"} | reg)
+            assert run("register", *registered, "--target", tmp)[0] == 0
+            paths = (registered if files_only else []) + ([folder] if folder else [])
+            if paths:
+                verify = {"kind": "registered", "paths": paths, "except": sorted(excepts)}
+                assert run("cq", "add", "scope", "--text", "?", "--verify", json.dumps(verify), "--by", "kim", "--target", tmp)[0] == 0
+            d = mangsang.decl(tmp)
+            active = [q for q in mangsang.cq_active(d) if q.get("verify", {}).get("kind") in mangsang.INVARIANT_KINDS]
+            _, near, blind, _ = mangsang.unseen_groups(tmp, d, active)
+            said = [f for g in near + blind for f in g["files"]]
+            assert len(said) == len(set(said)), ("said twice", near, blind)
+            failed = set(mangsang.unregistered(tmp, d, paths, sorted(excepts))) if paths else set()
+            import fnmatch
+            for f in POOL:
+                if f.endswith(".md") or f in registered:
+                    continue
+                accounted = f in failed or f in said or (paths and any(fnmatch.fnmatch(f, g) for g in excepts))
+                assert accounted, ("silent", f, registered, paths, sorted(excepts), near, blind)
+                assert not (f in failed and f in said), ("both red and unseen", f)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    prop()
+
+
+# ---------------------------------------------------------------- 8. an except's breadth is said, never changed
+
+def test_any_depth_said_on_purpose_matches_the_same_and_crossing_is_exactly_what_segments_refuse():
+    """What an except matches is fnmatch's, unchanged: writing `**` for each `*` matches exactly the same paths. `glob_crosses`
+    is true exactly when fnmatch matches and a segment-by-segment match would not — never for a glob holding `**`."""
+    need_hypothesis()
+    import fnmatch
+    seg = st.sampled_from(["a", "b", "x.py", "y.json", "*", "*.py", "a*", "?"])
+    path = st.lists(st.sampled_from(["a", "b", "x.py", "y.json", "ab"]), min_size=1, max_size=4).map("/".join)
+
+    @given(glob=st.lists(seg, min_size=1, max_size=3).map("/".join), p=path)
+    @settings(**PROPERTY)
+    def prop(glob, p):
+        anydepth = glob.replace("*", "**")
+        assert fnmatch.fnmatch(p, glob) == fnmatch.fnmatch(p, anydepth), (glob, p)
+        segmentwise = len(p.split("/")) == len(glob.split("/")) and all(fnmatch.fnmatch(x, g) for x, g in zip(p.split("/"), glob.split("/")))
+        assert mangsang.glob_crosses(p, glob) == (fnmatch.fnmatch(p, glob) and not segmentwise and any(c in glob for c in "*?[")), (glob, p)
+        assert not mangsang.glob_crosses(p, anydepth) or "*" not in glob, (glob, p)
+
+    prop()
+
+
+# ---------------------------------------------------------------- 9. a required invariant holds exactly while what it names stands
+
+def test_a_required_invariant_holds_exactly_while_what_it_names_stands():
+    """Any sequence of retiring and re-confirming a projection, marking a concept drifted, reaffirming it, retiring and asking
+    a question again: a `required` invariant over any part of the model holds exactly when each concept it names is declared,
+    unmarked, owes nothing and is realized, each question is asked, and each relation is live — the semantics a project's
+    own checker had to rebuild (three of six rebuilt them wrong, 11-05)."""
+    need_hypothesis()
+    ops = st.lists(st.tuples(st.sampled_from(["retire", "confirm", "drift", "reaffirm", "retire-q", "ask-q"]), st.integers(0, 2)), max_size=7)
+
+    @given(seq=ops, need=st.tuples(st.sets(st.integers(0, 2)), st.sets(st.integers(0, 2)), st.sets(st.integers(0, 2))).filter(lambda t: any(t)))
+    @settings(**dict(PROPERTY, max_examples=40))
+    def prop(seq, need):
+        tmp = tempfile.mkdtemp(prefix="mangsang-prop-")
+        try:
+            write(os.path.join(tmp, "plan.md"), "# p\n\n" + "".join("## Q%d\n\nrule %d.\n\n" % (i, i) for i in range(3)))
+            assert run("register", "plan.md", "--target", tmp)[0] == 0
+            for i in range(3):
+                assert run("concept", "add", "c%d" % i, "--means", "rule %d holds." % i, "--by", "kim", "--target", tmp)[0] == 0
+            props = lambda i: {"relations": [{"src": "plan.md#Q%d" % i, "predicate": "realizes", "dst": "concept:c%d" % i, "evidence": "rule %d." % i}]}
+            for i in range(3):
+                write(os.path.join(tmp, "p.json"), props(i))
+                assert run("confirm", "p.json", "--by", "kim", "--target", tmp)[0] == 0
+                assert run("cq", "add", "q%d" % i, "--text", "?", "--verify", json.dumps({"kind": "answered-by", "concepts": ["c%d" % i]}), "--by", "kim", "--target", tmp)[0] == 0
+            nc, nq, nr = need
+            verify = {"kind": "required", "concepts": ["c%d" % i for i in sorted(nc)], "questions": ["q%d" % i for i in sorted(nq)],
+                      "relations": [{"src": "plan.md#Q%d" % i, "predicate": "realizes", "dst": "concept:c%d" % i} for i in sorted(nr)]}
+            verify = {k: v for k, v in verify.items() if v or k == "kind"}
+            assert run("cq", "add", "keep", "--text", "?", "--verify", json.dumps(verify), "--by", "kim", "--target", tmp)[0] == 0, "it stands when declared"
+            live, drift, owes, asked = [True] * 3, [False] * 3, [False] * 3, [True] * 3
+            for op, i in seq:
+                rid = mangsang.rel_id({"src": "plan.md#Q%d" % i, "predicate": "realizes", "dst": "concept:c%d" % i})
+                if op == "retire" and live[i]:
+                    assert run("retire", rid, "--why", "w", "--target", tmp)[0] == 0
+                    live[i], owes[i] = False, True
+                elif op == "confirm" and not live[i] and not drift[i]:
+                    write(os.path.join(tmp, "p.json"), props(i))
+                    assert run("confirm", "p.json", "--by", "kim", "--target", tmp)[0] == 0
+                    live[i] = True
+                elif op == "drift" and not drift[i]:
+                    assert run("concept", "drift", "c%d" % i, "--why", "w", "--by", "kim", "--target", tmp)[0] == 0
+                    drift[i] = True
+                elif op == "reaffirm" and (drift[i] or owes[i]):
+                    assert run("concept", "reaffirm", "c%d" % i, "--by", "kim", "--target", tmp)[0] == 0
+                    drift[i] = owes[i] = False
+                elif op == "retire-q" and asked[i]:
+                    assert run("cq", "retire", "q%d" % i, "--why", "w", "--target", tmp)[0] == 0
+                    asked[i] = False
+                elif op == "ask-q" and not asked[i]:
+                    assert run("cq", "revise", "q%d" % i, "--by", "kim", "--target", tmp)[0] == 0   # a revise asks a retired question again
+                    asked[i] = True
+                want = all(live[i] and not drift[i] and not owes[i] for i in nc) and all(asked[i] for i in nq) and all(live[i] for i in nr)
+                d = mangsang.decl(tmp)
+                files, _ = mangsang.snapshot(tmp, d["registry"])
+                keep = next(q for q in d["cq_declared"] if q["id"] == "keep")
+                ok, detail = mangsang.eval_invariant(d, files, [], keep, tmp)
+                assert ok == want, (seq, need, op, i, detail)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    prop()
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")

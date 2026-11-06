@@ -1,0 +1,15 @@
+{
+  "id": "R-f90cc8fe",
+  "src": "MODEL.md#Covered contracts",
+  "predicate": "references",
+  "dst": "concept:evidence-gate",
+  "evidence": "`evidence-gate` — what must hold before a relation is stored",
+  "seen": {
+    "MODEL.md#Covered contracts": "bfdfc73339d9",
+    "concept:evidence-gate": "05bc41e42583"
+  },
+  "confirmed": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+  },
+  "written_by": "mangsang 2.0.1"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "R-e77569c4",
+  "src": "AGENTS.md#Working on mangsang",
+  "predicate": "references",
+  "dst": "concept:evidence-gate",
+  "evidence": "Preserve verbatim sources, signer provenance, evidence and freshness checks.",
+  "seen": {
+    "AGENTS.md#Working on mangsang": "ad0eb0995b47",
+    "concept:evidence-gate": "05bc41e42583"
+  },
+  "confirmed": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+  },
+  "written_by": "mangsang 2.0.1"
+}

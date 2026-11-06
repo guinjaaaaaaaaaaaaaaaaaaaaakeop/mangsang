@@ -140,7 +140,15 @@ relations touching those anchors — a slice's check; the whole-tree invariant b
 `--findings` prints `dwitbuk/findings@1` (stale, broken, `owed-reread`, and — as `delegated`, an observation — relations re-confirmed
 with no person reading them: by delegation, by a judge's verdict applied, or by an agent on its own). `--show` prints,
 for each stale relation, what changed: the anchor's text as it was when the relation was confirmed (from git, the
-commit that last wrote the relation) against now; `reconfirm` prints the same before it records
+commit that last wrote the relation) against now; `reconfirm` prints the same before it records. A stale relation
+whose anchor's own text is what was confirmed — it moved only through same-file reads — and one of whose moved reads
+at least is the end of no relation of its own (a helper, a constant, an import) says so under its line, with `--show`
+and in `--findings`, naming every read that moved (a related one as `related itself`): reconfirming re-reads the
+related concept against the anchor, not that read's own contract — read it, then relate it or say whose detail it is. A read like that which staled relations of two or more concepts is said once more as
+`shared` (`unmodeled-read`, an observation, in `--findings`): a candidate shared contract (chongdae, 11-06: an edit
+to `plugin_root` staled five relations of three concepts, each reconfirmed true, and the edited function was read by
+nobody). It is said only where git holds what the confirmer saw — the anchor's parts at the relation's last commit
+fingerprint to its `seen`
 
 ### `/mangsang:judge`
 
@@ -174,10 +182,13 @@ directions (see below). `add`/`revise`/`retire` declare questions and invariants
 
 ### `/mangsang:check`
 
-Ask the net's invariants (`coverage`/`projection`/`resolved`) — its health, not its questions. `--findings` prints the
-red as `dwitbuk/findings@1`, plus two facts of the record that never fail the check: `unreleased-writer` (a committed
-record written by a build that is no release) and `agent-proposed` (an observation: declarations signed in a person's
-name on their yes to the agent's own proposal — `approval-of`)
+Ask the net's invariants (`coverage`/`projection`/`resolved`/`registered`/`required`) — its health, not its
+questions. `--findings` prints the red as `dwitbuk/findings@1`, the observations (below), plus two facts of the record
+that never fail the check: `unreleased-writer` (a committed record written by a build that is no release) and
+`agent-proposed` (an observation: declarations signed in a person's name on their yes to the agent's own proposal —
+`approval-of`). `--require-model`: the project keeps its model — FAILED when `mangsang/` is absent or holds no concept,
+no active relation or no active invariant (`model-required` in `--findings`). Without it nothing changes: for a project
+that declares nothing, an absent model is a non-claim
 
 ### `/mangsang:lookup`
 
@@ -409,8 +420,19 @@ Two layers, two commands — they used to share one name, and the name lied: a l
 matching a pattern each carry a relation — `*` matches across `.` too, so `compose.yaml:*` counts every nested key to
 depth 3; name the level you mean, `compose.yaml:services.*`, or the keys themselves), `projection` (every concept realized in each named medium — doc, code,
 test), `resolved` (no relation on a dead anchor), `registered` (every file git tracks under `paths` is in the registry,
-`except` globs aside — `{"kind": "registered", "paths": ["src/", "tests/", "db/"]}`). Three reds: **FAILED** (the invariant does not hold — propose the
-missing relations), **UNASKABLE** (the net moved out from under it — its predicate or anchors are gone; revise it),
+`except` globs aside — `{"kind": "registered", "paths": ["src/", "tests/", "db/"]}`; `paths` are prefixes, so give it
+folders, not the files you registered: a list of files asks nothing of the next file beside them), `required` (what the
+model keeps — `{"kind": "required", "concepts": [...], "questions": [...], "invariants": [...], "relations": [{"src":
+"...", "predicate": "...", "dst": "..."}]}`, FAILED when a named concept is missing, marked drifted, owes a re-read or is
+realized by no relation, a named question or invariant is missing, retired or of the other layer, or a named relation is
+missing, retired or broken; staleness stays `impact`'s. It must hold when declared, and an unknown key or nothing named
+is UNASKABLE. A model using it needs mangsang 2.2.0 or later: an older `check` does not ask it, and an older `cq` says
+it UNANSWERABLE, an unknown kind). An `except` is matched by fnmatch, whose `*` matches `/` too: `src/gen/*` excepts
+every file below `src/gen/` at any depth, now and later. So a `registered` line says how many files its excepts hide
+(each wildcard glob's count), and a `*` that hides code or config only by crossing a `/` is said once per glob
+(**except**, an observation) — name the files it means instead (any glob, at any level, also hides every file added
+below it later), or write `**` (`src/gen/**`), which matches the same and says every depth is meant. Three reds:
+**FAILED** (the invariant does not hold — propose the missing relations), **UNASKABLE** (the net moved out from under it — its predicate or anchors are gone; revise it),
 **UNWATCHED** (the net holds something no invariant watches — a used predicate, concepts without a projection
 invariant; declare one or say why not).
 
@@ -441,6 +463,18 @@ from the tree — 15 said. **gone** — those registry entries: a registered fil
 `approval-of`) and no registered document cites by id: a decision the model does not carry yet. Measured there: 73 of
 the owner's sources, 37 related to nothing, 32 of those cited by the plan; the 5 left included the backend's two
 decisions, which only an unregistered document cited.
+
+With a `registered` invariant declared, **unseen** still says the tracked code and config in a registered file's folder
+below the root (the root's own files are never said unseen, invariant or not: every project's manifests and settings)
+that no invariant's paths or excepts name — four of six source models (11-06) listed their registered files as `paths`,
+and a new committed module beside them was asked by nothing, `check` green — with the `register` for them and the `cq
+revise` that gives the invariant their folder, so the next one is FAILED instead. **files-only**: an invariant whose
+paths are all files, in a folder no other invariant asks of or at the root, said once, before any sibling exists — at
+the root such an invariant is the one place a new file is asked, by a prefix the next one will share (`test_`). **unverified**: a
+concept realized in the `code` and `test` media of a `projection` invariant whose code anchors no `verifies` reaches
+(one on the whole file does not count for a symbol in it) — a change to its code asks no test whether it still proves
+it; relate `TEST verifies CODE` where the test calls the symbol and asserts on it (three source models, 118 relations, had none). Each is an observation:
+declare the exclusion or the relation and it goes; a line left standing on purpose only teaches readers to skip it.
 
 **`cq` asks the domain questions** — what the model can answer, after Grüninger & Fox. A domain CQ names its answer:
 `{"kind": "answered-by", "concepts": ["NAME"]}` — the concept's `means` sentence carries the answer, and `cq` prints
@@ -481,7 +515,13 @@ what they mean; it reads their `propagates`, the same rule `impact` judges stale
 - Never proposes a relation and never judges meaning — not even between two sources that disagree; that is a person's
   question, asked with both quotes. A stale relation is a question for a human (or a judge role); the answer is
   `retire` or `reconfirm`, after reading.
-- Optional for a project. Absent, what it would have watched is a non-claim.
+- Optional for a project. Absent, what it would have watched is a non-claim. A project that keeps its model says so:
+  `check --require-model` and a `required` invariant.
+- Judges whether anchors moved since someone read them, not whether a sentence is true. The evidence gate proves that
+  a quote appears in its anchor, not that the quotes support every clause of the meaning: a `means` saying a name
+  resolves "on this machine" stayed green while the code read one host's registry only. Check each universal or
+  boundary clause (every, only, never, any host, on this machine) against a projection that supports it — preferably a
+  test that exercises the boundary — or narrow the sentence; `mangsang:operate` says it for agents.
 - The judge is a proposal: still-true is applied as the judge's (`confirmed: {judge: "<host> <model>", applied-by: …}`),
   never as a person's confirmation; drifted is a quote a person acts on. The old product's judge measured recall 1.00 /
   specificity 1.00 on planted drift; this port is not re-measured.

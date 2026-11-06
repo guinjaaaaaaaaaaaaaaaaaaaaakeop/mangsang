@@ -1,0 +1,27 @@
+{
+  "id": "R-b12aaf0a",
+  "src": "plugin/mangsang.py:drifts_reached",
+  "predicate": "realizes",
+  "dst": "concept:living-answer",
+  "evidence": "the drifted concepts a question's answer names or stands on",
+  "seen": {
+    "plugin/mangsang.py:drifts_reached": "e0f9709b042b",
+    "concept:living-answer": "abb31bece10e"
+  },
+  "confirmed": {
+    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence revised after the second non-author semantic review round"
+  },
+  "history": [
+    {
+      "confirmed": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; added after the non-author semantic review found the drift condition unprojected"
+      },
+      "seen": {
+        "plugin/mangsang.py:drifts_reached": "e0f9709b042b",
+        "concept:living-answer": "a77d68aaba17"
+      },
+      "evidence": "the drifted concepts a question's answer names or stands on"
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

@@ -1,0 +1,77 @@
+{
+  "id": "R-53d68c1d",
+  "src": "plugin/README.md#Anchors, predicates, quotes",
+  "predicate": "realizes",
+  "dst": "concept:same-file-reads",
+  "evidence": "is not followed: `seen` must be reproducible from what the confirmer had open, and a fingerprint reaching across files would tie a relation to text nobody read.",
+  "seen": {
+    "plugin/README.md#Anchors, predicates, quotes": "984912942f37",
+    "concept:same-file-reads": "03258cde77c8"
+  },
+  "confirmed": {
+    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence corrected after the verifier and the closing non-author review"
+  },
+  "history": [
+    {
+      "confirmed": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      },
+      "seen": {
+        "plugin/README.md#Anchors, predicates, quotes": "984912942f37",
+        "concept:same-file-reads": "baea4b3aac0e"
+      },
+      "evidence": "the free names of the declaration that resolve, in the same file, to another declaration or to an import binding — transitively."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it"
+      },
+      "seen": {
+        "plugin/README.md#Anchors, predicates, quotes": "984912942f37",
+        "concept:same-file-reads": "baea4b3aac0e"
+      },
+      "evidence": "is not followed: `seen` must be reproducible from what the confirmer had open, and a fingerprint reaching across files would tie a relation to text nobody read."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence revised after the non-author semantic review (dwitbuk eyes, contract lens)"
+      },
+      "seen": {
+        "plugin/README.md#Anchors, predicates, quotes": "984912942f37",
+        "concept:same-file-reads": "bdcf9401672d"
+      },
+      "evidence": "is not followed: `seen` must be reproducible from what the confirmer had open, and a fingerprint reaching across files would tie a relation to text nobody read."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the narrowed sentence after the root's independent review"
+      },
+      "seen": {
+        "plugin/README.md#Anchors, predicates, quotes": "984912942f37",
+        "concept:same-file-reads": "b14743b3821f"
+      },
+      "evidence": "is not followed: `seen` must be reproducible from what the confirmer had open, and a fingerprint reaching across files would tie a relation to text nobody read."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence narrowed after the follow-up non-author review"
+      },
+      "seen": {
+        "plugin/README.md#Anchors, predicates, quotes": "984912942f37",
+        "concept:same-file-reads": "dfb0110af754"
+      },
+      "evidence": "is not followed: `seen` must be reproducible from what the confirmer had open, and a fingerprint reaching across files would tie a relation to text nobody read."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence narrowed to the tokenizer rule after the final non-author review"
+      },
+      "seen": {
+        "plugin/README.md#Anchors, predicates, quotes": "984912942f37",
+        "concept:same-file-reads": "70f8eb9dba2f"
+      },
+      "evidence": "is not followed: `seen` must be reproducible from what the confirmer had open, and a fingerprint reaching across files would tie a relation to text nobody read."
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

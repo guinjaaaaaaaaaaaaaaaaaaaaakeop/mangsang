@@ -1,0 +1,15 @@
+{
+  "id": "R-529f31c8",
+  "src": "test_mangsang.py:test_confirm_checks_anchors_vocabulary_evidence_and_duplicates_and_stores_one_file_per_relation",
+  "predicate": "verifies",
+  "dst": "plugin/mangsang.py:cmd_confirm",
+  "evidence": "assert code == 1 and \"confirmed 1 / rejected 5\" in out, out",
+  "seen": {
+    "test_mangsang.py:test_confirm_checks_anchors_vocabulary_evidence_and_duplicates_and_stores_one_file_per_relation": "439498b3f8b7",
+    "plugin/mangsang.py:cmd_confirm": "5a902ab3bee3"
+  },
+  "confirmed": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+  },
+  "written_by": "mangsang 2.0.1"
+}

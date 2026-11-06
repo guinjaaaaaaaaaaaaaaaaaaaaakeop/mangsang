@@ -1,0 +1,16 @@
+{
+  "name": "evidence-gate",
+  "means": "A proposed relation is stored only when it is signed, both its anchors resolve, its predicate is in the vocabulary, neither end is a concept marked drifted, it duplicates no stored relation and its evidence is a quote that appears, whitespace-normalized, in one anchor's text — never a paraphrase; each rejected proposal stays in the proposals file with why.",
+  "declared": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; revised after the lock's verifier (dwitbuk eyes) found the earlier sentence incomplete against the code"
+  },
+  "history": [
+    {
+      "means": "A proposed relation is stored only when it is signed, both its anchors resolve, its predicate is in the vocabulary, it duplicates no stored relation and its evidence is a quote that appears, whitespace-normalized, in one anchor's text — never a paraphrase; each rejected proposal stays in the proposals file with why.",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      }
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

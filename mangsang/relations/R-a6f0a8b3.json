@@ -1,0 +1,37 @@
+{
+  "id": "R-a6f0a8b3",
+  "src": "test_mangsang.py:test_impact_stale_by_direction_broken_by_removal_and_observes_for_itself",
+  "predicate": "realizes",
+  "dst": "concept:staleness-against-seen",
+  "evidence": "# the code side changes: both relations on `add` are stale; the `references` one is not (propagates none)",
+  "seen": {
+    "test_mangsang.py:test_impact_stale_by_direction_broken_by_removal_and_observes_for_itself": "56d626082252",
+    "concept:staleness-against-seen": "950826697842"
+  },
+  "confirmed": {
+    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence revised after the non-author semantic review (dwitbuk eyes, contract lens)"
+  },
+  "history": [
+    {
+      "confirmed": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      },
+      "seen": {
+        "test_mangsang.py:test_impact_stale_by_direction_broken_by_removal_and_observes_for_itself": "56d626082252",
+        "concept:staleness-against-seen": "8aa6eb853517"
+      },
+      "evidence": "# the code side changes: both relations on `add` are stale; the `references` one is not (propagates none)"
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it"
+      },
+      "seen": {
+        "test_mangsang.py:test_impact_stale_by_direction_broken_by_removal_and_observes_for_itself": "56d626082252",
+        "concept:staleness-against-seen": "499eceaf2f1c"
+      },
+      "evidence": "# the code side changes: both relations on `add` are stale; the `references` one is not (propagates none)"
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "cq-relation-stored",
+  "text": "What must hold before mangsang stores a proposed relation, and what happens to a proposal that fails?",
+  "verify": {
+    "kind": "answered-by",
+    "concepts": [
+      "evidence-gate"
+    ]
+  },
+  "declared": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+  },
+  "written_by": "mangsang 2.0.1"
+}

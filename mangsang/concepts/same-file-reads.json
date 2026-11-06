@@ -1,0 +1,40 @@
+{
+  "name": "same-file-reads",
+  "means": "An anchor's fingerprint covers its extent from its first attachment and, transitively, the same-file declarations and import bindings it reads, so changing any of them stales the relations confirmed on that fingerprint (a relation whose seen is in an older format is the exception staleness-against-seen states). What is hashed is normalized by file kind: for Python that tokenizes, the case the related test exercises, it is the token sequence with comments, blank lines and line ends dropped, so a comment, a blank line, spacing between tokens within a line, or a line break inside brackets changes nothing, while every token's own text counts — an indentation's whitespace, a name, a string literal's quotes and contents — and so does a line break that opens or closes an indented block, which adds or removes indentation tokens; Python that does not tokenize is hashed as its text, and a Markdown section as its text without trailing blank lines, so a comment or spacing change there counts; other kinds' rules are not claimed here. What an anchor reads in another file is not followed and has to be related on its own.",
+  "declared": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; corrected after the lock's verifier and the closing non-author review (dwitbuk eyes) found 'line breaks between tokens' unconditional where a block break adds indentation tokens"
+  },
+  "history": [
+    {
+      "means": "An anchor's fingerprint covers its extent from its first attachment and, transitively, the same-file declarations and import bindings it reads, so changing any of them stales the anchor's relations while comments and formatting do not; what it reads in another file is not followed and has to be related on its own.",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      }
+    },
+    {
+      "means": "An anchor's fingerprint covers its extent from its first attachment and, transitively, the same-file declarations and import bindings it reads, so changing any of them stales the relations confirmed on that fingerprint while comments and formatting do not (a relation whose seen is in an older format is the exception staleness-against-seen states); what it reads in another file is not followed and has to be related on its own.",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; revised after the non-author semantic review (dwitbuk eyes, contract lens) found the earlier sentence incomplete against the code"
+      }
+    },
+    {
+      "means": "An anchor's fingerprint covers its extent from its first attachment and, transitively, the same-file declarations and import bindings it reads, so changing any of them stales the relations confirmed on that fingerprint (a relation whose seen is in an older format is the exception staleness-against-seen states). What is hashed is normalized by file kind: for Python that tokenizes, the case the related test exercises, it is the token stream, so comments and formatting there change nothing; Python that does not tokenize is hashed as its text, and a Markdown section as its text without trailing blank lines, so a comment or spacing change there counts; other kinds' rules are not claimed here. What an anchor reads in another file is not followed and has to be related on its own.",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; narrowed after the root's independent non-author review found the normalization clause overgeneral (reproduced: a Markdown comment changes a fingerprint)"
+      }
+    },
+    {
+      "means": "An anchor's fingerprint covers its extent from its first attachment and, transitively, the same-file declarations and import bindings it reads, so changing any of them stales the relations confirmed on that fingerprint (a relation whose seen is in an older format is the exception staleness-against-seen states). What is hashed is normalized by file kind: for Python that tokenizes, the case the related test exercises, it is the token stream without comments, blank lines and line ends, so a comment, a blank line, spacing within a line or a line break inside brackets changes nothing, while re-indentation and a string's spelling (its quotes) count; Python that does not tokenize is hashed as its text, and a Markdown section as its text without trailing blank lines, so a comment or spacing change there counts; other kinds' rules are not claimed here. What an anchor reads in another file is not followed and has to be related on its own.",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; narrowed again after the follow-up non-author review (dwitbuk eyes) found 'formatting' too broad for Python (indentation and string spelling count)"
+      }
+    },
+    {
+      "means": "An anchor's fingerprint covers its extent from its first attachment and, transitively, the same-file declarations and import bindings it reads, so changing any of them stales the relations confirmed on that fingerprint (a relation whose seen is in an older format is the exception staleness-against-seen states). What is hashed is normalized by file kind: for Python that tokenizes, the case the related test exercises, it is the token sequence with comments, blank lines and line ends dropped, so a comment, a blank line, or the spacing and line breaks between tokens change nothing, while every token's own text counts — an indentation's whitespace, a name, a string literal's quotes and contents; Python that does not tokenize is hashed as its text, and a Markdown section as its text without trailing blank lines, so a comment or spacing change there counts; other kinds' rules are not claimed here. What an anchor reads in another file is not followed and has to be related on its own.",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; narrowed to the tokenizer rule after the final non-author review (dwitbuk eyes) found string-literal spacing unaccounted for"
+      }
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

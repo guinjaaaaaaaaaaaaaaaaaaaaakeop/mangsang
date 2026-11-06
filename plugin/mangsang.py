@@ -706,6 +706,90 @@ def owed_rereads(d, only=None):
     return out
 
 
+def unmodeled_reads(target, d, stale):
+    """{relation id: [(end, [read, ...], [related read, ...])]} — for a stale relation's file end whose own text is what its
+    confirmer saw, the same-file reads that moved and are the end of no relation of their own (a declaration, or an import
+    binding, which can be no one's anchor), with the reads that moved beside them and are related themselves (their own
+    relations are stale too, and re-read against their own sentences). Said when at least one moved read is unrelated. Such a relation is re-read against its own sentence, which still holds; the read that changed is
+    examined by nobody. chongdae, 11-06: editing plugin_root staled five relations of three unrelated concepts; hunsu's
+    materialize_codex_hooks staled cmd_lock's four — reconfirmed true, the read's own contract (the defect) never read.
+    Judged only where git holds what the confirmer saw: the end's parts at the commit that last wrote the relation must
+    fingerprint to its `seen`; otherwise (never committed, re-confirmed since) nothing is said."""
+    import subprocess
+    git = lambda *a: subprocess.run(["git", *a], cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    ends = {a for r in d["relations"] for a in (r["src"], r["dst"])}
+    byid = {r["id"]: r for r in d["relations"]}
+    commits, then, now, out = {}, {}, {}, {}
+    for x in stale:
+        r = byid.get(x["id"])
+        for end in (x.get("changed") or []) if r else []:
+            f, key = split_anchor(end)
+            if f in ("concept", "source") or end not in r.get("seen", {}):
+                continue
+            if r["id"] not in commits:
+                commits[r["id"]] = git("log", "-1", "--format=%H", "--", "%s/relations/%s.json" % (DECL, r["id"])).stdout.strip()
+            c = commits[r["id"]]
+            if not c:
+                continue
+            if (c, f) not in then:
+                old = git("show", "%s:./%s" % (c, f))
+                then[(c, f)] = anchor_parts(f, old.stdout.replace("\r\n", "\n")) if old.returncode == 0 else None
+            if f not in now:
+                now[f] = anchor_parts(os.path.join(target, f))
+            was, nowp = (then[(c, f)] or {}).get(key), (now[f] or {}).get(key)
+            if not was or not nowp or fp_parts(f, was) != r["seen"][end]:
+                continue   # git does not hold what the confirmer saw
+            o, n = dict(was), dict(nowp)
+            if fp(o.get(key, ""), f) != fp(n.get(key, ""), f):
+                continue   # its own text moved: the re-read reads the change
+            moved = [l for l in list(n) + [l for l in o if l not in n] if l != key and (l not in o or l not in n or fp(o[l], f) != fp(n[l], f))]
+            name = lambda l: ("%s `%s`" % (f, l)) if l.startswith("import ") else f + l
+            free = [name(l) for l in moved if l.startswith("import ") or f + l not in ends]
+            if free:
+                out.setdefault(r["id"], []).append((end, free, [name(l) for l in moved if not l.startswith("import ") and f + l in ends]))
+    return out
+
+
+def unmodeled_text(x, ends, short=False):
+    """What a stale relation whose anchor moved only through what it reads says: every read that moved — the unrelated ones,
+    and beside them the ones related themselves — and what reconfirming does not read."""
+    other = x["stale"]
+    parts = []
+    for end, free, related in ends:
+        one = len(free) == 1
+        moved = "%s, with no relation of %s own%s" % (", ".join(free), "its" if one else "their",
+                                                       " (and %s, related %s)" % (", ".join(related), "itself" if len(related) == 1 else "themselves") if related else "")
+        if short:
+            parts.append("moved only through what it reads: %s — reconfirming re-reads %s, not %s contract"
+                         % (moved, other, "that read's" if one else "those reads'"))
+        else:
+            parts.append("%s moved only through what it reads, not its own text: %s — reconfirming re-reads %s against %s, not %s "
+                         "contract; read %s, then relate it to the concept it carries or say whose detail it is"
+                         % (end, moved, other, end, "that read's own" if one else "those reads' own", "it" if one else "each"))
+    return "; ".join(parts)
+
+
+def shared_reads(d, stale, unmodeled):
+    """[(read, [concept names], [relation ids])] — an unmodeled read that staled relations of two or more concepts: a candidate
+    shared contract, related to none of them."""
+    by = {}
+    for x in stale:
+        r = next((r for r in d["relations"] if r["id"] == x["id"]), None)
+        for _, free, _ in unmodeled.get(x["id"], []):
+            for a in free:
+                cs, ids = by.setdefault(a, (set(), []))
+                cs.update(e[len("concept:"):] for e in (r["src"], r["dst"]) if e.startswith("concept:"))
+                if x["id"] not in ids:
+                    ids.append(x["id"])
+    return sorted((a, sorted(cs), ids) for a, (cs, ids) in by.items() if len(cs) >= 2)
+
+
+def shared_text(a, cs, ids):
+    return ("%s, read with no relation of its own, staled %d relation(s) of %d concepts (%s: %s) — a candidate shared contract: relate it "
+            "to the concept it carries (`concept add` one if none does) or say whose detail it is, then re-read those relations"
+            % (a, len(ids), len(cs), ", ".join("concept:" + c for c in cs), ", ".join(ids)))
+
+
 def owed_text(c, lost):
     return ("concept:%s lost projection(s) %s since its sentence was affirmed — the questions it answers FAIL in `cq` until "
             "`concept revise %s --means \"...\"` (it no longer holds) or `concept reaffirm %s --by NAME|--delegated WHY` (it does); "
@@ -716,11 +800,16 @@ def cmd_impact(args):
     d = decl(args.target)
     stale, broken, unjudged, files = compute_impact(args.target, d, args.only)   # answers and leaves nothing behind: the verdict is what it prints
     owed = owed_rereads(d, args.only)
+    # a relation stale only through a read nobody related re-reads the wrong sentence: said with it, and grouped when it spans concepts
+    unmodeled = unmodeled_reads(args.target, d, stale) if stale else {}
+    shared = shared_reads(d, stale, unmodeled)
     if args.findings:
         on_drift = lambda x: next(("; concept:%s is marked drifted — %s" % (a[len("concept:"):], drift_line(drift_of(d, a[len("concept:"):])))
                                    for r in d["relations"] if r["id"] == x["id"] for a in (r["src"], r["dst"])
                                    if a.startswith("concept:") and drift_of(d, a[len("concept:"):])), "")
-        findings = [{"kind": "stale", "where": "%s %s" % (x["id"], x["stale"]), "text": "stale because %s changed since it was confirmed%s" % (x["because"], on_drift(x))} for x in stale]
+        through = lambda x: "; " + unmodeled_text(x, unmodeled[x["id"]], short=True) if x["id"] in unmodeled else ""
+        findings = [{"kind": "stale", "where": "%s %s" % (x["id"], x["stale"]), "text": "stale because %s changed since it was confirmed%s%s" % (x["because"], through(x), on_drift(x))} for x in stale]
+        findings += [{"kind": "unmodeled-read", "layer": "observation", "where": a, "text": shared_text(a, cs, ids)} for a, cs, ids in shared]
         findings += [{"kind": "broken", "where": "%s %s" % (x["id"], ", ".join(x["dead"])), "text": "dead anchor(s): the relation points at nothing%s" % (
                          "; %s is gone from the tree" % ", ".join(sorted({file_of(a) for a in x["dead"] if gone_from_tree(args.target, file_of(a))}))
                          if any(gone_from_tree(args.target, file_of(a)) for a in x["dead"]) else "")} for x in broken]
@@ -743,6 +832,8 @@ def cmd_impact(args):
         if any(x["id"] in ids for ids in held.values()) and not getattr(args, "show", False):
             continue
         print("  stale   %s  %s  <- %s" % (x["id"], x["stale"], x["because"]))
+        if x["id"] in unmodeled:
+            print("      " + unmodeled_text(x, unmodeled[x["id"]]))
         if getattr(args, "show", False):
             rel = next((r for r in d["relations"] if r["id"] == x["id"]), None)
             # every end that moved: a relation whose section and concept both changed shows both (it used to show neither —
@@ -750,6 +841,8 @@ def cmd_impact(args):
             for end in x.get("changed") or [x["because"]]:
                 diff = what_changed(args.target, rel, end) if rel else None
                 print("\n".join("      " + l for l in (diff or "(%s: no earlier text in git to compare against — the relation was not committed when it was confirmed, or the anchor is a source, which never changes; the change is known by its fingerprint)" % end).rstrip().split("\n")))
+    for a, cs, ids in shared:
+        print("  shared  " + shared_text(a, cs, ids))
     gone = gone_groups(args.target, d, broken, files)
     for b in broken:
         if not any(b["id"] in ids for ids in gone.values()):
@@ -999,6 +1092,8 @@ def cq_presuppositions(d, files, q):
     elif v.get("kind") == "registered":
         if not v.get("paths"):
             missing.append("presupposes `paths` — the tracked prefixes whose every file must be registered (\"src/\", \"tests/\" …)")
+    elif v.get("kind") == "required":
+        missing += required_shape(v)
     elif v.get("kind") == "open":
         # asked before anything answers it: a model built from conversation starts with what nobody has answered yet.
         # It names no answer — a later `revise` to answered-by is where the answer is signed — but it may say what it asks
@@ -1026,7 +1121,70 @@ def cq_presuppositions(d, files, q):
     return missing
 
 
-INVARIANT_KINDS = ("coverage", "projection", "resolved", "registered")
+INVARIANT_KINDS = ("coverage", "projection", "resolved", "registered", "required")
+REQUIRED_PARTS = ("concepts", "questions", "invariants", "relations")
+
+
+def required_shape(v):
+    """What a `required` invariant must say to be asked: lists naming concepts, questions and invariants by name or id, and
+    relations by `{src, predicate, dst}` — at least one thing named, nothing else (a misspelt key would require nothing)."""
+    out = []
+    extra = sorted(set(v) - {"kind"} - set(REQUIRED_PARTS))
+    if extra:
+        out.append("a required invariant names %s — not %s" % (", ".join(REQUIRED_PARTS), ", ".join(map(repr, extra))))
+    if not any(v.get(k) for k in REQUIRED_PARTS):
+        out.append("presupposes something named to keep — `concepts`, `questions`, `invariants` or `relations` (`{\"src\", \"predicate\", \"dst\"}`)")
+    for k in REQUIRED_PARTS[:3]:
+        if not isinstance(v.get(k, []), list) or not all(isinstance(x, str) and x for x in v.get(k, [])):
+            out.append("`%s` is a list of names" % k)
+    rels = v.get("relations", [])
+    if not isinstance(rels, list) or not all(isinstance(x, dict) and all(isinstance(x.get(p), str) and x.get(p) for p in ("src", "predicate", "dst")) for x in rels):
+        out.append("`relations` is a list of {\"src\", \"predicate\", \"dst\"}")
+    return out
+
+
+def required_problems(d, files, v):
+    """[(what, why)] for what a `required` invariant names and the model does not hold standing — judged as the engine judges
+    it elsewhere: a concept missing, marked drifted, owing a re-read, or realized by no relation; a question or invariant
+    missing, retired, or of the other layer; a relation missing (by its src, predicate and dst), retired, or broken (a dead
+    anchor). Staleness is not here: `impact` says it. Six projects each wrote a checker of their own for this (about 1,100
+    lines, 11-05) and three of them passed falsely: retired questions counted, an empty required scope, a retired-only model."""
+    out = []
+    byname = {c["name"]: c for c in d["concepts"]}
+    for n in v.get("concepts") or []:
+        c = byname.get(n)
+        if c is None:
+            out.append(("concept:" + n, "is missing — not declared"))
+            continue
+        if c.get("drift"):
+            out.append(("concept:" + n, "is marked drifted — %s" % drift_line(c["drift"])))
+        if c.get("owes"):
+            out.append(("concept:" + n, "owes a re-read (lost %s) — `concept revise` or `concept reaffirm`" % ", ".join(c["owes"])))
+        if not any(r["predicate"] == "realizes" and r["dst"] == "concept:" + n for r in d["relations"]):
+            out.append(("concept:" + n, "is realized by no relation"))
+    declared = {q.get("id"): q for q in list(d["cq"]) + list(d["cq_declared"])}
+    for layer, ids, invariant in (("question", v.get("questions"), False), ("invariant", v.get("invariants"), True)):
+        for i in ids or []:
+            q = declared.get(i)
+            kind = (q or {}).get("verify", {}).get("kind")
+            if q is None:
+                out.append(("%s %s" % (layer, i), "is missing — not declared"))
+            elif q.get("retired"):
+                out.append(("%s %s" % (layer, i), "is retired — %s" % first_clause(str((q["retired"] or {}).get("why", "?")), 120)))
+            elif (kind in INVARIANT_KINDS) != invariant:
+                out.append(("%s %s" % (layer, i), ("is a question (kind %s), not an invariant" if invariant else "is an invariant (kind %s), not a question") % kind))
+    for spec in v.get("relations") or []:
+        rid = rel_id(spec)
+        what = "%s (%s %s %s)" % (rid, spec["src"], spec["predicate"], spec["dst"])
+        live = next((r for r in d["relations"] if r["id"] == rid), None)
+        if live is None:
+            gone = next((r for r in reversed(d["retired"]) if r["id"] == rid), None)
+            out.append((what, "is retired — %s" % first_clause(str((gone.get("retired") or {}).get("why", "?")), 120) if gone else "is missing — no such relation"))
+            continue
+        dead = [a for a in (live["src"], live["dst"]) if split_anchor(a)[0] not in files or split_anchor(a)[1] not in files[split_anchor(a)[0]]]
+        if dead:
+            out.append((what, "is broken — dead anchor(s) %s" % ", ".join(dead)))
+    return out
 
 
 def tracked_files(target):
@@ -1167,19 +1325,106 @@ def unseen_groups(target, d, active, files=None):
         return {"group": name, "files": sorted(files), "ago": n if recent else None, "after_net": bool(recent and since is not None and n < since)}
     order = lambda gs: sorted(gs, key=lambda g: (g["ago"] is None, g["ago"] or 0, g["group"]))
     beside, near = [], []
-    if not any(q.get("verify", {}).get("kind") == "registered" for q in active):
+    asks = [q["verify"] for q in active if q.get("verify", {}).get("kind") == "registered"]
+    if not asks:
         beside = sorted({e["path"].rsplit("/", 1)[0] + "/" for e in d["registry"] if "/" in e["path"]})
         by = {}
         for f in (unregistered(target, d, beside) if beside else None) or []:
             by.setdefault(f.rsplit("/", 1)[0] + "/", []).append(f)
         near = order(group(k, v) for k, v in by.items())
-    asks = [q["verify"] for q in active if q.get("verify", {}).get("kind") == "registered"]
     covered = beside + [p for v in asks for p in v.get("paths") or []]
-    blind = unseen_directories(target, d, covered, [g for v in asks for g in v.get("except") or []], with_files=True)
+    globs = [g for v in asks for g in v.get("except") or []]
+    blind = unseen_directories(target, d, covered, globs, with_files=True)
+    if asks:
+        # a `registered` invariant asks only of its paths. Four of six source models (umbrella audit, 11-06) named the files
+        # they had registered, and a new committed plugin/resolver.py beside them was asked by nothing: check exit 0, no line.
+        # The code and config beside registered files that no invariant's paths or excepts classify is said, as without one
+        import fnmatch
+        said = {f for fs in blind.values() for f in fs}
+        paths, skip = tuple(p for v in asks for p in v.get("paths") or []), record_prefixes(target)
+        folders = sorted({e["path"].rsplit("/", 1)[0] + "/" for e in d["registry"] if "/" in e["path"]})
+        by = {}
+        for f in (unregistered(target, d, folders) if folders else None) or []:
+            if f in said or f.startswith(paths + skip) or any(fnmatch.fnmatch(f, g) for g in globs) \
+                    or anchors.kind_of(f) not in UNSEEN_KINDS or f.rsplit("/", 1)[-1] in LOCKFILES:
+                continue
+            by.setdefault(f.rsplit("/", 1)[0] + "/", []).append(f)
+        near = order(group(k, v) for k, v in by.items())
+        for g in near:
+            g["asked-by-none"] = True
+            g["folder"] = next(p for p in folders if g["group"].startswith(p))   # the shallowest registered folder it sits in
     by = {}
     for f in unrelated_files(target, d, active, files):
         by.setdefault(f.rsplit("/", 1)[0] + "/" if "/" in f else "./", []).append(f)
     return beside, near, order(group(k, v) for k, v in blind.items()), order(group(k, v) for k, v in by.items())
+
+
+def glob_crosses(path, glob):
+    """Does the except `glob` match `path` only because a wildcard crossed a `/`? An except is matched by fnmatch, whose `*`
+    matches `/` as well: `plugin/domains/*` hid a committed plugin/domains/code/resolver.py (hacheong, 11-06) and hides every
+    later file at any depth there. Segment by segment it would not match. `**` is the explicit any-depth form — fnmatch
+    matches it exactly as `*` — so a glob holding it says the depth is meant and is never said."""
+    import fnmatch
+    if "**" in glob or not any(c in glob for c in "*?[") or not fnmatch.fnmatch(path, glob):
+        return False
+    ps, gs = path.split("/"), glob.split("/")
+    return len(ps) != len(gs) or not all(fnmatch.fnmatch(p, g) for p, g in zip(ps, gs))
+
+
+def except_hides(target, d, v):
+    """{glob: [files]} — for a `registered` invariant, the tracked files the registry does not hold that each of its `except`
+    globs keeps out of the net: out of the invariant's own answer under its paths, and out of `unseen` anywhere (an except
+    is read there too). A file two globs match is under both; the products' records are nobody's. {} without git."""
+    import fnmatch
+    have, skip = {e["path"] for e in d["registry"]}, record_prefixes(target)
+    loose = [f for f in tracked_files(target) or [] if f not in have and not f.startswith(skip)]
+    return {g: [f for f in loose if fnmatch.fnmatch(f, g)] for g in v.get("except") or []}
+
+
+def files_only_invariants(target, active):
+    """[(invariant id, [its paths], [the folders nothing asks])] — a `registered` invariant whose paths are all existing files,
+    at least one of them in a folder that no folder path of any `registered` invariant covers: a file added beside them is
+    asked by nothing (`check` says it only as unseen — at the root not at all: the root's own files are never said unseen,
+    every project's manifests and settings, so an invariant naming root files is the one place they are asked). The root
+    is `./`; a prefix such as `test_` asks of some root files, never of the root."""
+    asks = [(q["id"], q["verify"]) for q in active if q.get("verify", {}).get("kind") == "registered"]
+    folder_paths = tuple(p for _, v in asks for p in v.get("paths") or [] if not os.path.isfile(os.path.join(target, p)))
+    out = []
+    for qid, v in asks:
+        ps = v.get("paths") or []
+        if not ps or not all(os.path.isfile(os.path.join(target, p)) for p in ps):
+            continue
+        unasked = sorted(f for f in {p.rsplit("/", 1)[0] + "/" if "/" in p else "./" for p in ps} if f == "./" or not f.startswith(folder_paths))
+        if unasked:
+            out.append((qid, ps, unasked))
+    return out
+
+
+def unverified_concepts(d, active):
+    """[(concept, its code anchors, its test anchors)] — a concept realized in the media named `code` and `test` of the active
+    `projection` invariants, none of whose code anchors is the `dst` of a `verifies`: a change to its code asks no test
+    whether it still proves it. A `verifies` of the whole file does not count for a symbol in it — one such relation would
+    silence every concept with code there, whether or not the test calls their symbols. A projection invariant holds on `realizes` alone; three source models (118
+    relations, 11-06) had no `verifies` at all. Nothing when the vocabulary has no `verifies`."""
+    if "verifies" not in d["vocabulary"]:
+        return []
+    media = {}
+    for q in active:
+        if q.get("verify", {}).get("kind") == "projection":
+            for m, ps in (q["verify"].get("media") or {}).items():
+                media.setdefault(m, set()).update(p for p in ps if isinstance(p, str))
+    code, test = tuple(sorted(media.get("code", ()))), tuple(sorted(media.get("test", ())))
+    if not code or not test:
+        return []
+    verified = {r["dst"] for r in d["relations"] if r["predicate"] == "verifies"}
+    out = []
+    for c in sorted(d["concepts"], key=lambda c: c["name"]):
+        pro = {r["src"] for r in d["relations"] if r["predicate"] == "realizes" and r["dst"] == "concept:" + c["name"]}
+        cs = sorted(a for a in pro if a.startswith(code) and not a.startswith(test))
+        ts = sorted(a for a in pro if a.startswith(test))
+        if cs and ts and not any(a in verified for a in cs):
+            out.append((c["name"], cs, ts))
+    return out
 
 
 def when_text(g):
@@ -1364,7 +1609,17 @@ def eval_invariant(d, files, all_anchors, q, target="."):
         missing = unregistered(target, d, v.get("paths") or [], v.get("except") or [])
         if missing is None:
             return False, "no git here — which files are tracked cannot be told"
-        return not missing, "%d unregistered tracked file(s)%s" % (len(missing), (": " + ", ".join(missing[:12]) + (" … and %d more" % (len(missing) - 12) if len(missing) > 12 else "")) if missing else "")
+        # how much the excepts leave out, said with the answer: a glob's `*` crosses `/`, so its reach is not read off its text
+        hidden = except_hides(target, d, v)
+        n = len({f for fs in hidden.values() for f in fs})
+        wild = ["%s %d" % (g, len(fs)) for g, fs in hidden.items() if fs and any(c in g for c in "*?[")]
+        return not missing, "%d unregistered tracked file(s)%s%s" % (
+            len(missing), (": " + ", ".join(missing[:12]) + (" … and %d more" % (len(missing) - 12) if len(missing) > 12 else "")) if missing else "",
+            "; its excepts hide %d%s" % (n, " (%s)" % ", ".join(wild) if wild else "") if n else "")
+    if v.get("kind") == "required":
+        problems = required_problems(d, files, v)
+        named = ", ".join("%d %s" % (len(v.get(k) or []), k) for k in REQUIRED_PARTS if v.get(k))
+        return not problems, "%s named, %d not standing%s" % (named, len({w for w, _ in problems}), (": " + "; ".join("%s %s" % p for p in problems)) if problems else "")
     # resolved
     dead = [r["id"] for r in d["relations"] if any((split_anchor(a)[0] not in files or split_anchor(a)[1] not in files[split_anchor(a)[0]]) for a in (r["src"], r["dst"]))]
     return not dead, "%d relations, %d with dead anchors%s" % (len(d["relations"]), len(dead), (": " + ", ".join(dead)) if dead else "")
@@ -1384,6 +1639,18 @@ def cmd_check(args):
     active = [q for q in cq_active(d) if q.get("verify", {}).get("kind") in INVARIANT_KINDS]
     failed = unaskable = 0
     findings = []
+    # optional when absent is right for a consumer; a project that keeps its model says so, and an absent or emptied model is
+    # red then — every source model's own checker carried this by hand, and one passed a retired-only model (11-05)
+    unmet = None
+    if getattr(args, "require_model", False):
+        if not os.path.isdir(os.path.join(args.target, DECL)):
+            unmet = "the model is required and absent: no %s/ here" % DECL
+        else:
+            lacks = [w for w, have in (("no concept", d["concepts"]), ("no active relation", d["relations"]), ("no active invariant", active)) if not have]
+            unmet = "the model is required and empty: %s" % ", ".join(lacks) if lacks else None
+        if unmet:
+            say("  %-12s --require-model  %s" % ("FAILED", unmet))
+            findings.append({"kind": "model-required", "where": DECL + "/", "source": "mangsang", "text": unmet})
     for q in active:
         presup = cq_presuppositions(d, files, q)
         if presup:
@@ -1434,7 +1701,8 @@ def cmd_check(args):
     # directories nobody registered anything in (the advice beside registered files never looked there: guin-site's write
     # app and its lexicons), each grouped by directory, the recently changed first, with the commands that relate them
     _, near, blind, loose_files = unseen_groups(args.target, d, active, files)
-    if near:
+    asked = any(g.get("asked-by-none") for g in near)
+    if near and not asked:
         missing = [f for g in near for f in g["files"]]
         say("  %-12s %d tracked file(s) beside registered ones are not registered (%s%s) — the net cannot see them; register them, or declare "
             "`{\"kind\": \"registered\", \"paths\": [...]}` to make it a check" % ("unseen", len(missing), ", ".join(group_text(g) for g in near[:6]),
@@ -1442,6 +1710,45 @@ def cmd_check(args):
         findings.append({"kind": "unregistered", "layer": "observation", "where": ", ".join(missing[:12]), "source": "mangsang",
                          "text": "%d tracked file(s) in registered directories are not registered; no invariant asks%s" % (len(missing), "".join(
                              "; %s %s" % (g["group"], when_text(g)) for g in near if g["ago"] is not None))})
+    if asked:
+        # a `registered` invariant is declared and asks nothing of these: its own `holds` reads as if the net saw them
+        missing = [f for g in near for f in g["files"]]
+        say("  %-12s %d tracked code/config file(s) beside registered ones that no `registered` invariant asks for or excepts (%s%s) — the net "
+            "cannot see them and the invariant holds over them; register them and give the invariant their folder, or except them with "
+            "the reason" % ("unseen", len(missing), ", ".join(group_text(g) for g in near[:6]),
+                             " … and %d more director%s" % (len(near) - 6, "y" if len(near) == 7 else "ies") if len(near) > 6 else ""))
+        findings.append({"kind": "unregistered", "layer": "observation", "where": ", ".join(missing[:12]), "source": "mangsang",
+                         "text": "%d tracked code/config file(s) beside registered files are asked by no `registered` invariant (neither its "
+                                 "paths nor its excepts name them)%s" % (len(missing), "".join("; %s %s" % (g["group"], when_text(g)) for g in near if g["ago"] is not None))})
+    # a `registered` invariant naming only files: a file added beside them is asked by nothing — said once, before there is one
+    for qid, ps, unasked in files_only_invariants(args.target, active):
+        dirs, root = [f for f in unasked if f != "./"], "./" in unasked
+        where = ", ".join(dirs + (["the root"] if root else []))
+        say("  %-12s %s names only files (%d) — a file added beside them in %s is asked by nothing (%s): give its paths %s, and except "
+            "what the net does not claim there, each with its reason" % (
+                "files-only", qid, len(ps), where,
+                "; ".join(x for x in ("`check` says one in a folder only as unseen" if dirs else "", "one at the root not at all — the root's own files are never said unseen" if root else "") if x),
+                " and ".join(x for x in ("their folder%s (%s)" % ("s" if len(dirs) > 1 else "", ", ".join("`%s`" % f for f in dirs)) if dirs else "",
+                                         "for the root a prefix the next file there will share (as `test_` asks of the root suites)" if root else "") if x)))
+        findings.append({"kind": "registered-files-only", "layer": "observation", "where": qid, "source": "mangsang",
+                         "text": "its paths name only files; a new file in %s is asked by no invariant" % where})
+    # an except's `*` matches across `/`: one that hides code or config only by crossing a `/` hides every later file at any
+    # depth there (hacheong, 11-06: `plugin/domains/*` hid a committed plugin/domains/code/resolver.py). Said, never changed:
+    # `**` matches the same and says the depth is meant
+    for q in active:
+        if q.get("verify", {}).get("kind") != "registered":
+            continue
+        for g, fs in except_hides(args.target, d, q["verify"]).items():
+            deep = [f for f in fs if glob_crosses(f, g) and anchors.kind_of(f) in UNSEEN_KINDS and f.rsplit("/", 1)[-1] not in LOCKFILES]
+            if not deep:
+                continue
+            anydepth = re.sub(r"(?<!\*)\*(?!\*)", "**", g)
+            say("  %-12s %s `%s` hides %d code/config file(s) only because `*` matches across `/` (%s%s) — it hides every later file at any "
+                "depth there: name the files it means instead (any glob also hides files added below it later), or write `%s` to say every depth "
+                "is meant (it matches the same)"
+                % ("except", q["id"], g, len(deep), ", ".join(deep[:6]), " … and %d more" % (len(deep) - 6) if len(deep) > 6 else "", anydepth))
+            findings.append({"kind": "except-crosses", "layer": "observation", "where": "%s %s" % (q["id"], g), "source": "mangsang",
+                             "text": "the except hides %d code/config file(s) below its own depth (%s): `*` crosses `/`" % (len(deep), ", ".join(deep[:12]))})
     if blind:
         # named up to a few: a monorepo with one package registered has thousands of such directories, and one line naming
         # them all is no line anyone reads
@@ -1482,8 +1789,28 @@ def cmd_check(args):
                                                               " ".join(stray)))
         findings.append({"kind": "registered-gone", "layer": "observation", "where": ", ".join(stray[:12]), "source": "mangsang",
                          "text": "%d registered file(s) are gone from the tree and no relation stands on them; `retire --gone FILE.. --why` drops them" % len(stray)})
-    todo = sorted(blind + [g for g in near if g["ago"] is not None] + loose_files, key=lambda g: (g["ago"] is None, g["ago"] or 0))
+    todo = sorted(blind + [g for g in near if g["ago"] is not None or g.get("asked-by-none")] + loose_files, key=lambda g: (g["ago"] is None, g["ago"] or 0))
     next_steps(todo, say)
+    if asked:
+        # the step that makes the next such file red instead of unseen: the invariant's paths take the registered folder
+        import shlex
+        folders = sorted({g["folder"] for g in near})
+        regs = [q for q in sorted(active, key=lambda q: q["id"]) if q.get("verify", {}).get("kind") == "registered"]
+        # the invariant that already names something in those folders, else the first
+        q = next((q for q in regs if any(p.startswith(tuple(folders)) for p in q["verify"].get("paths") or [])), regs[0])
+        qid, v = q["id"], q["verify"]
+        wider = dict(v, paths=list(v.get("paths") or []) + [f for f in folders if f not in (v.get("paths") or [])])
+        say("      and give a `registered` invariant their folder, so the next file there fails `check` instead: mangsang cq revise %s --verify %s "
+            "--by NAME (each path there that is a file can go: the folder asks of it) — or name the files it does not claim in its `except`, "
+            "with the reason where the project keeps its reasons" % (qid, shlex.quote(json.dumps(wider, ensure_ascii=False))))
+    # a projection invariant holds on `realizes` alone: a concept whose code no `verifies` reaches is changed without any test
+    # being asked whether it still proves it (three source models, 118 relations, no `verifies`: 11-06)
+    for name, cs, ts in unverified_concepts(d, active):
+        say("  %-12s concept:%s — %d test projection(s), and no `verifies` reaches any of its %d code anchor(s) (%s%s): a change to its code "
+            "asks no test whether it still proves it — relate `TEST verifies CODE` where a test calls the symbol and asserts on what it does"
+            % ("unverified", name, len(ts), len(cs), ", ".join(cs[:4]), " … +%d" % (len(cs) - 4) if len(cs) > 4 else ""))
+        findings.append({"kind": "unverified-code", "layer": "observation", "where": "concept:" + name, "source": "mangsang",
+                         "text": "realized in code (%s) and in tests (%s); no `verifies` has any of its code anchors as dst" % (", ".join(cs[:6]), ", ".join(ts[:6]))})
     loose = ungrounded_sources(d, args.target)
     if loose:
         say("  %-12s %d thing(s) a person said ground nothing — no relation uses them, no signature or registered document cites them: %s" % ("ungrounded", len(loose), ", ".join("source:" + i for i in loose)))
@@ -1503,10 +1830,11 @@ def cmd_check(args):
                          "text": "%d concept(s) lost a projection and owe a re-read; `cq` fails the questions they answer (`impact` counts them)" % len(owed)})
     if getattr(args, "findings", False):
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "standing": True, "findings": findings}, ensure_ascii=False, indent=1))
-    say("invariants %d · holds %d · failed %d · unaskable %d · unwatched %d%s"
+    say("invariants %d · holds %d · failed %d · unaskable %d · unwatched %d%s%s"
           % (len(active), len(active) - failed - unaskable, failed, unaskable, len(unwatched),
-             " — and %d concept(s) owe a re-read: `cq` fails until each is revised or reaffirmed" % len(owed) if owed else ""))
-    return 1 if failed or unaskable or unwatched else 0
+             " — and %d concept(s) owe a re-read: `cq` fails until each is revised or reaffirmed" % len(owed) if owed else "",
+             " · --require-model FAILED (%s)" % unmet.split(": ", 1)[-1] if unmet else ""))
+    return 1 if failed or unaskable or unwatched or unmet else 0
 
 
 def cq_active(d):
@@ -1635,6 +1963,12 @@ def cq_declare(args):
         if presup:
             raise SystemExit("CQ %s cannot be asked of the current model:\n  %s\n(declare the missing terms first, or fix the question)" % (args.id, "\n  ".join(presup)))
         q.pop("retired", None)
+        if q["verify"].get("kind") == "required":
+            # it keeps what the model holds: what it names must stand when it is declared (itself included, as now declared)
+            problems = required_problems(dict(d, cq_declared=[x for x in d["cq_declared"] if x["id"] != q["id"]] + [q]), files, q["verify"])
+            if problems:
+                raise SystemExit("CQ %s requires what does not stand in the model now:\n  %s\n(a required invariant keeps what the model holds — "
+                                 "make it stand first, or leave it out)" % (args.id, "\n  ".join("%s %s" % p for p in problems)))
         q["declared"] = signature(args.by, args.delegated)
         save(os.path.join(folder, args.id + ".json"), q)
         print("CQ %s %s: %s" % (args.id, "declared" if args.mode == "add" else "revised", q["text"]))
@@ -2587,7 +2921,8 @@ def render_questions(d, files, moved):
             problems, reached = answer_health(d, v.get("concepts", []), moved)
             state = "DRIFTED" if drifts_reached(d, v.get("concepts", []), reached) else "answered" if not problems else "FAILED"
         out.append("- **%s** %s — %s%s · %s" % (q.get("id", "?"), esc(q.get("text", "")), state,
-                                                "; answered by " + ", ".join(n for n in v.get("concepts", []) if n in named) if v.get("concepts") else "", signed(q.get("declared"))))
+                                                "; answered by " + ", ".join(n for n in v.get("concepts", []) if n in named) if v.get("concepts") and v.get("kind") not in INVARIANT_KINDS else "",
+                                                signed(q.get("declared"))))
     return out
 
 
@@ -2952,12 +3287,13 @@ def main(argv=None):
             p.add_argument("mode", nargs="?", default="run", choices=["run", "add", "revise", "retire"])
             p.add_argument("id", nargs="?", default=None)
             p.add_argument("--text", default=None, help="the question, for people")
-            p.add_argument("--verify", default=None, help="JSON: domain questions are {\"kind\": \"answered-by\", \"concepts\": [...]} — the named concepts carry the answer; {\"kind\": \"open\"} is asked before anything answers it; structural kinds (coverage|projection|resolved) are declared here too but answer to `check`")
+            p.add_argument("--verify", default=None, help="JSON: domain questions are {\"kind\": \"answered-by\", \"concepts\": [...]} — the named concepts carry the answer; {\"kind\": \"open\"} is asked before anything answers it; structural kinds (coverage|projection|resolved|registered|required) are declared here too but answer to `check`")
             p.add_argument("--why", default=None, help="retire: what made this question no longer worth asking")
             signing(p)
             p.add_argument("--findings", action="store_true", help="print failed/unanswerable/unquestioned as dwitbuk/findings@1 JSON")
         if name == "check":
             p.add_argument("--findings", action="store_true", help="print failed/unaskable/unwatched as dwitbuk/findings@1 JSON")
+            p.add_argument("--require-model", action="store_true", help="the project keeps its model: FAILED when mangsang/ is absent or holds no concept, no active relation or no active invariant")
         if name == "impact":
             p.add_argument("--findings", action="store_true", help="print stale/broken as dwitbuk/findings@1 JSON")
             p.add_argument("--only", nargs="*", default=None, help="judge only relations touching these anchor prefixes (a slice's check)")

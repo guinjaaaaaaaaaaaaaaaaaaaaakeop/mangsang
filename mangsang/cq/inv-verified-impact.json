@@ -1,0 +1,14 @@
+{
+  "id": "inv-verified-impact",
+  "text": "Is the staleness judge (compute_impact) exercised by a registered test?",
+  "verify": {
+    "kind": "coverage",
+    "predicate": "verifies",
+    "anchors": "plugin/mangsang.py:compute_impact",
+    "as": "dst"
+  },
+  "declared": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+  },
+  "written_by": "mangsang 2.0.1"
+}

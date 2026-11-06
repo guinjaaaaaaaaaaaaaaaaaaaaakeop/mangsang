@@ -1,0 +1,20 @@
+[
+  {
+    "path": "plugin/mangsang.py"
+  },
+  {
+    "path": "plugin/anchors.py"
+  },
+  {
+    "path": "plugin/README.md"
+  },
+  {
+    "path": "test_mangsang.py"
+  },
+  {
+    "path": "AGENTS.md"
+  },
+  {
+    "path": "MODEL.md"
+  }
+]

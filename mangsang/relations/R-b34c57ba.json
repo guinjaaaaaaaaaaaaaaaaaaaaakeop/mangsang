@@ -1,0 +1,15 @@
+{
+  "id": "R-b34c57ba",
+  "src": "MODEL.md#Covered contracts",
+  "predicate": "references",
+  "dst": "concept:same-file-reads",
+  "evidence": "`same-file-reads` — which edits beyond an anchor's own lines change its fingerprint",
+  "seen": {
+    "MODEL.md#Covered contracts": "bfdfc73339d9",
+    "concept:same-file-reads": "baea4b3aac0e"
+  },
+  "confirmed": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+  },
+  "written_by": "mangsang 2.0.1"
+}

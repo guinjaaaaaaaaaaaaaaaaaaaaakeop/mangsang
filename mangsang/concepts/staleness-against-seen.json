@@ -1,0 +1,22 @@
+{
+  "name": "staleness-against-seen",
+  "means": "A confirmed relation keeps seen, the fingerprints of both anchors its confirmer saw; it is stale when an anchor it propagates from (by its predicate: dst->src, src->dst, both or none) now fingerprints differently, and broken when an anchor is gone; judged against seen rather than a machine's baseline, the verdict on a relation carrying seen is the same on every machine and across a merge. A seen written in an older fingerprint format is not stale while the anchor's current bytes still produce it in that format, so such a relation cannot see a change in what its anchor reads until a reconfirm upgrades it; a relation from before seen existed is judged against this machine's baseline, or reported unjudged.",
+  "declared": {
+    "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; revised after the non-author semantic review (dwitbuk eyes, contract lens) found the earlier sentence incomplete against the code"
+  },
+  "history": [
+    {
+      "means": "A confirmed relation keeps seen, the fingerprints of both anchors its confirmer saw; it is stale when an anchor it propagates from (by its predicate: dst->src, src->dst, both or none) now fingerprints differently, and broken when an anchor is gone; judged against seen rather than a machine's baseline, the verdict is the same on every machine and across a merge.",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      }
+    },
+    {
+      "means": "A confirmed relation keeps seen, the fingerprints of both anchors its confirmer saw; it is stale when an anchor it propagates from (by its predicate: dst->src, src->dst, both or none) now fingerprints differently, and broken when an anchor is gone; judged against seen rather than a machine's baseline, the verdict on a relation carrying seen is the same on every machine and across a merge (a relation from before seen existed is judged against this machine's baseline, or reported unjudged).",
+      "declared": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording; revised after the lock's verifier (dwitbuk eyes) found the earlier sentence incomplete against the code"
+      }
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

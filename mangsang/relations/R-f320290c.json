@@ -1,0 +1,77 @@
+{
+  "id": "R-f320290c",
+  "src": "plugin/README.md#Invariants and competency questions",
+  "predicate": "realizes",
+  "dst": "concept:living-answer",
+  "evidence": "The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every confirm); it audits that the answer is *alive*.",
+  "seen": {
+    "plugin/README.md#Invariants and competency questions": "501d305c9f5e",
+    "concept:living-answer": "abb31bece10e"
+  },
+  "confirmed": {
+    "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's 2026-11-06 Stage B engine request (mangsang 2.2.0), after round 3 of the eyes review: the section's observation paragraph now says the root's own files are never said unseen and that files-only covers an invariant naming root files; its cq paragraph, which carries the quoted audit that the answer is alive, is unchanged — the projection still realizes living-answer"
+  },
+  "history": [
+    {
+      "confirmed": {
+        "delegated": "agent judgment (Claude, claude-opus-5-5) read against this repository's code, user documentation and tests, under the owner's Stage 1 model-application task of 2026-11-05 (a bounded core-contract model); no person read or approved this wording"
+      },
+      "seen": {
+        "plugin/README.md#Invariants and competency questions": "b6aac52cacbf",
+        "concept:living-answer": "6a5049a880b9"
+      },
+      "evidence": "The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every confirm); it audits that the answer is *alive*."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it"
+      },
+      "seen": {
+        "plugin/README.md#Invariants and competency questions": "b6aac52cacbf",
+        "concept:living-answer": "1e1664d2b94a"
+      },
+      "evidence": "The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every confirm); it audits that the answer is *alive*."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence revised after the non-author semantic review (dwitbuk eyes, contract lens)"
+      },
+      "seen": {
+        "plugin/README.md#Invariants and competency questions": "b6aac52cacbf",
+        "concept:living-answer": "a77d68aaba17"
+      },
+      "evidence": "The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every confirm); it audits that the answer is *alive*."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's Stage 1 model-application task of 2026-11-05, after the lock's verifier (dwitbuk eyes) reviewed the evidence; no person read it; re-read against the sentence revised after the second non-author semantic review round"
+      },
+      "seen": {
+        "plugin/README.md#Invariants and competency questions": "b6aac52cacbf",
+        "concept:living-answer": "abb31bece10e"
+      },
+      "evidence": "The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every confirm); it audits that the answer is *alive*."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's 2026-11-06 Stage B engine request (mangsang 2.2.0): the section gained the registered and required invariant text, the except semantics and the new check observations; its cq paragraph, which carries the quoted audit that the answer is alive and the FAILED/UNANSWERABLE/UNQUESTIONED reds, is unchanged, and nothing added says cq judges a sentence true — the projection still realizes living-answer"
+      },
+      "seen": {
+        "plugin/README.md#Invariants and competency questions": "03b79d25b054",
+        "concept:living-answer": "abb31bece10e"
+      },
+      "evidence": "The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every confirm); it audits that the answer is *alive*."
+    },
+    {
+      "confirmed": {
+        "delegated": "agent re-read (Claude, claude-opus-5-5) of this projection against the concept's sentence, under the owner's 2026-11-06 Stage B engine request (mangsang 2.2.0), after round 2 of the eyes review: the section's except advice now says to name the files (any glob hides files added below it later) and two lines were rewrapped; its cq paragraph, which carries the quoted audit that the answer is alive, is unchanged — the projection still realizes living-answer"
+      },
+      "seen": {
+        "plugin/README.md#Invariants and competency questions": "ac674b852cc1",
+        "concept:living-answer": "abb31bece10e"
+      },
+      "evidence": "The machine never judges whether the sentence answers the words (the declarer's signature carries that, like every confirm); it audits that the answer is *alive*."
+    }
+  ],
+  "written_by": "mangsang 2.0.1"
+}

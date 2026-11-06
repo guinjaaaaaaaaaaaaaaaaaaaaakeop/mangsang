@@ -30,6 +30,16 @@ project by plugin installation.
   Hypothesis in the selected Python environment; a skip is not a pass. Run `python3 test_package.py` (also a separate
   entrypoint) for any change to what `plugin/` holds, its manifests, the catalogs or the layout. These suites do not
   call a model.
+- The source model (`mangsang/`; scope and non-claims in [MODEL.md](MODEL.md)) covers five core contracts on its
+  registered files. Before editing one, run the released engine's `lookup <path>`; the relations it would stale belong
+  to the same change. The owning or orchestrating session keeps the net coherent within that change: it re-reads each
+  and `reconfirm`s, changes the projection, or `retire`s / `concept revise`s with a reason, never reconfirming unread or
+  regenerating records to pass. A bounded worker (a hired role or a sub-agent) reports the anchors and relations its
+  edit affects and writes no model record unless its own task contract explicitly authorizes it; this guide does not
+  extend any worker's write or signing authority. Records are written only with the released engine `hunsu.json` pins,
+  never this checkout's `plugin/`, and signed as the operate skill says — never a person's name on a judgment they did
+  not make. Before claiming covered work complete, the owning session runs `python3 check_model.py` and
+  `python3 test_model_guard.py`.
 - For documentation-only changes, verify file links and CLI examples against `--help`. Follow README
   versioning before distributing or installing changed content; keep the three manifests under `plugin/` and the root
   catalog entries consistent. Never claim a host integration was tested from unit tests alone.
