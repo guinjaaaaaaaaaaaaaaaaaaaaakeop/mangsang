@@ -6,9 +6,11 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
+import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.join(HERE, "plugin")   # the installed payload; the root mangsang.py is only its CLI wrapper
@@ -63,8 +65,9 @@ def rel(src, pred, dst, ev="appends and prints"):   # a quote from PLAN's Q1 sec
 
 
 
-class Skip(Exception):
-    """Raised by a test that cannot run on this host; the runner reports it as SKIP, never as PASS."""
+class Skip(unittest.SkipTest):
+    """Raised by a test that cannot run on this host; the runner reports it as SKIP, never as PASS. A unittest.SkipTest,
+    so a harness that runs these functions under unittest (hacheong's red-before-build) reads it as a skip, not an error."""
 
 def test_python_fingerprints_ignore_comments_and_formatting_markdown_does_not():
     """The fingerprint of a Python anchor is its token stream: a comment, a blank line, reformatting — no change.
@@ -2415,7 +2418,7 @@ def line_of(out, label):
 
 
 def test_a_registered_invariant_naming_files_still_sees_a_new_sibling():
-    """Umbrella audit, 11-06 (R1): four of six source models declared `registered` over the exact files they had registered,
+    """An audit of six source models, 11-06 (R1): four of them declared `registered` over the exact files they had registered,
     and a new committed plugin/resolver.py beside them was asked by nothing — check exit 0, no line, no next step. Now the
     code and config beside registered files that no invariant's paths or excepts classify is said as unseen (never red),
     with its register and the revise that gives the invariant its folder; once the folder is asked, it is a FAILED invariant
@@ -2706,7 +2709,7 @@ def test_an_except_carries_its_reason_and_a_malformed_one_is_refused():
 
 
 def test_a_required_invariant_keeps_named_content_and_require_model_fails_an_empty_one():
-    """Umbrella audit, 11-06 (R2): retiring a concept's projection, a question, an invariant or a relation, or emptying the
+    """An audit of six source models, 11-06 (R2): retiring a concept's projection, a question, an invariant or a relation, or emptying the
     model, left check, cq and impact green, so every source model wrote its own acceptance checker (about 1,100 lines) —
     three of them passed falsely (retired questions counted, an empty required scope, a retired-only model). Now a project
     that keeps its model declares it: `{"kind": "required", ...}` fails, with the engine's own semantics, when what it names
@@ -2780,7 +2783,7 @@ def test_a_required_invariant_keeps_named_content_and_require_model_fails_an_emp
 
 
 def test_impact_says_a_relation_moved_only_through_a_read_with_no_relation_of_its_own():
-    """Umbrella audit, 11-06 (R3): editing chongdae's plugin_root staled five relations of three unrelated concepts, and
+    """An audit of six source models, 11-06 (R3): editing chongdae's plugin_root staled five relations of three unrelated concepts, and
     hunsu's materialize_codex_hooks staled cmd_lock's four — each re-read against its own sentence, found true and
     reconfirmed, while the read's own contract (the defect) was examined by nobody. Now impact says, with each such stale
     relation, that it moved only through reads that carry no relation of their own and that reconfirming does not read
@@ -2846,7 +2849,7 @@ def test_impact_says_a_relation_moved_only_through_a_read_with_no_relation_of_it
 
 
 def test_check_says_a_concept_whose_code_no_test_verifies():
-    """Umbrella audit, 11-06 (R4): a projection invariant holds on `realizes` alone, and three source models (118 relations)
+    """An audit of six source models, 11-06 (R4): a projection invariant holds on `realizes` alone, and three source models (118 relations)
     had no `verifies` — a code change never asked whether its test still proves it. Now check observes (never red) each
     concept realized in the `code` and `test` media whose code anchors no `verifies` reaches, once per concept."""
     with Project() as pj:
@@ -2879,6 +2882,308 @@ def test_check_says_a_concept_whose_code_no_test_verifies():
         assert len(lines) == 1 and "concept:listing" in lines[0], lines
         assert pj.propose(rel("test_memo.py:test_Q1_add", "verifies", "memo.py:list_", ev="def test_Q1_add():"))[0] == 0
         assert "unverified" not in run("check", "--target", pj.dir)[1]
+
+
+# ---- mangsang 2.4.0 (M1–M4): the disposable project of the owner's 2026-11-09 round — m.py, a test that raises its own Skip
+M_PY = "def f(x):\n    return x + 1\n"
+TEST_M = ("class Skip(Exception): pass\n\n\ndef test_f():\n    from m import f\n    if f is None:\n        raise Skip()\n"
+          "    assert f(1) == 2\n\n\ndef test_other():\n    assert 1\n")
+
+
+def test_lookup_predicts_what_an_edit_stales_through_the_anchors_that_read_it():
+    """mangsang M1, 11-09: `lookup test_m.py:Skip` said "no confirmed relation stands on it — an edit here makes nothing stale";
+    changing Skip's base class then staled the relation on test_f, which reads Skip (and, on another product, 10 relations of
+    3 concepts). lookup and impact judged by different closures. Now `edit_reach` is the one closure — the key, its file, what
+    encloses or lies inside it, and every anchor whose parts read any of those — and `lookup FILE:KEY` lists each relation
+    one of whose ends is a reached anchor the predicate propagates from, saying how that end covers KEY; `--brief` gives the
+    concept lines; what reaches nothing prints what 2.3.0 printed."""
+    assert callable(getattr(mangsang, "edit_reach", None)), "mangsang.edit_reach is missing"
+    # C1 — Python: an edit inside Skip's own text can move Skip, the file and test_f (its parts read Skip); never test_other
+    reach = mangsang.edit_reach("test_m.py", TEST_M, ":Skip")
+    assert isinstance(reach, set), reach
+    assert {":Skip", ":test_f", ""} <= reach and ":test_other" not in reach, reach
+    assert mangsang.edit_reach("test_m.py", TEST_M, ":test_f") == {":test_f", ""}, "Skip does not read test_f"
+    assert mangsang.edit_reach("test_m.py", TEST_M, "") == set(mangsang.anchor_texts("test_m.py", TEST_M)), "the file: every anchor"
+    assert mangsang.edit_reach("test_m.py", TEST_M, ":nosuch") == set(), "a key the file does not have"
+    # C1 — Markdown: a subsection's edit moves its enclosing section; a section's edit moves its subsections; a sibling never
+    md = "# t\n\n## A\n\na\n\n### B\n\nb\n\n## C\n\nc\n"
+    rb = mangsang.edit_reach("doc.md", md, "#B")
+    assert {"#B", "#A", ""} <= rb and "#C" not in rb, rb
+    ra = mangsang.edit_reach("doc.md", md, "#A")
+    assert {"#A", "#B", ""} <= ra and "#C" not in ra, ra
+    assert "#A" not in mangsang.edit_reach("doc.md", md, "#C"), "C encloses nothing of A"
+    # C1 — a nested JSON key: the enclosing key holds it, and it lies inside the enclosing key
+    pkg = '{"scripts": {"test": "jest"}, "name": "x"}\n'
+    assert {":scripts.test", ":scripts", ""} <= mangsang.edit_reach("package.json", pkg, ":scripts.test"), mangsang.edit_reach("package.json", pkg, ":scripts.test")
+    assert ":name" not in mangsang.edit_reach("package.json", pkg, ":scripts.test")
+    assert ":scripts.test" in mangsang.edit_reach("package.json", pkg, ":scripts")
+    with Project() as pj:
+        git = git_in(pj)
+        git("init", "-q")
+        write(os.path.join(pj.dir, "m.py"), M_PY)
+        write(os.path.join(pj.dir, "test_m.py"), TEST_M)
+        assert run("register", "m.py", "test_m.py", "plan/PLAN.md", "--target", pj.dir)[0] == 0
+        assert run("concept", "add", "c", "--means", "f adds one.", "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = pj.propose(rel("test_m.py:test_f", "verifies", "m.py:f", ev="assert f(1) == 2"),
+                               rel("test_m.py:test_f", "realizes", "concept:c", ev="def test_f():"),
+                               rel("test_m.py", "realizes", "concept:c", ev="def test_other():"),        # the whole file: holds Skip
+                               rel("test_m.py:test_other", "realizes", "concept:c", ev="def test_other():"),   # does not read Skip
+                               rel("test_m.py:test_f", "references", "m.py", ev="from m import f"))      # reads Skip, propagates from neither end
+        assert code == 0, out
+        git("add", "-A"); git("commit", "-qm", "confirmed")
+        R = lambda s, p, d: mangsang.rel_id({"src": s, "predicate": p, "dst": d})
+        r_ver, r_tf, r_file = R("test_m.py:test_f", "verifies", "m.py:f"), R("test_m.py:test_f", "realizes", "concept:c"), R("test_m.py", "realizes", "concept:c")
+        r_other, r_ref = R("test_m.py:test_other", "realizes", "concept:c"), R("test_m.py:test_f", "references", "m.py")
+        # C2 — nothing stands on Skip itself; what reads or holds it is listed, with how; what does not propagate from that end is not
+        code, out = run("lookup", "test_m.py:Skip", "--target", pj.dir)
+        assert code == 0, out
+        assert "no confirmed relation stands on it" not in out and "makes nothing stale" not in out, out
+        listed = {rid for rid in (r_ver, r_tf, r_file, r_other, r_ref) if rid in out}
+        assert r_tf in listed and r_file in listed, out
+        assert r_other not in listed and r_ref not in listed, out
+        line = lambda rid: [l for l in out.split("\n") if rid in l]
+        assert len(line(r_tf)) == 1 and "reads test_m.py:Skip" in line(r_tf)[0], out
+        assert len(line(r_file)) == 1 and "holds test_m.py:Skip" in line(r_file)[0], out
+        assert "[test_m.py:test_f] realizes concept:c" in line(r_tf)[0] and "[test_m.py] realizes concept:c" in line(r_file)[0], out   # as stored, the reached end marked
+        assert "concept:c — means: f adds one." in out and '"def test_f():" — by kim' in out and '"def test_other():" — by kim' in out, out
+        assert out.count("— fresh") >= 2 and "STALE" not in out, out
+        closing = out.strip().split("\n")[-1]
+        assert re.search(r"\b%d\b" % len(listed), closing) and "relation(s)" in closing, (closing, listed)
+        # C4 — brief: a line per concept the listed relations reach
+        code, brief = run("lookup", "test_m.py:Skip", "--brief", "--target", pj.dir)
+        assert code == 0 and [l for l in brief.split("\n") if l.startswith("concept:c — ")], brief
+        assert "not registered" not in brief and "R-" not in brief, brief
+        # C2/C4 — an anchor nothing stands on and nothing reaches: exactly what 2.3.0 printed, and --brief silent
+        code, out2 = run("lookup", "plan/PLAN.md#Q2 list", "--target", pj.dir)
+        assert code == 0 and "plan/PLAN.md#Q2 list is registered; no confirmed relation stands on it — an edit here makes nothing stale" in out2, out2
+        assert "R-" not in out2, out2
+        assert run("lookup", "plan/PLAN.md#Q2 list", "--brief", "--target", pj.dir) == (0, ""), "nothing to say, no line"
+        # C3 — the same closure decides: what lookup listed for the reached anchors is what the edit stales
+        write(os.path.join(pj.dir, "test_m.py"), TEST_M.replace("class Skip(Exception)", "class Skip(RuntimeError)"))
+        code, imp = run("impact", "--target", pj.dir)
+        assert code == 1, imp
+        stale = {l.split()[1] for l in imp.split("\n") if l.startswith("  stale   ")}
+        assert stale == listed, (stale, listed, imp)
+        assert r_tf in stale and r_file in stale and r_other not in stale and r_ref not in stale, imp
+        assert not os.path.exists(os.path.join(pj.dir, ".mangsang")), "lookup writes nothing"
+
+
+def test_a_verifies_goes_stale_when_its_test_changes_and_older_relations_say_why():
+    """mangsang M2, 11-09: `verifies` propagated dst->src only, so a test rewritten to `assert True` kept its verifies fresh
+    forever (another product's kept its first fingerprint through ten rounds of test edits). Now verifies propagates both ways;
+    a project holding exactly the 2.3 default entry is read as the new one and rewritten on the first model write, a project
+    with its own entry keeps it; and a verifies stale through its test side whose record a release before 2.4.0 wrote says why
+    (that change was never re-read) — each with a reason, none wholesale: one whose both ends are what its confirmer saw is fresh."""
+    OLD = {"propagates": "dst->src", "means": "src (a test) proves dst; when dst changes the test may be stale"}
+    BROKEN_TEST = TEST_M.replace("    assert f(1) == 2\n", "    assert True\n")
+    # C1 — the default vocabulary
+    v = mangsang.DEFAULT_VOCAB["verifies"]
+    assert v["propagates"] == "both", v
+    assert v["means"] != OLD["means"] and "test" in v["means"] and ("assert" in v["means"] or "call" in v["means"]), v
+
+    def impact(pj):
+        code, out = run("impact", "--target", pj.dir)
+        return code, [l for l in out.split("\n") if l.startswith("  stale   ")], out
+
+    with Project() as pj:
+        git = git_in(pj)
+        git("init", "-q")
+        write(os.path.join(pj.dir, "m.py"), M_PY)
+        write(os.path.join(pj.dir, "test_m.py"), TEST_M)
+        assert run("register", "m.py", "test_m.py", "--target", pj.dir)[0] == 0
+        vocpath = os.path.join(pj.dir, "mangsang", "vocabulary.json")
+        vocab = lambda: json.load(open(vocpath, encoding="utf-8"))
+        assert vocab()["verifies"]["propagates"] == "both", vocab()   # C1 — a new project's vocabulary.json
+        assert pj.propose(rel("test_m.py:test_f", "verifies", "m.py:f", ev="assert f(1) == 2"))[0] == 0
+        rid = mangsang.rel_id({"src": "test_m.py:test_f", "predicate": "verifies", "dst": "m.py:f"})
+        rpath = os.path.join(pj.dir, "mangsang", "relations", rid + ".json")
+        git("add", "-A"); git("commit", "-qm", "confirmed")
+        # C2 — the test side moves: stale, blamed on the test; the code side as before; neither: fresh
+        write(os.path.join(pj.dir, "test_m.py"), BROKEN_TEST)
+        code, lines, out = impact(pj)
+        assert code == 1 and len(lines) == 1 and lines[0].startswith("  stale   " + rid) and lines[0].endswith("<- test_m.py:test_f"), out
+        write(os.path.join(pj.dir, "test_m.py"), TEST_M)
+        write(os.path.join(pj.dir, "m.py"), M_PY.replace("x + 1", "x + 2"))
+        code, lines, out = impact(pj)
+        assert code == 1 and len(lines) == 1 and lines[0].endswith("<- m.py:f"), out
+        write(os.path.join(pj.dir, "m.py"), M_PY)
+        code, lines, out = impact(pj)
+        assert code == 0 and not lines, out
+        code, out = run("lookup", "test_m.py:test_f", "--target", pj.dir)
+        vline = [l for l in out.split("\n") if rid in l]
+        assert code == 0 and len(vline) == 1 and "changing this anchor makes the relation stale" in vline[0], out
+        # C3 — a 2.3 project's vocabulary.json holds exactly the old default: read as the new one; the first write rewrites it
+        write(vocpath, {**vocab(), "verifies": dict(OLD)})
+        write(os.path.join(pj.dir, "test_m.py"), BROKEN_TEST)
+        code, lines, out = impact(pj)
+        assert code == 1 and len(lines) == 1 and lines[0].endswith("<- test_m.py:test_f"), out
+        assert vocab()["verifies"] == OLD, "impact writes nothing"
+        write(os.path.join(pj.dir, "other.py"), "Y = 1\n")
+        assert run("register", "other.py", "--target", pj.dir)[0] == 0
+        assert vocab()["verifies"] == mangsang.DEFAULT_VOCAB["verifies"], vocab()
+        # C3 — a project's own entry (its own means) keeps its meaning and its bytes
+        CUSTOM = {"propagates": "dst->src", "means": "custom"}
+        write(vocpath, {**vocab(), "verifies": dict(CUSTOM)})
+        code, lines, out = impact(pj)
+        assert code == 0 and not lines, out   # the test side moved; this project's verifies does not propagate from it
+        write(os.path.join(pj.dir, "other2.py"), "Z = 1\n")
+        assert run("register", "other2.py", "--target", pj.dir)[0] == 0
+        assert vocab()["verifies"] == CUSTOM, vocab()
+        write(vocpath, {**vocab(), "verifies": dict(OLD)})   # back to what a 2.3 project holds, for C4 and C5
+
+        def written_by(value):
+            r = json.load(open(rpath, encoding="utf-8"))
+            r.pop("written_by", None)
+            if value is not None:
+                r["written_by"] = value
+            write(rpath, r)
+
+        # C4 — a verifies stale through its test side, written before 2.4.0 (or by nobody named): why, under its stale line and in --findings
+        for wb in ("mangsang 2.3.0", "mangsang 2.3.0+gabc1234-dirty", None):
+            written_by(wb)
+            write(os.path.join(pj.dir, "test_m.py"), BROKEN_TEST)
+            code, lines, out = impact(pj)
+            assert code == 1 and len(lines) == 1 and lines[0].endswith("<- test_m.py:test_f"), (wb, out)
+            under = out.split(lines[0], 1)[1].split("unresolved_total")[0]
+            assert "before mangsang 2.4.0" in under, (wb, out)
+            doc = json.loads(run("impact", "--findings", "--target", pj.dir)[1])
+            st = [f for f in doc["findings"] if f["kind"] == "stale"]
+            assert len(st) == 1 and "before mangsang 2.4.0" in st[0]["text"], (wb, doc)
+        for wb in ("mangsang 2.4.0", "mangsang 2.4.0+gabc1234"):
+            written_by(wb)
+            code, lines, out = impact(pj)
+            assert code == 1 and len(lines) == 1 and lines[0].endswith("<- test_m.py:test_f") and "before mangsang 2.4.0" not in out, (wb, out)
+            doc = json.loads(run("impact", "--findings", "--target", pj.dir)[1])
+            assert not any("before mangsang 2.4.0" in f["text"] for f in doc["findings"]), (wb, doc)
+        # C4 — stale only because its dst moved: no such line, whoever wrote it
+        written_by("mangsang 2.3.0")
+        write(os.path.join(pj.dir, "test_m.py"), TEST_M)
+        write(os.path.join(pj.dir, "m.py"), M_PY.replace("x + 1", "x + 2"))
+        code, lines, out = impact(pj)
+        assert code == 1 and len(lines) == 1 and lines[0].endswith("<- m.py:f") and "before mangsang 2.4.0" not in out, out
+        # C5 — not wholesale: a pre-2.4.0 verifies whose test and code are what its confirmer saw is fresh
+        write(os.path.join(pj.dir, "m.py"), M_PY)
+        code, lines, out = impact(pj)
+        assert code == 0 and not lines and "before mangsang 2.4.0" not in out, out
+
+
+def test_reconfirming_a_fresh_relation_records_nothing():
+    """mangsang M3, 11-09: `reconfirm R --by kim` on a fresh relation (seen equal to now on both ends) appended a history entry
+    each time — two calls, two identical entries. Now a re-read that changes nothing (the same person, an agent on its own, a
+    delegation) records nothing and says "already fresh"; another person's own re-read is recorded; a stale relation, a new
+    quote, and a `seen` in an older fingerprint shape (the README's promised upgrade) are recorded as now."""
+    src = "LIMIT = 10\n\n\ndef handle(x):\n    return x > LIMIT\n"
+    with Project() as pj:
+        write(os.path.join(pj.dir, "p.py"), src)
+        write(os.path.join(pj.dir, "q.py"), "def g():\n    return 1\n")
+        assert run("register", "plan/PLAN.md", "p.py", "q.py", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel("plan/PLAN.md#Q1 add", "documents", "p.py:handle", ev="appends"),
+                          rel("plan/PLAN.md#Q2 list", "documents", "q.py:g", ev="lists."))[0] == 0
+        r1 = mangsang.rel_id({"src": "plan/PLAN.md#Q1 add", "predicate": "documents", "dst": "p.py:handle"})
+        r2 = mangsang.rel_id({"src": "plan/PLAN.md#Q2 list", "predicate": "documents", "dst": "q.py:g"})
+        path = lambda rid: os.path.join(pj.dir, "mangsang", "relations", rid + ".json")
+        raw = lambda rid: io.open(path(rid), "rb").read()
+        rec = lambda rid: json.load(open(path(rid), encoding="utf-8"))
+        history = lambda rid: len(rec(rid).get("history", []))
+        now = lambda f, key: mangsang.anchors_of(os.path.join(pj.dir, f))[key]
+
+        def as_agent(*argv):
+            keep = mangsang.running_agent
+            mangsang.running_agent = lambda: "Claude (test)"
+            try:
+                return run(*argv)
+            finally:
+                mangsang.running_agent = keep
+
+        # C1 — the confirmer's re-read of a fresh relation: said, and the file byte-identical
+        before = raw(r1)
+        code, out = run("reconfirm", r1, "--by", "kim", "--target", pj.dir)
+        assert code == 0 and "already fresh" in out and r1 in out, out
+        assert raw(r1) == before, "a fresh relation re-read by its confirmer was recorded again"
+        code, out = run("reconfirm", r1, "--by", "kim", "--evidence", "appends", "--target", pj.dir)   # the same quote: nothing new
+        assert code == 0 and "already fresh" in out and raw(r1) == before, out
+        # C2 — an agent's own re-read, and a delegation: the same no-op
+        code, out = as_agent("reconfirm", r1, "--target", pj.dir)
+        assert code == 0 and "already fresh" in out and raw(r1) == before, out
+        code, out = run("reconfirm", r1, "--delegated", "the owner left it to me", "--target", pj.dir)
+        assert code == 0 and "already fresh" in out and raw(r1) == before, out
+        # C3 — another person's own re-read is not lost; lee's second is a no-op; an agent after lee is one; kim's own after lee is recorded
+        code, out = run("reconfirm", r1, "--by", "lee", "--target", pj.dir)
+        assert code == 0 and "already fresh" not in out and history(r1) == 1 and rec(r1)["confirmed"]["by"] == "lee", (out, rec(r1))
+        assert rec(r1)["history"][0]["confirmed"] == {"by": "kim"}, rec(r1)
+        after_lee = raw(r1)
+        code, out = run("reconfirm", r1, "--by", "lee", "--target", pj.dir)
+        assert code == 0 and "already fresh" in out and raw(r1) == after_lee, out
+        code, out = as_agent("reconfirm", r1, "--target", pj.dir)
+        assert code == 0 and "already fresh" in out and raw(r1) == after_lee, out
+        code, out = run("reconfirm", r1, "--by", "kim", "--target", pj.dir)
+        assert code == 0 and "already fresh" not in out and history(r1) == 2 and rec(r1)["confirmed"]["by"] == "kim", (out, rec(r1))
+        # C4 — a stale relation is recorded as now; a fresh one given a new quote that is in the text is recorded
+        write(os.path.join(pj.dir, "p.py"), src.replace("LIMIT = 10", "LIMIT = 11"))
+        code, out = run("reconfirm", r1, "--by", "kim", "--target", pj.dir)
+        assert code == 0 and "already fresh" not in out and history(r1) == 3 and rec(r1)["seen"]["p.py:handle"] == now("p.py", ":handle"), (out, rec(r1))
+        code, out = run("reconfirm", r1, "--by", "kim", "--evidence", "def handle(x):", "--target", pj.dir)
+        assert code == 0 and "already fresh" not in out and history(r1) == 4 and rec(r1)["evidence"] == "def handle(x):", (out, rec(r1))
+        assert rec(r1)["history"][-1]["evidence"] == "appends", rec(r1)
+        # C5 — a `seen` in an older fingerprint shape that impact still reads as fresh is upgraded, not "already fresh"
+        r = rec(r1)
+        r["seen"]["p.py:handle"] = mangsang.fp(mangsang.anchor_texts(os.path.join(pj.dir, "p.py"))[":handle"])   # raw text hash, no path: the pre-token shape
+        mangsang.save(path(r1), r)
+        stale, broken, _, _ = mangsang.compute_impact(pj.dir, mangsang.decl(pj.dir), persist=False)
+        assert not stale and not broken, stale
+        code, out = run("reconfirm", r1, "--by", "kim", "--target", pj.dir)
+        assert code == 0 and "already fresh" not in out and history(r1) == 5, (out, rec(r1))
+        assert rec(r1)["seen"] == {"plan/PLAN.md#Q1 add": now("plan/PLAN.md", "#Q1 add"), "p.py:handle": now("p.py", ":handle")}, rec(r1)
+        # C6 — two ids, one fresh and one stale: the stale one recorded, the fresh one's file untouched
+        write(os.path.join(pj.dir, "q.py"), "def g():\n    return 2\n")
+        before1, h2 = raw(r1), history(r2)
+        code, out = run("reconfirm", r1, r2, "--by", "kim", "--target", pj.dir)
+        assert code == 0 and "already fresh" in out and r1 in out, out
+        assert raw(r1) == before1 and history(r2) == h2 + 1 and rec(r2)["seen"]["q.py:g"] == now("q.py", ":g"), (out, rec(r2))
+
+
+def test_lookup_names_the_except_that_keeps_a_file_out_of_the_net():
+    """mangsang M4, 11-09: on a model whose `registered` invariant excepts plugin/hostcall.py with a reason, `lookup plugin/hostcall.py`
+    said NOT REGISTERED and told the reader to register it — the except and its why, the model's own answer to that, were never
+    said. Now a tracked, unregistered file an active invariant's except matches is said as excepted, with the invariant, the glob
+    and its reason ("no reason" for a bare glob); a file no except matches, and an excepted one once its invariant is retired,
+    print NOT REGISTERED as before."""
+    WHY = "vendored, kept in step with its upstream copy"
+    verify = lambda excepts: json.dumps({"kind": "registered", "paths": ["src/", "vendor/"], "except": excepts})
+    with Project() as pj:
+        git = git_in(pj)
+        write(os.path.join(pj.dir, "src", "a.py"), "def a():\n    return 1\n")
+        write(os.path.join(pj.dir, "vendor", "x.py"), "X = 1\n")
+        write(os.path.join(pj.dir, "other", "y.py"), "Y = 1\n")
+        git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base")
+        assert run("register", "src/a.py", "--target", pj.dir)[0] == 0
+        code, out = run("cq", "add", "inv-scope", "--text", "Is every source file registered?", "--verify", verify([{"glob": "vendor/*.py", "why": WHY}]), "--by", "kim", "--target", pj.dir)
+        assert code == 0, out
+        # C1 — the except, its invariant, its glob and its why; not "register it"
+        code, out = run("lookup", "vendor/x.py", "--target", pj.dir)
+        assert code == 0, out
+        said = [l for l in out.split("\n") if "excepted" in l]
+        assert said and any(all(s in l for s in ("inv-scope", "vendor/*.py", WHY)) for l in said), out
+        assert "NOT REGISTERED" not in out and "mangsang register vendor/x.py" not in out, out
+        # C2 — brief: one line, excepted, the reason's first clause
+        code, out = run("lookup", "vendor/x.py", "--brief", "--target", pj.dir)
+        assert code == 0 and len(out.strip().split("\n")) == 1 and "excepted" in out and "vendored" in out, out
+        assert "not registered" not in out, out
+        # C3 — a bare glob string: "no reason"
+        assert run("cq", "revise", "inv-scope", "--verify", verify(["vendor/*.py"]), "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("lookup", "vendor/x.py", "--target", pj.dir)
+        said = [l for l in out.split("\n") if "excepted" in l]
+        assert code == 0 and said and any(all(s in l for s in ("inv-scope", "vendor/*.py", "no reason")) for l in said), out
+        assert "NOT REGISTERED" not in out, out
+        # C4 — a tracked unregistered file no except matches: NOT REGISTERED as before; so is vendor/x.py once the invariant is retired
+        code, out = run("lookup", "other/y.py", "--target", pj.dir)
+        assert code == 0 and "other/y.py is NOT REGISTERED (tracked by git" in out and "mangsang register other/y.py" in out and "excepted" not in out, out
+        assert run("cq", "retire", "inv-scope", "--why", "x", "--by", "kim", "--target", pj.dir)[0] == 0
+        code, out = run("lookup", "vendor/x.py", "--target", pj.dir)
+        assert code == 0 and "vendor/x.py is NOT REGISTERED (tracked by git" in out and "mangsang register vendor/x.py" in out and "excepted" not in out, out
+        code, out = run("lookup", "vendor/x.py", "--brief", "--target", pj.dir)
+        assert code == 0 and out.strip() == "vendor/x.py: not registered — the net does not see it (no relation stands on it; edits here are never stale)", out
+        assert not os.path.exists(os.path.join(pj.dir, ".mangsang")), "lookup writes nothing"
 
 
 if __name__ == "__main__":

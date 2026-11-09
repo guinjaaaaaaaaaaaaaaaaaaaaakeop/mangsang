@@ -39,10 +39,6 @@ A clone is for working on mangsang. Its layout:
   ([hunsu.json](hunsu.json), [hunsu.lock.json](hunsu.lock.json), [hunsu-judgments.json](hunsu-judgments.json); the local
   overlay and run and review records are not committed), the two catalogs, the repository's
   [LICENSE](LICENSE) (the same text as `plugin/LICENSE`), and the source entrypoints `mangsang.py` and `judge_worker.py`.
-- the source model — a bounded mangsang model of this repository's core contracts in `mangsang/` (committed, written by
-  the released engine), its scope and non-claims in [MODEL.md](MODEL.md), and its guard [check_model.py](check_model.py)
-  with [test_model_guard.py](test_model_guard.py) (below). Maintaining it is part of a change to a file it registers;
-  [AGENTS.md](AGENTS.md) says who does what.
 
 The root `mangsang.py` and `judge_worker.py` keep a clone's source entrypoints, as wrappers, never second copies:
 run (`python3 mangsang.py <command> ... --target <project>`, `python3 judge_worker.py --request ... --response ...`, or
@@ -90,7 +86,8 @@ the version in all three manifests (`plugin/plugin.json`, `plugin/.claude-plugin
 stands,
 so an unbumped edit is a copy nobody can tell from the old one. **patch**: behavior or wording, every interface
 unchanged.
-**minor**: a new command, skill, field, hook or artifact key; what exists keeps working. **major**: an artifact type,
+**minor**: a new command, skill, field, hook or artifact key, or a changed contract of an existing one (what a built-in
+predicate propagates, what a command lists or records); what exists keeps working. **major**: an artifact type,
 lock or
 record that other products read changes shape, or a supported Python or host version is dropped (a raised `engines`
 floor) — an installation that ran yesterday stops running. 2.0.0 is such a release: it raised the Python floor to
@@ -113,6 +110,25 @@ and matches as before. A model using the object form needs 2.3.0 or later (an ol
 on it). An except 2.2 accepted that is not a list of distinct non-empty strings — a bare string, read character by
 character; a non-string entry; a glob twice — is now UNASKABLE. None of the six
 source models held one of those malformed excepts.
+
+2.4.0 is minor: an existing interface's contract changed — the built-in `verifies` predicate, which every project's
+`vocabulary.json` holds, now propagates both ways, and `lookup FILE:KEY` and `reconfirm` say and record differently.
+The 2.3 default entry is read as the new one by every command immediately and written to `vocabulary.json` (a one-entry
+diff) the next time a command saves the registry and vocabulary: `register`, `confirm`, `retire` (including
+`retire --gone`), `move`, or a `concept` subcommand that changes a concept. `reconfirm`, `judge consume`,
+`cq add/revise/retire` and `source add` write only their own record files and leave `vocabulary.json` as it is.
+A project that only reconfirms its newly stale relations still holds the 2.3 entry on disk until then; its verdicts
+are already the new ones. A project's own `verifies` entry and its propagation are kept.
+A pre-2.4.0 relation stale through its test side says why that change has not been re-read;
+one whose test is unchanged stays fresh unless its code side changed. Measured at adoption time on the six source
+models' committed heads (2026-11-09): 18 of 100 `verifies` went stale — 8 of 14, 0 of 14, 8 of 21, 1 of 23,
+1 of 23, 0 of 5 — each saying why, and no other relation changed state. Also new: `lookup FILE:KEY` lists what an edit
+there can stale (`edit_reach`, the closure impact judges by); reconfirm of a fresh relation records nothing; lookup
+on an excepted file names the except and its why. Not a patch, since "every interface unchanged" does not hold:
+the existing contracts changed (2.2.0's note said no staleness decision changed then). Not a major, since no record,
+artifact or lock changes shape and nothing that ran stops running — an adopting project may see relations go stale,
+each with its reason.
+
 hunsu's `check` fails a linked plugin whose source differs from the
 installed
 copy under one version; for a locally linked plugin, `hunsu install --refresh <plugin>` re-snapshots after the bump.
@@ -149,7 +165,8 @@ runs the same tests); `test_mangsang.py` does not run it. No model calls.
 ([Hypothesis](https://hypothesis.readthedocs.io/),
 a developer's dependency only: `pip install hypothesis`; without it every property is SKIPped, never passed). A
 section edit
-moves exactly that section's anchors; a stale relation names the end that changed and only when it propagates; `impact
+moves exactly that section's anchors; an edit inside an anchor moves only what `edit_reach` — lookup's prediction — names;
+a stale relation names the end that changed and only when it propagates; `impact
 --show`
 finds the earlier text wherever the target sits in a repository; any sequence of `reconfirm`, `revise`, `rename` keeps
 every
@@ -172,15 +189,3 @@ from a payload that merely sits in a directory named `plugin`, the same through 
 `import mangsang` and `import judge_worker` from the checkout are the `plugin/` modules, one instance each, with both
 root `--help` entrypoints equal to the payload's. Its own entrypoint, stdlib `unittest`;
 `test_mangsang.py` does not run it. No network or model calls.
-
-`python3 check_model.py` — the source model ([MODEL.md](MODEL.md)): runs the released engine's `check --require-model`
-(an absent or empty model fails), `cq` and `impact` and fails when any of them does — the model's `inv-required`
-invariant makes `check` fail when an expected concept, question or invariant is missing, retired, drifted, owing a
-re-read or realized by nothing, and `check` fails on a committed payload file or root suite that is neither registered
-nor excepted; and fails on what the engine cannot say: `inv-required` gone or no longer naming one of them, a question
-answered by another concept, an invariant of another kind, a lost registered file, projection or verified symbol, a
-registered scope that no longer asks of every file under `plugin/` and `test_`, or an `except` the guard does not
-classify or MODEL.md does not name. An engine older than 2.2.0 is refused. It never writes a record; the engine comes
-from `--engine`, `MANGSANG_ENGINE` or the `hunsu.json` pin in the host's plugin cache, never this checkout's `plugin/`.
-`python3 test_model_guard.py` proves those failures on disposable copies (it needs that released engine and fails,
-never skips, without one).

@@ -148,7 +148,12 @@ related concept against the anchor, not that read's own contract — read it, th
 `shared` (`unmodeled-read`, an observation, in `--findings`): a candidate shared contract (chongdae, 11-06: an edit
 to `plugin_root` staled five relations of three concepts, each reconfirmed true, and the edited function was read by
 nobody). It is said only where git holds what the confirmer saw — the anchor's parts at the relation's last commit
-fingerprint to its `seen`
+fingerprint to its `seen`.
+
+A `verifies` stale through its test side whose record a release before 2.4.0 wrote says, under its stale line
+and in `--findings`: "before mangsang 2.4.0 a verifies did not go stale when its test changed, so this change has not
+been re-read; read whether the test still calls DST and asserts on what it does; `reconfirm` if it does, change or
+`retire` it if not" — with its destination anchor in place of DST.
 
 ### `/mangsang:judge`
 
@@ -204,14 +209,29 @@ relation with its anchor, predicate, the confirmed quote, who confirmed it (`by 
 WHO`, `by the agent NAME, on its own`, or `delegated:` and the reason's first clause) and whether it is fresh, stale or broken now — what an agent otherwise opens `concepts/` and `relations/`
 for by hand. A file with nothing on it says which case it is: not registered (and, when git tracks it beside
 registered files, that the net cannot see it and how to register it), registered with no relations, or not in the
-tree. Read-only. It also takes an anchor — `concept:NAME` (the meaning, then what stands on it), `file:symbol` — and a
-relation id: that relation whole, its concept's meaning, its state, quote and signer (a retired one says so, with why)
+tree. A tracked, unregistered file an active `registered` invariant's except keeps out of the net instead says
+`FILE is excepted by INVARIANT (GLOB) — WHY` (`no reason recorded` for a bare glob string), without NOT REGISTERED
+or advice to register it. Read-only. It also takes `concept:NAME` (the meaning, then what stands on it), an artifact
+anchor (`file:symbol`, `file#heading`, `file:key`), or a relation id: that relation whole, its concept's meaning,
+its state, quote and signer (a retired one says so, with why).
+
+For an artifact anchor, after the relations on the anchor itself, lookup lists every relation on another anchor
+of the same file that an edit inside it can stale and that propagates from that end: an anchor that reads it,
+transitively (the test that raises a class, the function that compares a constant), the file itself or a section/key
+that holds it, or a subsection inside it. Each line says `reads FILE:KEY`, `holds FILE:KEY` or `lies inside FILE:KEY`.
+Lookup's prediction and impact's verdict use one closure (`edit_reach`, what a fingerprint hashes): what lookup
+lists for an edit inside the anchor is what impact can then report. An enclosing anchor lists potential edits;
+not every edit inside it changes every subsection. On one product, mangsang 2.3.0's `lookup test_hunsu.py:Skip`
+said nothing stood on it, but changing Skip's base class staled 10 relations through tests that read it. 2.4.0 lists
+14 there, and that edit stales exactly those 14 — the 10 and four `verifies` now judged from their test side.
 
 `lookup PATH --brief` is the same fact for an agent's first look at a file: one line per concept (or other end) the
-file's relations reach — `concept:NAME — <its meaning's first sentence, cut at ~160 characters>` (a first sentence that is
+file's relations reach (an anchor's brief reads the same relations, including those reached through the closure) —
+`concept:NAME — <its meaning's first sentence, cut at ~160 characters>` (a first sentence that is
 only a name, like "첫 화면.", is followed by the next, so the line says something), with `(N relation(s);
 K stale)` when any is stale — at most five lines, no ids, no quotes. A tracked file the net does not see gets one line
-saying so; registered with nothing on it, or not in the tree, prints nothing. Whole outputs pasted into an agent's
+saying so; an excepted file gets `FILE: excepted — <the why's first clause>`. Registered with nothing on it, or not in
+the tree, prints nothing. Whole outputs pasted into an agent's
 context went unread (~43k characters in one cycle); a line per fact is read
 
 ### `move` (Python CLI)
@@ -248,7 +268,11 @@ registered file now is a rename, not a deletion: `move` it first
 ### `/mangsang:reconfirm`
 
 A human re-read stale relations and they still hold: `seen` becomes what the tree has now. Refused on a dead anchor
-(retire) or when the evidence quote is gone from the text (`--evidence` gives the sentence that holds now)
+(retire) or when the evidence quote is gone from the text (`--evidence` gives the sentence that holds now).
+A relation already fresh — both ends what its confirmer saw — records nothing and says `already fresh`; a diagnostic
+reconfirm used to append an identical signed entry each time. Still recorded: a stale relation, a new `--evidence`
+quote, a person's own `--by` re-read of a relation someone else (or an agent, or a delegation) last signed, and a `seen`
+in an older fingerprint shape, upgrading it as promised below.
 
 ## Files in your project
 
@@ -379,9 +403,24 @@ One rule cuts every kind of file (`anchors.py` holds it, one scanner per kind):
 concept a conversation grounded, and someone must re-read the words against the new sentence. In a `projection`
 invariant `source:` is a medium like any prefix — `{"said": ["source:"]}` asks that every concept be grounded in
 something someone said.
-`documents` and `verifies` propagate `dst->src` (when the code changes, the section or test may be stale); `realizes`
+`documents` propagates `dst->src` (when the code changes, the section may be stale). `verifies` propagates both ways:
+when the code changes the test may be stale, and when the test changes it may no longer call the code or assert on
+what it does — a test rewritten to `assert True` used to keep its `verifies` fresh for good. `realizes`
 propagates both ways (a revised meaning stales the projection; a changed projection may have outgrown the meaning);
 `references` propagates nothing.
+
+On adoption, a `verifies` entry in `vocabulary.json` exactly as 2.3 and earlier wrote it is read as the new one by every
+command at once and written to `vocabulary.json` (a one-entry diff) the next time a command saves the registry and
+vocabulary: `register`, `confirm`, `retire` (including `retire --gone`), `move`, or a `concept` subcommand that changes
+a concept. `reconfirm`, `judge consume`, `cq add/revise/retire` and `source add` write only their own record files and
+leave `vocabulary.json` as it is. A project that only reconfirms its newly stale relations still holds the 2.3 entry
+on disk until then; its verdicts are already the new ones. A project's own `verifies` entry and its propagation are
+kept. Under the new rule, every `verifies` whose test side changed since its last confirmation
+or re-confirmation goes stale at once, each saying the migration line under `/mangsang:impact` above while its record
+was last written by a release before 2.4.0; a reconfirm under 2.4.0 ends that notice. A `verifies` whose test is what
+its confirmer saw stays fresh unless its code side changed — nothing goes stale wholesale, and no other predicate's
+decision changed.
+
 A relation id is the hash of (src, predicate, dst); the same relation proposed twice is a duplicate.
 Every judgment (`confirm`, `reconfirm`, `concept`, `cq`) carries `--by` or `--delegated` — except a `reconfirm` an agent
 runs with neither, which is the agent's own re-read and is signed as such: an explicit `AGENT_HOST` (surrounding
@@ -562,7 +601,7 @@ what they mean; it reads their `propagates`, the same rule `impact` judges stale
   `anchors.py` is the whole of adding one); reads across files (see above — a relation, today).
 
 - `judge_worker.py` starts its host session through `hostcall.py` — one host call for every worker of this family (hunsu's judge, mangsang's judge, dwitbuk's eyes,
-  hacheong's members), vendored: the same file in each plugin, since a plugin imports no other plugin. The umbrella checkout's `tools/same-file.py` says when the copies drift.
+  hacheong's members), vendored: the same file in each plugin, since a plugin imports no other plugin. The maintainers' copy check says when the copies drift.
 
 - mangsang declares `reads` in its plugin.json — what a reader (jokbo) runs, kind -> argv: `file` (`lookup {path}`),
   `decision` (`cq`), `note` (`lookup {path} --brief`: a line per fact at an agent's first look at a file) and `map`
@@ -574,7 +613,8 @@ what they mean; it reads their `propagates`, the same rule `impact` judges stale
 ## Versions
 
 Semver: a **patch** changes behavior or wording with every interface unchanged; a **minor** adds a command, skill, field,
-hook or artifact key while what exists keeps working; a **major** changes the shape of a record, lock or artifact other
+hook or artifact key, or changes an existing one's contract (what a built-in predicate propagates, what a command
+lists or records), while what exists keeps working; a **major** changes the shape of a record, lock or artifact other
 products read, or drops a supported Python or host version. The version is the one in this
 directory's three manifests. The full policy and the release procedure are kept with the source repository, not in an
 installation.

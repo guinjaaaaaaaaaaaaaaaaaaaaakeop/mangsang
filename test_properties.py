@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.join(HERE, "plugin")   # the installed payload; the root mangsang.py is only its CLI wrapper
@@ -31,8 +32,9 @@ except ImportError:   # the property tests need a generator; without one they sa
     HYPOTHESIS = False
 
 
-class Skip(Exception):
-    """Raised by a test that cannot run on this host; the runner reports it as SKIP, never as PASS."""
+class Skip(unittest.SkipTest):
+    """Raised by a test that cannot run on this host; the runner reports it as SKIP, never as PASS. A unittest.SkipTest,
+    so a harness that runs these functions under unittest (hacheong's red-before-build) reads it as a skip, not an error."""
 
 
 def write(path, text):
@@ -110,7 +112,7 @@ def test_a_section_edit_moves_exactly_that_sections_anchors():
 
 def test_stale_names_the_end_that_changed_and_only_when_it_propagates():
     """Exhaustive over the vocabulary's propagation kinds and which ends change — a small world, every case."""
-    kinds = {"documents": "dst->src", "verifies": "dst->src", "references": "none", "realizes": "both"}
+    kinds = {"documents": "dst->src", "verifies": "both", "references": "none", "realizes": "both"}
     for pred, change_src, change_dst in itertools.product(kinds, (False, True), (False, True)):
         tmp = tempfile.mkdtemp(prefix="mangsang-prop-")
         try:
@@ -187,12 +189,19 @@ def test_any_sequence_of_reconfirm_revise_and_rename_keeps_history_and_answerabi
             assert run("confirm", "proposals.json", "--by", "kim", "--target", tmp)[0] == 0
             assert run("cq", "add", "q", "--text", "what is c?", "--verify", '{"kind": "answered-by", "concepts": ["c"]}', "--by", "kim", "--target", tmp)[0] == 0
             expect = {"rel_history": 0, "concept_history": 0, "cq_history": 0}
+            # who last confirmed the relation and whether an end has moved since: a re-read of a fresh relation by the same
+            # person records nothing ("already fresh"); another person's re-read, or any re-read of a stale relation, is recorded
+            last_by, stale = "kim", False
             for op in ops:
                 rid = mangsang.decl(tmp)["relations"][0]["id"]
                 if op == "reconfirm":
                     code, out = run("reconfirm", rid, "--by", "lee", "--target", tmp)
                     assert code == 0, out
-                    expect["rel_history"] += 1
+                    if stale or last_by != "lee":
+                        expect["rel_history"] += 1
+                    else:
+                        assert "already fresh" in out and rid in out, (ops, op, out)
+                    last_by, stale = "lee", False
                 elif op == "revise":
                     means_n += 1
                     assert run("concept", "revise", name, "--means", "meaning %d" % means_n, "--by", "kim", "--target", tmp)[0] == 0
@@ -208,6 +217,8 @@ def test_any_sequence_of_reconfirm_revise_and_rename_keeps_history_and_answerabi
                 elif op == "edit":
                     edits += 1
                     write(os.path.join(tmp, "plan.md"), "# p\n\n## Q1\n\nthe rule.%s\n" % (" more" * edits))
+                if op in ("revise", "edit"):
+                    stale = True
                 d = mangsang.decl(tmp)
                 # nothing is lost: one relation, still on the (renamed) concept, its history as long as the reconfirms so far
                 assert len(d["relations"]) == 1 and d["relations"][0]["dst"] == "concept:" + name, (ops, op, d["relations"])
@@ -223,7 +234,8 @@ def test_any_sequence_of_reconfirm_revise_and_rename_keeps_history_and_answerabi
                 if op in ("revise", "edit"):
                     assert run("impact", "--target", tmp)[0] == 1, (ops, op)
                     assert run("reconfirm", rid, "--by", "lee", "--target", tmp)[0] == 0
-                    expect["rel_history"] += 1
+                    expect["rel_history"] += 1  # the relation was stale: recorded whoever re-reads it
+                    last_by, stale = "lee", False
                 assert run("impact", "--target", tmp)[0] == 0, (ops, op, run("impact", "--target", tmp)[1])
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -318,7 +330,7 @@ def test_beside_a_registered_file_no_code_or_config_is_silent():
     """Whatever the registered files, the `registered` invariant's paths (the registered files, a folder, or both) and its
     excepts: every tracked code or config file in a registered file's folder below the root is registered, asked by the
     invariant (FAILED lists it), excepted by a glob, or said unseen — and said at most once (beside, or as a directory
-    nothing is registered in). The root's own files are never said unseen (every project's manifests), so none is drawn. The umbrella's probe, 11-06, generalized: four source models named files and a new sibling was asked by nothing."""
+    nothing is registered in). The root's own files are never said unseen (every project's manifests), so none is drawn. A probe of six source models, 11-06, generalized: four of them named files and a new sibling was asked by nothing."""
     need_hypothesis()
 
     @given(reg=st.sets(st.sampled_from(POOL[1:]), max_size=4), files_only=st.booleans(), folder=st.sampled_from(["", "plugin/sub/", "plugin/"]),
@@ -487,6 +499,80 @@ def test_a_required_invariant_holds_exactly_while_what_it_names_stands():
             shutil.rmtree(tmp, ignore_errors=True)
 
     prop()
+
+
+# ---------------------------------------------------------------- 10. an edit inside an anchor moves nothing `edit_reach` did not predict
+
+PY_NAMES = ["a", "b", "c", "d", "e", "f", "g", "h"]
+MD_TITLES = ["A", "B", "C", "D", "E", "F", "G", "H"]
+
+
+def python_of(decls):
+    """decls: [(name, is_def, n, reads)] -> the file: `name = n`, or a def returning n plus the names it reads."""
+    return "\n\n".join("def %s():\n    return %s\n" % (name, " + ".join([str(n)] + list(reads))) if is_def else "%s = %d\n" % (name, n)
+                       for name, is_def, n, reads in decls)
+
+
+if HYPOTHESIS:
+    @st.composite
+    def python_edits(draw):
+        """2–8 top-level declarations with distinct names, constants or defs that read some of the others; K, whose literal changes."""
+        names = draw(st.lists(st.sampled_from(PY_NAMES), unique=True, min_size=2, max_size=8))
+        decls = []
+        for name in names:
+            is_def = draw(st.booleans())
+            n = draw(st.integers(min_value=0, max_value=9))
+            reads = draw(st.lists(st.sampled_from([x for x in names if x != name]), unique=True)) if is_def else []
+            decls.append((name, is_def, n, reads))
+        return decls, draw(st.integers(min_value=0, max_value=len(decls) - 1))
+
+    @st.composite
+    def markdown_edits(draw):
+        """A level-1 title, then 2–8 headings at levels 2–4 with distinct titles, a body line under each; K, and a body line inside
+        K's own text (K's own, or a subsection's when K encloses it) that changes."""
+        titles = draw(st.lists(st.sampled_from(MD_TITLES), unique=True, min_size=2, max_size=8))
+        heads = [(1, "t", "title line")] + [(draw(st.integers(min_value=2, max_value=4)), t, draw(st.sampled_from(["x", "y y", "z z z"]))) for t in titles]
+        k = draw(st.integers(min_value=1, max_value=len(heads) - 1))
+        i = draw(st.sampled_from([k] + [j for j in range(len(heads)) if contains(heads, k, j)]))
+        return heads, k, i
+
+
+def test_an_edit_changes_only_what_edit_reach_predicts():
+    """`lookup FILE:KEY` predicts what an edit inside KEY stales through `mangsang.edit_reach`; `impact` judges by fingerprints.
+    The two agree only if every anchor whose fingerprint an edit inside KEY's own text moves is in edit_reach(KEY) — for
+    Python, through what reads K transitively; for Markdown, through what encloses the edited line."""
+    need_hypothesis()
+    assert callable(getattr(mangsang, "edit_reach", None)), "mangsang.edit_reach is missing"
+
+    @given(case=python_edits())
+    @settings(**PROPERTY)
+    def prop_python(case):
+        decls, k = case
+        name, is_def, n, reads = decls[k]
+        edited = list(decls)
+        edited[k] = (name, is_def, n + 1, reads)   # the literal changes; K stays the same anchor
+        before, after = python_of(decls), python_of(edited)
+        fb, fa = mangsang.anchors_of("p.py", before), mangsang.anchors_of("p.py", after)
+        assert set(fb) == set(fa), (before, after)
+        moved = {key for key in fb if fb[key] != fa[key]}
+        reach = mangsang.edit_reach("p.py", before, ":" + name)
+        assert ":" + name in moved and moved <= reach, (before, name, moved, reach)
+
+    @given(case=markdown_edits())
+    @settings(**PROPERTY)
+    def prop_markdown(case):
+        heads, k, i = case
+        edited = list(heads)
+        edited[i] = (heads[i][0], heads[i][1], heads[i][2] + " more")
+        before, after = markdown_of(heads), markdown_of(edited)
+        fb, fa = mangsang.anchors_of("doc.md", before), mangsang.anchors_of("doc.md", after)
+        assert set(fb) == set(fa), (before, after)
+        moved = {key for key in fb if fb[key] != fa[key]}
+        reach = mangsang.edit_reach("doc.md", before, "#" + heads[k][1])
+        assert "#" + heads[k][1] in moved and moved <= reach, (before, k, i, moved, reach)
+
+    prop_python()
+    prop_markdown()
 
 
 if __name__ == "__main__":

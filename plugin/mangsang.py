@@ -59,8 +59,9 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 refused. `impact` groups broken relations by a deleted file and prints this command
   lookup <path>                 before touching a file: the confirmed relations standing on it, grouped by concept (its meaning once),
                                 each with its quote, its confirmer and fresh/stale now; or which of not registered / registered with
-                                nothing on it / not in the tree (read-only) — size the edit as code + relations. Also an anchor
-                                (`concept:NAME`, `file:symbol`), or a relation id (that relation, whole)
+                                nothing on it / excepted (with its reason) / not in the tree (read-only) — size the edit as code + relations. Also an anchor
+                                (`concept:NAME`, `file:symbol`), including relations on what reads, holds or lies inside the edited anchor;
+                                or a relation id (that relation, whole)
   lookup <path> --brief         the same as at most five lines, one per concept (or other end) reached: its meaning's first sentence
                                 (and the next, when the first is a bare name like "첫 화면."), cut at ~160 characters,
                                 and `(N relation(s); K stale)` when any is stale; no ids, no quotes. A tracked file the net does not see
@@ -69,6 +70,7 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 new home is retired (why: moved) and re-confirmed there with the same evidence; ambiguous or homeless ones are left for a person
   reconfirm <id>... [--by NAME | --delegated WHY] [--evidence "..."]
                                 a re-read stale relation still holds: `seen` becomes what the tree has now; the evidence must still be in the text.
+                                Already fresh records nothing unless the quote or person changes; older fingerprint shapes still upgrade.
                                 Run by an agent with neither flag, it is the agent's own re-read, signed `{agent: ...}` — never a person's name
 
 Two places. `mangsang/` is the project's knowledge (registry, vocabulary, cq, one file per relation) — committed, changed only when a human
@@ -172,9 +174,10 @@ def signature(by, delegated):
     if delegated and DELEGATION_REF.match(delegated.strip()):
         return {"delegated": {"ref": delegated.strip()}}
     return {"delegated": delegated}
+LEGACY_VERIFIES = {"propagates": "dst->src", "means": "src (a test) proves dst; when dst changes the test may be stale"}
 DEFAULT_VOCAB = {
     "documents": {"propagates": "dst->src", "means": "src (a document section) describes dst's behavior; when dst changes the section may be stale"},
-    "verifies": {"propagates": "dst->src", "means": "src (a test) proves dst; when dst changes the test may be stale"},
+    "verifies": {"propagates": "both", "means": "src (a test) proves dst; when dst changes the test may be stale; a changed test may no longer call dst or assert on what it does"},
     "references": {"propagates": "none", "means": "src names dst; no content dependency"},
     "realizes": {"propagates": "both", "means": "src (a document section, code or test) is a projection of dst (a concept): src expresses in its medium what the concept means. "
                                                 "When the concept's meaning changes every projection may be stale; when a projection changes it may have outgrown the meaning"},
@@ -264,6 +267,8 @@ def decl(target):
          "vocabulary": load(os.path.join(root, "vocabulary.json"), None) or dict(DEFAULT_VOCAB),
          "cq": load(os.path.join(root, "cq.json"), []),
          "relations": [], "retired": [], "concepts": [], "cq_declared": [], "sources": []}
+    if d["vocabulary"].get("verifies") == LEGACY_VERIFIES:
+        d["vocabulary"]["verifies"] = dict(DEFAULT_VOCAB["verifies"])
     for kind, key in (("relations", "relations"), ("retired", "retired"), ("concepts", "concepts"), ("cq", "cq_declared"), ("sources", "sources")):
         folder = os.path.join(root, kind)
         for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
@@ -313,6 +318,35 @@ def fp_parts(path, parts):
     fingerprints, so a change in any same-file declaration or import the anchor reads changes the anchor's fingerprint."""
     fps = [fp(text, path) for _, text in parts]
     return fps[0] if len(fps) == 1 else hashlib.sha256("\x01".join(fps).encode("utf-8")).hexdigest()[:12]
+
+
+def extent_holds(outer, inner, text):
+    """Unique text containment, or a whole-line match when the text occurs more than once."""
+    if not inner or inner not in outer:
+        return False
+    if text.count(inner) == 1:
+        return True
+    return re.search(r"(?:^|\n)" + re.escape(inner.rstrip("\n")) + r"(?:\n|$)", outer) is not None
+
+
+def edit_reach(path, text, key):
+    """Keys whose parts can change through an edit inside key's own text.
+
+    Use the same transitive parts as fp_parts. Text containment counts when unique in the file,
+    or line-aligned when repeated: this can over-include identical whole lines in unrelated extents,
+    and under-include repeated inline extents. It avoids treating an indented local assignment as
+    containing a same-spelled top-level constant. Enclosed anchors are potential edits, not a claim
+    that every edit in the enclosing anchor changes all of them.
+    """
+    parts = anchors.parts(path, text)
+    if key not in parts:
+        return set()
+    if key == "":
+        return set(parts)
+    own = parts[key][0][1]
+    touched = {k for k, ps in parts.items() if k == key or (k and (
+        extent_holds(ps[0][1], own, text) or extent_holds(own, ps[0][1], text)))}
+    return {""} | touched | {k for k, ps in parts.items() if any(label in touched for label, _ in ps)}
 
 
 def fp_legacy_numeric(text, path):
@@ -796,6 +830,18 @@ def owed_text(c, lost):
             "reconfirming what remains does not answer it" % (c["name"], ", ".join("%s (%s)" % x for x in lost), c["name"], c["name"]))
 
 
+def verifies_migration(r, changed):
+    """Explain only a test-side change that the earlier verifies rule could not judge."""
+    if r.get("predicate") != "verifies" or r.get("src") not in changed:
+        return ""
+    stamp = r.get("written_by")
+    version = re.search(r"mangsang (\d+)\.(\d+)\.(\d+)", stamp or "")
+    if stamp and (not version or tuple(map(int, version.groups())) >= (2, 4, 0)):
+        return ""
+    return ("before mangsang 2.4.0 a verifies did not go stale when its test changed, so this change has not been re-read; "
+            "read whether the test still calls %s and asserts on what it does; `reconfirm` if it does, change or `retire` it if not" % r["dst"])
+
+
 def cmd_impact(args):
     d = decl(args.target)
     stale, broken, unjudged, files = compute_impact(args.target, d, args.only)   # answers and leaves nothing behind: the verdict is what it prints
@@ -803,12 +849,13 @@ def cmd_impact(args):
     # a relation stale only through a read nobody related re-reads the wrong sentence: said with it, and grouped when it spans concepts
     unmodeled = unmodeled_reads(args.target, d, stale) if stale else {}
     shared = shared_reads(d, stale, unmodeled)
+    migrations = {x["id"]: verifies_migration(next(r for r in d["relations"] if r["id"] == x["id"]), x.get("changed", [])) for x in stale}
     if args.findings:
         on_drift = lambda x: next(("; concept:%s is marked drifted — %s" % (a[len("concept:"):], drift_line(drift_of(d, a[len("concept:"):])))
                                    for r in d["relations"] if r["id"] == x["id"] for a in (r["src"], r["dst"])
                                    if a.startswith("concept:") and drift_of(d, a[len("concept:"):])), "")
         through = lambda x: "; " + unmodeled_text(x, unmodeled[x["id"]], short=True) if x["id"] in unmodeled else ""
-        findings = [{"kind": "stale", "where": "%s %s" % (x["id"], x["stale"]), "text": "stale because %s changed since it was confirmed%s%s" % (x["because"], through(x), on_drift(x))} for x in stale]
+        findings = [{"kind": "stale", "where": "%s %s" % (x["id"], x["stale"]), "text": "stale because %s changed since it was confirmed%s%s" % (x["because"], through(x), on_drift(x)) + ("; " + migrations[x["id"]] if migrations[x["id"]] else "")} for x in stale]
         findings += [{"kind": "unmodeled-read", "layer": "observation", "where": a, "text": shared_text(a, cs, ids)} for a, cs, ids in shared]
         findings += [{"kind": "broken", "where": "%s %s" % (x["id"], ", ".join(x["dead"])), "text": "dead anchor(s): the relation points at nothing%s" % (
                          "; %s is gone from the tree" % ", ".join(sorted({file_of(a) for a in x["dead"] if gone_from_tree(args.target, file_of(a))}))
@@ -832,6 +879,8 @@ def cmd_impact(args):
         if any(x["id"] in ids for ids in held.values()) and not getattr(args, "show", False):
             continue
         print("  stale   %s  %s  <- %s" % (x["id"], x["stale"], x["because"]))
+        if migrations[x["id"]]:
+            print("      " + migrations[x["id"]])
         if x["id"] in unmodeled:
             print("      " + unmodeled_text(x, unmodeled[x["id"]]))
         if getattr(args, "show", False):
@@ -1339,7 +1388,7 @@ def unseen_groups(target, d, active, files=None):
     globs = [g for v in asks for g, _ in except_entries(v)]
     blind = unseen_directories(target, d, covered, globs, with_files=True)
     if asks:
-        # a `registered` invariant asks only of its paths. Four of six source models (umbrella audit, 11-06) named the files
+        # a `registered` invariant asks only of its paths. Four of six source models (an audit, 11-06) named the files
         # they had registered, and a new committed plugin/resolver.py beside them was asked by nothing: check exit 0, no line.
         # The code and config beside registered files that no invariant's paths or excepts classify is said, as without one
         import fnmatch
@@ -2159,6 +2208,11 @@ def cmd_reconfirm(args):
         dead = [a for a in (r["src"], r["dst"]) if split_anchor(a)[0] not in files or split_anchor(a)[1] not in files[split_anchor(a)[0]]]
         if dead:
             raise SystemExit("%s: anchor %s is gone — a relation on a dead anchor cannot be re-confirmed; retire it" % (rid, dead))
+        now = {a: files[split_anchor(a)[0]][split_anchor(a)[1]] for a in (r["src"], r["dst"])}
+        if (r.get("seen") == now and (not args.evidence or args.evidence == r["evidence"])
+                and (not args.by or (r.get("confirmed") or {}).get("by") == args.by)):
+            print("%s is already fresh — both ends are what its confirmer saw; nothing to re-read, nothing recorded" % rid)
+            continue
         for a in (r["src"], r["dst"]):   # what the person re-read: the change itself, printed with the record of it
             if (r.get("seen") or {}).get(a) == files[split_anchor(a)[0]][split_anchor(a)[1]]:
                 continue   # this end did not move: nothing of it to re-read (it used to say "only its fingerprint's rule changed")
@@ -2203,6 +2257,17 @@ def who_signed(sig):
     return "delegated: %s" % first_clause(dl or "?") if dl else "unsigned"
 
 
+def lookup_excepts(target, d, path):
+    """Active registered invariants that explicitly except this tracked file."""
+    import fnmatch
+    tracked = tracked_files(target)
+    if tracked is None or path not in tracked:
+        return []
+    return [(q.get("id", "?"), glob, why or "no reason recorded")
+            for q in cq_active(d) if not q.get("retired") and q.get("verify", {}).get("kind") == "registered"
+            for glob, why in except_entries(q["verify"]) if fnmatch.fnmatch(path, glob)]
+
+
 def cmd_lookup(args):
     """Before touching a file: which confirmed relations stand on it, and what they say? The reverse index every drift tool
     grew (drift `refs`, docdrift `lookup`) — here so an agent can size its task as 'the edit plus these relations', instead
@@ -2237,6 +2302,29 @@ def cmd_lookup(args):
                     other = r["dst"]   # both ends on this file: grouped under dst, as stored
                 rels.append((r, a, other, moves))
                 break
+    covers = {}
+    f, key = split_anchor(args.path)
+    if key and not args.path.startswith(("concept:", "source:")) and os.path.isfile(os.path.join(args.target, f)):
+        with io.open(os.path.join(args.target, f), encoding="utf-8") as fh:
+            text = fh.read()
+        parts = anchors.parts(f, text)
+        reach = edit_reach(f, text, key)
+        direct = {r["id"] for r, _, _, _ in rels}
+        for r in d["relations"]:
+            if r["id"] in direct:
+                continue
+            prop = d["vocabulary"].get(r["predicate"], {}).get("propagates", "none")
+            for end, direction in (("src", "src->dst"), ("dst", "dst->src")):
+                a = r[end]
+                ef, ek = split_anchor(a)
+                if ef != f or ek == key or ek not in reach or prop not in (direction, "both"):
+                    continue
+                own, edited = parts[ek][0][1], parts[key][0][1]
+                how = "holds" if ek == "" or extent_holds(own, edited, text) else (
+                    "lies inside" if extent_holds(edited, own, text) else "reads")
+                covers[r["id"]] = "%s %s" % (how, args.path)
+                rels.append((r, a, r["dst"] if end == "src" else r["src"], True))
+                break
     path = args.path if os.path.exists(os.path.join(args.target, args.path)) or args.path.startswith("concept:") else split_anchor(args.path)[0]
     registered = any(e["path"] == path for e in d["registry"])
     on_disk = os.path.exists(os.path.join(args.target, path))
@@ -2268,6 +2356,11 @@ def cmd_lookup(args):
             print("%s is not in the tree (no such file under %s) and not registered — nothing stands on it" % (args.path, args.target))
         else:
             tracked = tracked_files(args.target)
+            exceptions = lookup_excepts(args.target, d, path)
+            if exceptions:
+                for invariant, glob, why in exceptions:
+                    print("%s is excepted by %s (%s) — %s" % (args.path, invariant, glob, why))
+                return 0
             near = ""
             if tracked is not None and args.path in tracked:
                 parts = args.path.split("/")[:-1]
@@ -2287,8 +2380,8 @@ def cmd_lookup(args):
     state.update({i: "unjudged (no `seen`, no baseline)" for i in unjudged if i not in state})
     groups = {}
     for item in rels:
-        groups.setdefault(item[2], []).append(item)
-    for other in sorted(groups):
+        groups.setdefault((item[0]["id"] in covers, item[2]), []).append(item)
+    for phase, other in sorted(groups):
         c = concepts.get(other)
         if c is not None:
             print("%s — means: %s" % (other, " ".join(c.get("means", "").split())))
@@ -2298,15 +2391,15 @@ def cmd_lookup(args):
             print("%s — no such concept is declared" % other)
         else:
             print(other)
-        for r, a, _, moves in groups[other]:
+        for r, a, _, moves in groups[(phase, other)]:
             # the relation as it is stored, src predicate dst — never reordered around the looked-up anchor (a reader who copied
             # the line into a proposal got src and dst swapped when the anchor was the dst)
             mark = lambda x: "[%s]" % x if x == a else x
             print("  %s  %s %s %s — %s%s" % (r["id"], mark(r["src"]), r["predicate"], mark(r["dst"]), state.get(r["id"], "fresh"),
-                                            "; changing this anchor makes the relation stale" if moves else ""))
+                                            ("; " + covers[r["id"]]) if r["id"] in covers else ("; changing this anchor makes the relation stale" if moves else "")))
             print("      \"%s\" — %s" % ("\n        ".join(r.get("evidence", "").split("\n")), who_signed(r.get("confirmed"))))
     print("%d relation(s) on %s, reaching %d concept(s) or anchor(s) — an edit here and their update are one piece of work, not two"
-          % (len(rels), args.path, len(groups)))
+          % (len(rels), args.path, len({item[2] for item in rels})))
     return 0
 
 
@@ -2381,6 +2474,10 @@ def lookup_brief(args, d, rels, registered, on_disk):
         if registered or not on_disk:
             return 0
         tracked = tracked_files(args.target)
+        exceptions = lookup_excepts(args.target, d, split_anchor(args.path)[0])
+        if exceptions:
+            print("%s: excepted — %s" % (args.path, "; ".join(first_clause(why) for _, _, why in exceptions)))
+            return 0
         if tracked is None or args.path in tracked:
             print("%s: not registered — the net does not see it (no relation stands on it; edits here are never stale)" % args.path)
         return 0

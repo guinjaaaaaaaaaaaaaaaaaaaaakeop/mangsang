@@ -44,7 +44,7 @@ FORBIDDEN_PARTS = {
 }
 SHA = {
     "hostcall.py":
-        "e0404678a2424f46d2c7f6f471554325b8aea88c7b62ec465acaeaa23336f679",
+        "5d0249983354b2ef8a12eb89483d29fe6bbcaf2c7f435bf2dad7c4789626344c",
     "vendor/mermaid/mermaid.min.js":
         "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8",
     "vendor/mermaid/LICENSE":
