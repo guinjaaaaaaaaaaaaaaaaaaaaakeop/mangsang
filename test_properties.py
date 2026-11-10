@@ -575,6 +575,74 @@ def test_an_edit_changes_only_what_edit_reach_predicts():
     prop_markdown()
 
 
+# ---------------------------------------------------------------- a renamed heading is carried only when nothing else in its section changed
+
+def test_a_renamed_heading_is_carried_only_when_the_rest_of_its_section_is_what_was_confirmed():
+    """`move` carries a relation on a heading renamed in place through `mangsang.renamed_heading`. Generate a document, rename
+    one heading, and change nothing else — or its body, another section's body, its level, a heading inside its extent, its
+    body removed. The renamed heading is found exactly when its section, its title put back, is the confirmed section's text
+    (up to trailing blank lines) and no other heading of the file is found the same way; whatever heading it returns, that
+    section with its title put back is the confirmed text — so whenever it carries a relation, nothing but the title changed."""
+    need_hypothesis()
+    assert callable(getattr(mangsang, "renamed_heading", None)), "mangsang.renamed_heading is missing"
+
+    def trimmed(text):
+        lines = text.split("\n")
+        while lines and not lines[-1].strip():
+            lines.pop()
+        return "\n".join(lines)
+
+    def put_back(section, new, old):
+        first, _, rest = section.partition("\n")
+        assert first.endswith(" " + new), (first, new)
+        return first[: len(first) - len(new)] + old + ("\n" + rest if _ else "")
+
+    @given(heads=headings, data=st.data())
+    @settings(**PROPERTY)
+    def prop(heads, data):
+        titles = {t for _, t, _ in heads}
+        i = data.draw(st.integers(min_value=0, max_value=len(heads) - 1))
+        new = data.draw(st.text(alphabet="abcdefghij", min_size=1, max_size=4).filter(lambda t: t not in titles))
+        level, old, body = heads[i]
+        original = markdown_of(heads)
+        seen = mangsang.anchors_of("doc.md", original)["#" + old]
+        edit = data.draw(st.sampled_from(["nothing", "body", "other body", "level", "heading inside", "body removed"]))
+        edited = list(heads)
+        edited[i] = (level, new, body)
+        if edit == "body":
+            edited[i] = (level, new, body + " more")
+        elif edit == "other body" and len(heads) > 1:
+            j = data.draw(st.sampled_from([k for k in range(len(heads)) if k != i]))
+            edited[j] = (heads[j][0], heads[j][1], heads[j][2] + " more")
+        elif edit == "level":
+            edited[i] = (data.draw(st.sampled_from([l for l in (1, 2, 3) if l != level])), new, body)
+        elif edit == "heading inside":
+            edited.insert(i + 1, (min(level + 1, 6), "ZZ", "w"))
+        elif edit == "body removed":
+            edited[i] = (level, new, "")
+        text = markdown_of(edited)
+        got = mangsang.renamed_heading("doc.md", text, "#" + old, seen)
+        want_section = trimmed(mangsang.anchor_texts("doc.md", original)["#" + old])
+        now = mangsang.anchor_texts("doc.md", text)
+        found = []
+        for _, t, _ in edited:   # every heading of the edited file that, its title put back to the old one, is the confirmed section
+            if ("#" + t) in now and trimmed(put_back(now["#" + t], t, old)) == want_section:
+                found.append("#" + t)
+        # the one such heading, else none (renamed_heading's own rule: two such headings are ambiguous); when another heading's
+        # section is the confirmed text too, that is the one found or the rename is ambiguous — never a section that changed
+        expected = found[0] if len(found) == 1 else None
+        assert got == expected, (original, text, edit, old, new, got, found)
+        if got is not None:
+            title = got[1:]
+            assert trimmed(put_back(now[got], title, old)) == want_section, (text, got)
+        if found == ["#" + new]:
+            assert got == "#" + new, (original, text, edit, got)
+        if "#" + new not in found:
+            assert got != "#" + new, ("the renamed section changed beyond its title", original, text, edit)
+
+    prop()
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")

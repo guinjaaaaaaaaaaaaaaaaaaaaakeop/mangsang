@@ -3186,6 +3186,459 @@ def test_lookup_names_the_except_that_keeps_a_file_out_of_the_net():
         assert not os.path.exists(os.path.join(pj.dir, ".mangsang")), "lookup writes nothing"
 
 
+def run_said(*argv):
+    """`run`, with stderr folded into what was said, and an exception from the engine turned into a failed assertion:
+    a command that dies with a traceback has said nothing to the person who ran it."""
+    import traceback
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        try:
+            code, out = run(*argv)
+        except Exception:
+            raise AssertionError("a traceback instead of a message: %s\n%s" % (" ".join(argv[:3]), traceback.format_exc()))
+    return code, out + err.getvalue()
+
+
+def test_a_message_sent_mid_turn_is_a_person_turn_and_a_miss_is_never_a_traceback():
+    """A person's message sent while the agent was working reaches the host's transcript as an attachment record (a queued
+    command from a human), not as a user record; the queue that held it and the next request's copy repeat its words. That
+    attachment is the person's turn — its prompt verbatim, keyed by the attachment's own id, marked as sent mid-turn. A peer's
+    hand-back and a task notification, also queued commands, are nobody's turn; a phrase found only in the queue, the request
+    copy or a hand-back is a miss that says where it was seen, and a record with no id never ends in a traceback."""
+    MID = "also water the plant by the window, please"
+    S = "sess-mid"
+    recs = [
+        {"type": "user", "uuid": "u1", "timestamp": "t1", "message": {"role": "user", "content": "please tidy the shelf first"}},
+        {"type": "assistant", "uuid": "a1", "timestamp": "t2", "message": {"id": "m1", "model": "claude-x", "content": [{"type": "text", "text": "Tidying the shelf now."}]}},
+        {"type": "assistant", "uuid": "a2", "timestamp": "t3", "message": {"id": "m2", "model": "claude-x", "content": [{"type": "tool_use", "id": "tu1", "name": "Bash", "input": {"command": "ls"}}]}},
+        {"type": "queue-operation", "operation": "enqueue", "timestamp": "t4", "sessionId": S, "content": MID},
+        {"type": "queue-operation", "operation": "remove", "timestamp": "t4", "sessionId": S, "content": MID, "reason": "absorbed_mid_turn", "commandUuid": "c1", "deliveryId": "d1"},
+        {"type": "attachment", "uuid": "att-1", "parentUuid": "a2", "isSidechain": False, "timestamp": "t5",
+         "attachment": {"type": "queued_command", "prompt": MID, "source_uuid": "c1", "delivery_id": "d1", "commandMode": "prompt", "origin": {"kind": "human"}, "timestamp": "t5", "humanTurn": True},
+         "rendered": [{"content": "<host-wrapper>The person said while you worked: " + MID + "</host-wrapper>"}], "renderedRole": "system"},
+        {"type": "attachment", "uuid": "att-2", "parentUuid": "att-1", "isSidechain": False, "isMeta": True, "timestamp": "t6",
+         "attachment": {"type": "queued_command", "prompt": "the fetched page says the fern wants shade", "commandMode": "prompt", "origin": {"kind": "peer", "name": "web-fetch", "id": "p1"}, "timestamp": "t6"},
+         "rendered": [{"content": "the fetched page says the fern wants shade"}], "renderedRole": "system"},
+        {"type": "attachment", "uuid": "att-3", "parentUuid": "att-2", "isSidechain": False, "timestamp": "t7",
+         "attachment": {"type": "queued_command", "prompt": "<task-notification>the build finished quietly</task-notification>", "commandMode": "task-notification", "origin": {"kind": "task-notification"}, "timestamp": "t7"},
+         "rendered": [{"content": "the build finished quietly"}], "renderedRole": "system"},
+        {"type": "queue-operation", "operation": "enqueue", "timestamp": "t8", "sessionId": S, "content": "remember the lighthouse keys"},
+        {"type": "attachment", "uuid": "att-4", "parentUuid": "att-3", "isSidechain": False, "timestamp": "t9",
+         "attachment": {"type": "queued_command", "prompt": "and close the blinds too", "commandMode": "prompt", "timestamp": "t9"},
+         "rendered": [{"content": "<host-wrapper>and close the blinds too</host-wrapper>"}], "renderedRole": "system"},
+        {"type": "attachment", "uuid": "att-5", "parentUuid": "att-4", "isSidechain": False, "timestamp": "t10",
+         "attachment": {"type": "queued_command", "prompt": [{"type": "text", "text": "the first block of words"}, {"type": "text", "text": "the second block of words"}],
+                        "commandMode": "prompt", "origin": {"kind": "human"}, "timestamp": "t10", "humanTurn": True},
+         "rendered": [{"content": "<host-wrapper>blocks</host-wrapper>"}], "renderedRole": "system"},
+        {"type": "api-request-blob", "sessionId": S, "hash": "h1", "message": {"role": "user", "content": [
+            {"type": "text", "text": "please tidy the shelf first"}, {"type": "text", "text": MID},
+            {"type": "text", "text": "<host-wrapper>an orange umbrella only the request holds</host-wrapper>"}]}},
+    ]
+    with Project() as pj:
+        tr = os.path.join(pj.dir, S + ".jsonl")
+        write(tr, "\n".join(json.dumps(x) for x in recs) + "\n")
+        write(os.path.join(pj.dir, "mangsang", "people.json"), {"people": ["lee"], "agents": ["Claude ("]})
+        # C1 — the human queued command is a person turn: the prompt verbatim, the attachment's id and time, sent mid-turn
+        try:
+            turns = mangsang.transcript_turns(tr)
+        except Exception as err:
+            raise AssertionError("a traceback instead of a message: transcript_turns raised %r" % err)
+        mid = [t for t in turns if t.get("uuid") == "att-1"]
+        assert len(mid) == 1, turns
+        assert mid[0]["kind"] == "person" and mid[0]["text"] == MID and mid[0]["at"] == "t5" and mid[0].get("mid-turn") is True, mid
+        assert "host-wrapper" not in mid[0]["text"], "the prompt, never the host's rendered wrapper"
+        order = [t.get("uuid") for t in turns]
+        assert order.index("a1") < order.index("att-1"), order   # in record order among the other turns
+        # with no origin: a prompt-mode queued command that is not isMeta is the person's too
+        nor = [t for t in turns if t.get("uuid") == "att-4"]
+        assert len(nor) == 1 and nor[0]["kind"] == "person" and nor[0]["text"] == "and close the blinds too" and nor[0].get("mid-turn") is True, nor
+        assert order.index("att-1") < order.index("att-4"), order
+        # a prompt of content blocks: each text block a turn
+        blocks = [t for t in turns if t.get("uuid") == "att-5"]
+        assert [t["text"] for t in blocks] == ["the first block of words", "the second block of words"] and all(t["kind"] == "person" for t in blocks), blocks
+        # C2 — the peer, the notification, the queue and the request copy are no turn; the mid-turn phrase is in exactly one
+        for phrase in ("fern wants shade", "build finished quietly", "lighthouse keys", "orange umbrella"):
+            assert not any(phrase in t["text"] for t in turns), (phrase, turns)
+        assert sum(1 for t in turns if "water the plant" in t["text"]) == 1, turns
+        assert sum(1 for t in turns if "tidy the shelf" in t["text"]) == 1, turns
+        # C3 — kept by --match and by --turn, verbatim, located as a mid-turn person turn
+        for sid, how in (("M1", ("--match", "water the plant")), ("M2", ("--turn", "att-1"))):
+            code, out = run_said("source", "add", sid, "--from-transcript", tr, *how, "--speaker", "lee", "--target", pj.dir)
+            assert code == 0, (how, out)
+            src = mangsang.load(os.path.join(pj.dir, "mangsang", "sources", sid + ".json"))
+            assert src["text"] == MID and src["verbatim-from"] == "host transcript", src
+            assert "person att-1" in src["locator"] and "mid-turn" in src["locator"], src
+        # C4 — a phrase found only outside every turn: a message naming where it is, never a traceback
+        for sid, phrase, where in (("X1", "lighthouse keys", "queue-operation"), ("X2", "orange umbrella", "api-request-blob"),
+                                   ("X3", "fern wants shade", "peer")):
+            code, out = run_said("source", "add", sid, "--from-transcript", tr, "--match", phrase, "--speaker", "lee", "--target", pj.dir)
+            assert code != 0 and "found in no turn" in out and where in out, (phrase, out)
+            assert "None" not in out, ("a record with no uuid is named without one", out)
+            assert not os.path.exists(os.path.join(pj.dir, "mangsang", "sources", sid + ".json")), phrase
+        code, out = run_said("source", "add", "X4", "--from-transcript", tr, "--match", "build finished quietly", "--speaker", "lee", "--target", pj.dir)
+        assert code != 0, ("a task notification is not a person's turn", out)
+        # C5 — a user record with no uuid and no timestamp: no path raises; matching it says it has no id
+        tr2 = os.path.join(pj.dir, S + "-noid.jsonl")
+        write(tr2, "\n".join(json.dumps(x) for x in recs + [{"type": "user", "message": {"role": "user", "content": "a stray line without identity"}}]) + "\n")
+        code, out = run_said("source", "add", "N1", "--from-transcript", tr2, "--match", "water the plant", "--speaker", "lee", "--target", pj.dir)
+        assert code == 0, out
+        code, out = run_said("source", "add", "N2", "--from-transcript", tr2, "--turn", "att-1", "--speaker", "lee", "--target", pj.dir)
+        assert code == 0, out
+        code, out = run_said("source", "add", "N3", "--from-transcript", tr2, "--match", "lighthouse keys", "--speaker", "lee", "--target", pj.dir)
+        assert code != 0 and "found in no turn" in out, out
+        code, out = run_said("source", "add", "N4", "--from-transcript", tr2, "--match", "stray line", "--speaker", "lee", "--target", pj.dir)
+        assert code != 0 and "no id" in out, out
+        assert not os.path.exists(os.path.join(pj.dir, "mangsang", "sources", "N4.json")), "a locator of None kept"
+
+
+def test_check_says_a_stored_vocabulary_entry_is_read_differently_and_vocabulary_write_writes_it():
+    """A project whose vocabulary file still stores an earlier release's entry for a predicate the engine now reads another
+    way: check says so as an observation (no change to its exit code), names the command that writes it, and that command
+    writes exactly that file — a preview without --write, nothing to write the second time, a project's own entry kept."""
+    OLD = {"propagates": "dst->src", "means": "src (a test) proves dst; when dst changes the test may be stale"}
+    OWN = {"propagates": "none", "means": "our own reading of a test"}
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        mdir = os.path.join(pj.dir, "mangsang")
+        vocpath = os.path.join(mdir, "vocabulary.json")
+        stored = json.load(open(vocpath, encoding="utf-8"))
+        assert stored["verifies"] == mangsang.DEFAULT_VOCAB["verifies"], stored
+
+        def tree():
+            out = {}
+            for root, _, files in os.walk(mdir):
+                for n in files:
+                    p = os.path.join(root, n)
+                    out[os.path.relpath(p, mdir)] = open(p, "rb").read()
+            return out
+
+        def vocab_lines(out):
+            return [l for l in out.split("\n") if "mangsang vocabulary --write" in l]
+
+        def vocab_findings():
+            code, out = run_said("check", "--findings", "--target", pj.dir)
+            return [f for f in json.loads(out)["findings"] if f["kind"] == "vocabulary-read-differently"]
+
+        base_code, out = run_said("check", "--target", pj.dir)
+        assert base_code == 0 and not vocab_lines(out), out
+        assert not vocab_findings()
+        # C1 — the 2.3 entry stored: a line and a finding, the exit code unchanged
+        write(vocpath, {**stored, "verifies": dict(OLD)})
+        code, out = run_said("check", "--target", pj.dir)
+        lines = [l for l in out.split("\n") if all(s in l for s in ("vocabulary", "verifies", "dst->src", "both", "mangsang vocabulary --write"))]
+        assert code == base_code and len(lines) == 1, out
+        fs = vocab_findings()
+        assert len(fs) == 1, fs
+        f = fs[0]
+        assert f["layer"] == "observation" and f["where"] == "mangsang/vocabulary.json verifies" and f["source"] == "mangsang", f
+        assert "dst->src" in f["text"] and "both" in f["text"], f
+        # C2 — without --write: nothing written, each predicate as read, the stored one and --write said
+        before = tree()
+        code, out = run_said("vocabulary", "--target", pj.dir)
+        assert code == 0, out
+        assert tree() == before, "vocabulary without --write writes nothing"
+        vl = [l for l in out.split("\n") if "verifies" in l]
+        assert any("both" in l for l in vl), out
+        for pred in mangsang.DEFAULT_VOCAB:
+            assert pred in out, (pred, out)
+        assert "dst->src" in out and "--write" in out, out
+        # C2 — --write: the file as the engine reads it, no other file under mangsang/ touched
+        code, out = run_said("vocabulary", "--write", "--target", pj.dir)
+        assert code == 0 and "verifies" in out, out
+        after = tree()
+        assert set(after) == set(before), (set(before), set(after))
+        assert all(after[k] == before[k] for k in before if k != "vocabulary.json"), "only vocabulary.json is written"
+        now = json.load(open(vocpath, encoding="utf-8"))
+        assert now == mangsang.decl(pj.dir)["vocabulary"] and now["verifies"] == mangsang.DEFAULT_VOCAB["verifies"], now
+        code, out = run_said("check", "--target", pj.dir)
+        assert code == base_code and not vocab_lines(out) and not vocab_findings(), out
+        # a second --write: nothing to write, the bytes kept
+        raw = open(vocpath, "rb").read()
+        code, out = run_said("vocabulary", "--write", "--target", pj.dir)
+        assert code == 0 and "nothing to write" in out and open(vocpath, "rb").read() == raw, out
+        # a project's own verifies: no line, no finding, --write keeps it
+        write(vocpath, {**stored, "verifies": dict(OWN)})
+        raw = open(vocpath, "rb").read()
+        code, out = run_said("check", "--target", pj.dir)
+        assert code == base_code and not vocab_lines(out) and not vocab_findings(), out
+        code, out = run_said("vocabulary", "--write", "--target", pj.dir)
+        assert code == 0 and "nothing to write" in out and open(vocpath, "rb").read() == raw, out
+        assert json.load(open(vocpath, encoding="utf-8"))["verifies"] == OWN
+        # no vocabulary.json: no line, no finding; --write says so and creates nothing
+        os.remove(vocpath)
+        code, out = run_said("check", "--target", pj.dir)
+        assert code == base_code and not vocab_lines(out) and not vocab_findings(), out
+        before = tree()
+        code, out = run_said("vocabulary", "--write", "--target", pj.dir)
+        assert code == 0 and "vocabulary.json" in out, out
+        assert not os.path.exists(vocpath) and tree() == before, "no file created"
+
+
+def test_a_hand_back_flagged_inside_its_attachment_is_no_person_turn():
+    """A queued command whose attachment itself says isMeta is an agent's hand-back, not the person's words — with an
+    origin naming a peer and with no origin at all; a phrase found only in it is a miss and keeps no source. A human
+    queued command beside it (origin human, or none; prompt mode; isMeta at neither level) is still the person's turn."""
+    S = "sess-meta"
+    recs = [
+        {"type": "user", "uuid": "u1", "timestamp": "t1", "message": {"role": "user", "content": "please sort the letters"}},
+        {"type": "assistant", "uuid": "a1", "timestamp": "t2", "message": {"id": "m1", "model": "claude-x", "content": [{"type": "text", "text": "Sorting the letters."}]}},
+        {"type": "attachment", "uuid": "att-m1", "parentUuid": "a1", "isSidechain": False, "timestamp": "t3",
+         "attachment": {"type": "queued_command", "prompt": "the helper counted seven green envelopes", "commandMode": "prompt", "isMeta": True, "timestamp": "t3"},
+         "rendered": [{"content": "the helper counted seven green envelopes"}], "renderedRole": "system"},
+        {"type": "attachment", "uuid": "att-m2", "parentUuid": "att-m1", "isSidechain": False, "timestamp": "t4",
+         "attachment": {"type": "queued_command", "prompt": "the helper found a brass stamp", "commandMode": "prompt", "isMeta": True,
+                        "origin": {"kind": "peer", "name": "helper", "id": "p1"}, "timestamp": "t4"},
+         "rendered": [{"content": "the helper found a brass stamp"}], "renderedRole": "system"},
+        {"type": "attachment", "uuid": "att-h1", "parentUuid": "att-m2", "isSidechain": False, "timestamp": "t5",
+         "attachment": {"type": "queued_command", "prompt": "keep the postcards apart", "commandMode": "prompt", "origin": {"kind": "human"}, "timestamp": "t5"},
+         "rendered": [{"content": "<host-wrapper>keep the postcards apart</host-wrapper>"}], "renderedRole": "system"},
+        {"type": "attachment", "uuid": "att-h2", "parentUuid": "att-h1", "isSidechain": False, "timestamp": "t6",
+         "attachment": {"type": "queued_command", "prompt": "and recycle the flyers", "commandMode": "prompt", "timestamp": "t6"},
+         "rendered": [{"content": "<host-wrapper>and recycle the flyers</host-wrapper>"}], "renderedRole": "system"},
+    ]
+    with Project() as pj:
+        tr = os.path.join(pj.dir, S + ".jsonl")
+        write(tr, "\n".join(json.dumps(x) for x in recs) + "\n")
+        write(os.path.join(pj.dir, "mangsang", "people.json"), {"people": ["lee"], "agents": ["Claude ("]})
+        try:
+            turns = mangsang.transcript_turns(tr)
+        except Exception as err:
+            raise AssertionError("a traceback instead of a message: transcript_turns raised %r" % err)
+        # T2-C1 — the human queued commands are still person turns
+        for uid, text in (("att-h1", "keep the postcards apart"), ("att-h2", "and recycle the flyers")):
+            got = [t for t in turns if t.get("uuid") == uid]
+            assert len(got) == 1 and got[0]["kind"] == "person" and got[0]["text"] == text, (uid, turns)
+        # T2-C1 — a hand-back flagged inside its attachment is no turn at all, with or without an origin
+        for uid, phrase in (("att-m1", "seven green envelopes"), ("att-m2", "brass stamp")):
+            assert not [t for t in turns if t.get("uuid") == uid], ("an agent's hand-back kept as a turn", uid, turns)
+            assert not any(phrase in t["text"] for t in turns), (phrase, turns)
+        # T2-C1 — a phrase only in it is a miss; nothing is kept under a person's name
+        for sid, phrase in (("H1", "seven green envelopes"), ("H2", "brass stamp")):
+            code, out = run_said("source", "add", sid, "--from-transcript", tr, "--match", phrase, "--speaker", "lee", "--target", pj.dir)
+            assert code != 0 and "found in no turn" in out, (phrase, code, out)
+            assert not os.path.exists(os.path.join(pj.dir, "mangsang", "sources", sid + ".json")), ("a source written", phrase)
+        code, out = run_said("source", "add", "H3", "--from-transcript", tr, "--match", "recycle the flyers", "--speaker", "lee", "--target", pj.dir)
+        assert code == 0, out
+
+
+def test_vocabulary_write_says_it_wrote_the_entry_as_this_engine_reads_it():
+    """The line `vocabulary --write` prints for an entry it rewrote names the predicate and says it was written as this
+    engine reads it, stored -> read; it never names the stored propagation as what was written."""
+    OLD = {"propagates": "dst->src", "means": "src (a test) proves dst; when dst changes the test may be stale"}
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        vocpath = os.path.join(pj.dir, "mangsang", "vocabulary.json")
+        stored = json.load(open(vocpath, encoding="utf-8"))
+        write(vocpath, {**stored, "verifies": dict(OLD)})
+        code, out = run_said("vocabulary", "--write", "--target", pj.dir)
+        assert code == 0, out
+        # T2-C2
+        assert "wrote verifies as propagates dst->src" not in out, ("the old propagation named as what was written", out)
+        written = [l for l in out.split("\n") if "verifies" in l and "dst->src" in l]
+        assert written, out
+        for l in written:
+            assert "written as this engine reads it" in l and "dst->src -> both" in l, (l, out)
+        assert json.load(open(vocpath, encoding="utf-8"))["verifies"] == mangsang.DEFAULT_VOCAB["verifies"]
+
+
+def test_check_says_an_entry_the_vocabulary_file_does_not_store_is_not_stored():
+    """A vocabulary file that stores nothing for a predicate: check says the entry is not stored and how this engine reads
+    it — never that the file stores it as propagating nothing; `vocabulary --write` then writes the defaults and check is
+    quiet. A file holding only a project's own references entry, read as stored, is not reported at all."""
+    with Project() as pj:
+        assert run("register", "plan/PLAN.md", "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        vocpath = os.path.join(pj.dir, "mangsang", "vocabulary.json")
+
+        def vocab_lines(out):
+            return [l for l in out.split("\n") if "mangsang vocabulary --write" in l]
+
+        def stored_as(lines, pred):   # a line claiming the file stores pred with some propagation
+            return [l for l in lines if ("stores %s as propagates" % pred) in l]
+
+        # T2-C3 — `{}`: every predicate not stored, read as the engine's default
+        write(vocpath, {})
+        code, out = run_said("check", "--target", pj.dir)
+        vl = vocab_lines(out)
+        for pred, entry in mangsang.DEFAULT_VOCAB.items():
+            mine = [l for l in vl if re.search(r"\b%s\b" % pred, l)]
+            assert len(mine) == 1, (pred, out)
+            l = mine[0]
+            assert "not store" in l and "mangsang/vocabulary.json" in l, (pred, l)
+            assert ("this engine reads it as propagates %s" % entry["propagates"]) in l, (pred, l)
+            assert not stored_as(vl, pred), ("an entry not stored said to be stored", pred, out)
+        assert not any("stores" in l and "as propagates none" in l for l in vl), out
+        # T2-C3 — --write writes the defaults; check is then quiet
+        code, out = run_said("vocabulary", "--write", "--target", pj.dir)
+        assert code == 0, out
+        assert json.load(open(vocpath, encoding="utf-8")) == mangsang.DEFAULT_VOCAB
+        code, out = run_said("check", "--target", pj.dir)
+        assert not vocab_lines(out), out
+        # T2-C3 — a file holding only a project's own references entry is read as it is (decl merges no defaults into a
+        # non-empty file): nothing is read differently, so check prints no vocabulary line at all
+        write(vocpath, {"references": {"propagates": "none", "means": "our own reading of a name"}})
+        code, out = run_said("check", "--target", pj.dir)
+        assert not vocab_lines(out), out
+
+
+def test_decl_gives_each_caller_its_own_default_vocabulary():
+    """A caller that changes the vocabulary it was given changes its own copy: the engine's default, and what the next
+    caller is given, stay as they were — for a project with no vocabulary file, and for one storing an earlier entry."""
+    import copy
+    OLD = {"propagates": "dst->src", "means": "src (a test) proves dst; when dst changes the test may be stale"}
+    snapshot = copy.deepcopy(mangsang.DEFAULT_VOCAB)
+    tmp = tempfile.mkdtemp(prefix="mangsang-test-")
+    try:
+        v = mangsang.decl(tmp)["vocabulary"]
+        v["documents"]["propagates"] = "none"
+        assert mangsang.DEFAULT_VOCAB["documents"]["propagates"] == "dst->src", mangsang.DEFAULT_VOCAB["documents"]
+        assert mangsang.decl(tmp)["vocabulary"]["documents"]["propagates"] == "dst->src"
+        for pred in snapshot:
+            v = mangsang.decl(tmp)["vocabulary"]
+            for key in list(v[pred]):
+                v[pred][key] = "mutated by a caller"
+            v[pred]["added"] = "by a caller"
+            assert mangsang.DEFAULT_VOCAB[pred] == snapshot[pred], (pred, mangsang.DEFAULT_VOCAB[pred])
+            assert mangsang.decl(tmp)["vocabulary"][pred] == snapshot[pred], pred
+        # a stored 2.3 verifies entry, read as the default: the caller's copy is still its own
+        write(os.path.join(tmp, "mangsang", "vocabulary.json"), {**snapshot, "verifies": dict(OLD)})
+        v = mangsang.decl(tmp)["vocabulary"]
+        v["verifies"]["means"] = "mutated by a caller"
+        assert mangsang.DEFAULT_VOCAB["verifies"] == snapshot["verifies"], mangsang.DEFAULT_VOCAB["verifies"]
+        assert mangsang.decl(tmp)["vocabulary"]["verifies"]["means"] == snapshot["verifies"]["means"]
+    finally:
+        mangsang.DEFAULT_VOCAB.clear()
+        mangsang.DEFAULT_VOCAB.update(snapshot)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_move_carries_a_heading_renamed_in_place_and_lookup_and_impact_say_so():
+    """A relation standing on a document's heading: a rename of the heading breaks it. Before the edit, lookup (and its brief
+    note) says so and that move carries a rename; after a rename that leaves the rest of the section exactly as its confirmer
+    saw it, impact names the move and move carries it; a rename together with any other change in the section is left broken
+    — the rename cannot hide a real change — and nothing turns fresh by itself."""
+    assert callable(getattr(mangsang, "renamed_heading", None)), "mangsang.renamed_heading is missing"
+    P = "plan/PLAN.md"
+    RENAMED = PLAN.replace("## Q1 add", "## Q1 append")
+    # C1 — the function
+    seen = mangsang.anchors_of(P, PLAN)["#Q1 add"]
+    assert mangsang.renamed_heading(P, RENAMED, "#Q1 add", seen) == "#Q1 append"
+    assert mangsang.renamed_heading(P, RENAMED, "#Q1 add", None) is None, "seen None"
+    assert mangsang.renamed_heading("notes.txt", RENAMED, "#Q1 add", seen) is None, "not Markdown"
+    assert mangsang.renamed_heading(P, RENAMED, ":add", seen) is None, "a dead key that is not a heading"
+    assert mangsang.renamed_heading(P, RENAMED.replace("more", "more words"), "#Q1 add", seen) is None, "a line of its subsection changed"
+    assert mangsang.renamed_heading(P, RENAMED.replace("`add` appends", "`add` quickly appends"), "#Q1 add", seen) is None, "a word of its body"
+    assert mangsang.renamed_heading(P, PLAN.replace("## Q1 add", "### Q1 append"), "#Q1 add", seen) is None, "its level"
+    section = "## Q1 add\n\n`add` appends and prints `#<id>`.\n\n### detail\n\nmore\n\n"
+    two = PLAN.replace(section, section.replace("Q1 add", "Q1 append") + section.replace("Q1 add", "Q1 put").replace("### detail", "### detail2"))
+    two_same = PLAN.replace(section, section.replace("Q1 add", "Q1 append") + section.replace("Q1 add", "Q1 put"))
+    assert mangsang.renamed_heading(P, two_same, "#Q1 add", seen) is None, "two such headings"
+    assert mangsang.renamed_heading(P, RENAMED + "## Q1 append\n\nagain\n", "#Q1 add", seen) is None, "its new title is not once a heading"
+    assert mangsang.renamed_heading(P, two, "#Q1 add", seen) == "#Q1 append", "the other section's subsection differs: one candidate"
+
+    def project():
+        pj = Project()
+        assert run("register", P, "memo.py", "test_memo.py", "--target", pj.dir)[0] == 0
+        assert pj.propose(rel(P + "#Q1 add", "documents", "memo.py:add"), rel(P, "references", "memo.py:X"),
+                          rel("test_memo.py:test_Q1_add", "verifies", "memo.py:add", ev="def test_Q1_add"))[0] == 0
+        return pj
+
+    rid = mangsang.rel_id(rel(P + "#Q1 add", "documents", "memo.py:add"))
+    fid = mangsang.rel_id(rel(P, "references", "memo.py:X"))
+    vid = mangsang.rel_id(rel("test_memo.py:test_Q1_add", "verifies", "memo.py:add"))
+    line_with = lambda out, s: [l for l in out.split("\n") if s in l]
+
+    with project() as pj:
+        # C5 — lookup before any edit: the heading's relation says a rename breaks it and move carries it
+        for what in (P, P + "#Q1 add"):
+            code, out = run_said("lookup", what, "--target", pj.dir)
+            ls = line_with(out, rid)
+            assert code == 0 and len(ls) == 1 and "renaming" in ls[0] and "mangsang move" in ls[0], (what, out)
+            assert "stale" not in out, (what, out)
+        code, out = run_said("lookup", P, "--target", pj.dir)
+        fl = line_with(out, fid)
+        assert len(fl) == 1 and "renaming" not in fl[0] and "mangsang move" not in fl[0], ("the file anchor: no note", out)
+        code, out = run_said("lookup", "memo.py", "--target", pj.dir)
+        vl = line_with(out, vid)
+        assert len(vl) == 1 and "renaming" not in vl[0] and "mangsang move" not in vl[0], ("Python symbols: no note", out)
+        # C6 — --brief: one more line naming the heading, the id, renaming and move; memo.py's brief unchanged
+        code, out = run_said("lookup", P, "--brief", "--target", pj.dir)
+        notes = [l for l in out.splitlines() if "renaming" in l]
+        assert code == 0 and len(notes) == 1, out
+        assert all(s in notes[0] for s in ("#Q1 add", rid, "mangsang move")), notes
+        assert [l for l in out.splitlines() if l not in notes] == ["memo.py:X — references", "memo.py:add — documents"], out
+        code, out = run_said("lookup", "memo.py", "--brief", "--target", pj.dir)
+        assert out.splitlines() == ["plan/PLAN.md — references", "plan/PLAN.md#Q1 add — documents", "test_memo.py:test_Q1_add — verifies"], out
+        # a pure rename: broken until move runs; impact names the move, lookup too
+        write(os.path.join(pj.dir, P), RENAMED)
+        for _ in range(2):   # nothing turns fresh by itself
+            code, out = run_said("impact", "--target", pj.dir)
+            bl = [l for l in out.split("\n") if "broken" in l and rid in l]
+            assert code == 1 and len(bl) == 1, out
+        hint = line_with(out, "mangsang move " + rid)
+        assert len(hint) == 1 and "#Q1 append" in hint[0] and "renamed" in hint[0], out
+        assert "broken" not in hint[0] and "stale" not in hint[0], hint
+        assert out.split("\n").index(hint[0]) > out.split("\n").index(bl[0]), "under the broken line"
+        doc = json.loads(run_said("impact", "--findings", "--target", pj.dir)[1])
+        bf = [f for f in doc["findings"] if f["kind"] == "broken"]
+        assert len(bf) == 1 and "mangsang move" in bf[0]["text"] and "#Q1 append" in bf[0]["text"], doc
+        code, out = run_said("lookup", P, "--target", pj.dir)
+        ls = line_with(out, rid)
+        assert len(ls) == 1 and "mangsang move " + rid in ls[0] and "#Q1 append" in ls[0], out
+        # C2 — move: a dry run changes nothing; then carried, with the same evidence
+        code, out = run_said("move", "--dry-run", "--target", pj.dir)
+        assert "would move" in out and P + "#Q1 append" in out, out
+        assert not any(r.get("moved-from") for r in mangsang.decl(pj.dir)["relations"]), "a dry run changes nothing"
+        code, out = run_said("move", "--by", "kim", "--target", pj.dir)
+        assert code == 0 and "1 relation(s) moved" in out, out
+        d = mangsang.decl(pj.dir)
+        old = [r for r in d["retired"] if r["id"] == rid]
+        assert len(old) == 1 and old[0]["retired"]["why"].startswith("moved:"), d["retired"]
+        new = [r for r in d["relations"] if r.get("moved-from") == rid]
+        assert len(new) == 1 and new[0]["src"] == P + "#Q1 append" and new[0]["dst"] == "memo.py:add", new
+        assert new[0]["evidence"] == "appends and prints" and new[0]["confirmed"] == {"by": "kim"}, new
+        code, out = run_said("impact", "--target", pj.dir)
+        assert code == 0 and "unresolved_total = 0" in out, out
+
+    # C3 — a rename with any other change in its section is left, and impact gives it no move hint
+    for why, edited in (("a word of its body", RENAMED.replace("`add` appends", "`add` quickly appends")),
+                        ("a line of its subsection", RENAMED.replace("more", "more words")),
+                        ("its level", PLAN.replace("## Q1 add", "### Q1 append"))):
+        with project() as pj:
+            write(os.path.join(pj.dir, P), edited)
+            code, out = run_said("move", "--dry-run", "--target", pj.dir)
+            assert "left" in out and "0 relation(s) would move" in out, (why, out)
+            code, out = run_said("impact", "--target", pj.dir)
+            assert code == 1 and any("broken" in l and rid in l for l in out.split("\n")), (why, out)
+            assert "mangsang move" not in out, (why, out)
+            doc = json.loads(run_said("impact", "--findings", "--target", pj.dir)[1])
+            assert not any("mangsang move" in f["text"] for f in doc["findings"]), (why, doc)
+
+    # C2 — a second home (the same key in another registered Markdown file) competes: ambiguous, left
+    with project() as pj:
+        write(os.path.join(pj.dir, "notes.md"), "# notes\n\n## Q1 add\n\n`add` appends and prints `#<id>`.\n")
+        assert run("register", "notes.md", "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, P), RENAMED)
+        code, out = run_said("move", "--dry-run", "--target", pj.dir)
+        assert "0 relation(s) would move" in out and "left" in out, out
+        code, out = run_said("move", "--by", "kim", "--target", pj.dir)
+        assert code != 0 and not any(r.get("moved-from") for r in mangsang.decl(pj.dir)["relations"]), out
+        code, out = run_said("impact", "--target", pj.dir)
+        assert "mangsang move" not in out, ("a relation move would not carry gets no hint", out)
+
+    # C4 — a home in another file: impact names the move and the new anchor too
+    with project() as pj:
+        write(os.path.join(pj.dir, "notes.md"), "# notes\n\n## Q1 add\n\n`add` appends and prints `#<id>`.\n")
+        assert run("register", "notes.md", "--target", pj.dir)[0] == 0
+        write(os.path.join(pj.dir, P), "# plan\n\n## Q2 list\n\nlists.\n")
+        code, out = run_said("impact", "--target", pj.dir)
+        hint = line_with(out, "mangsang move " + rid)
+        assert code == 1 and len(hint) == 1 and "notes.md#Q1 add" in hint[0], out
+        assert "broken" not in hint[0] and "stale" not in hint[0], hint
+        doc = json.loads(run_said("impact", "--findings", "--target", pj.dir)[1])
+        bf = [f for f in doc["findings"] if f["kind"] == "broken" and rid in json.dumps(f)]
+        assert len(bf) == 1 and "mangsang move" in bf[0]["text"] and "notes.md#Q1 add" in bf[0]["text"], doc
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")

@@ -47,7 +47,7 @@ and is never loaded into a consuming project.
 
 ## Commands
 
-The `/mangsang:*` entries below are Claude command adapters; `move` is CLI-only. Both hosts can call every
+The `/mangsang:*` entries below are Claude command adapters; `move` and `vocabulary` are CLI-only (no command adapter). Both hosts can call every
 engine command through Python. `python3 mangsang.py --help` lists commands; `<command> --help` lists arguments.
 
 ### `/mangsang:register`
@@ -81,6 +81,14 @@ turn. The same id with other text is refused — a correction is a new source.
 Either host can run the importer on a Claude transcript. For a Codex turn, supply the exact original text with
 `--file -`, an explicit roster-admitted `--speaker` (for example `Codex (thread <thread id>)`), and a `--locator`
 identifying the original session and turn. Do not reconstruct missing words or identify a Codex turn as Claude's.
+
+A message the person sent while the agent was working is a person turn too: Claude Code keeps it as a
+`queued_command` attachment, not a user record. The importer keeps the prompt verbatim, never the host's rendered
+wrapper, under the attachment record's own id; its locator says "sent mid-turn". A subagent's hand-back (`isMeta`
+at the record or inside the attachment, or an origin other than human), a task notification, the host's queue
+(`queue-operation`) and its copy of a request to the model (`api-request-blob`) are not turns. Those last two repeat
+the words; a phrase found only in these records is a miss that names where it is, never a traceback (2.4.0 died with
+a TypeError there). A turn whose record has no id is refused: keep it with `--file -`, `--speaker` and `--locator`.
 
 `list` shows what each source grounds
 
@@ -155,6 +163,11 @@ and in `--findings`: "before mangsang 2.4.0 a verifies did not go stale when its
 been re-read; read whether the test still calls DST and asserts on what it does; `reconfirm` if it does, change or
 `retire` it if not" — with its destination anchor in place of DST.
 
+Under a broken relation that `move` would carry — the same key in another registered file, or a heading renamed
+in place — a line names `mangsang move <id> --by NAME` (or `--delegated WHY`) and the new anchor: "the same key there"
+or "renamed: only its title changed since it was confirmed". `--findings` appends the same to that broken finding.
+Nothing turns fresh by itself: the relation stays broken until `move` runs.
+
 ### `/mangsang:judge`
 
 The judge round for stale relations: `request` packs, per relation, the text that may be stale, the text that changed,
@@ -201,6 +214,13 @@ including 0. An object's `except` observation ends with its reason; with `--find
 text carries it too. A string entry prints as before. A malformed `except` is UNASKABLE, never a crash; the
 accepted shapes and their limits are below.
 
+A `vocabulary` observation says when `mangsang/vocabulary.json` stores an entry this engine reads differently:
+today, the 2.3 `verifies` entry read as propagates both, or entries not stored at all in an empty `{}` file, read as
+the defaults. One line per entry names both readings ("does not store" for an absent entry) and
+`mangsang vocabulary --write`. `--findings` adds `vocabulary-read-differently`, an observation; the exit code does
+not change. A non-empty file is read as it is apart from the legacy migration, with no defaults merged, so a
+project's own entries are never reported.
+
 ### `/mangsang:lookup`
 
 Before touching a file: the confirmed relations standing on it, and which ones the edit would make stale — size the
@@ -214,6 +234,10 @@ tree. A tracked, unregistered file an active `registered` invariant's except kee
 or advice to register it. Read-only. It also takes `concept:NAME` (the meaning, then what stands on it), an artifact
 anchor (`file:symbol`, `file#heading`, `file:key`), or a relation id: that relation whole, its concept's meaning,
 its state, quote and signer (a retired one says so, with why).
+
+A relation on a Markdown heading says on its line that renaming the heading breaks it and that `mangsang move`
+carries a rename while the rest of its section is unchanged. A broken relation that move would carry names the
+move command and the new anchor.
 
 For an artifact anchor, after the relations on the anchor itself, lookup lists every relation on another anchor
 of the same file that an edit inside it can stale and that propagates from that end: an anchor that reads it,
@@ -229,10 +253,13 @@ said nothing stood on it, but changing Skip's base class staled 10 relations thr
 file's relations reach (an anchor's brief reads the same relations, including those reached through the closure) —
 `concept:NAME — <its meaning's first sentence, cut at ~160 characters>` (a first sentence that is
 only a name, like "첫 화면.", is followed by the next, so the line says something), with `(N relation(s);
-K stale)` when any is stale — at most five lines, no ids, no quotes. A tracked file the net does not see gets one line
+K stale)` when any is stale — at most five such lines, no quotes; only the heading-rename note below names ids. A tracked file the net does not see gets one line
 saying so; an excepted file gets `FILE: excepted — <the why's first clause>`. Registered with nothing on it, or not in
 the tree, prints nothing. Whole outputs pasted into an agent's
-context went unread (~43k characters in one cycle); a line per fact is read
+context went unread (~43k characters in one cycle); a line per fact is read.
+When relations stand on the file's existing headings, the brief adds one line:
+"FILE: renaming a heading breaks what stands on it (#H R-…, …) — `mangsang move` carries a rename while the rest
+of its section is unchanged" — at most three headings, then "+N more". This is the one place the brief names ids.
 
 ### `move` (Python CLI)
 
@@ -242,6 +269,27 @@ exactly one new home among the registered files is retired (`why: moved …`) an
 the same evidence (`moved-from` names the old id) — the evidence must still be a quote there, or that relation is
 left; two homes or none are left too, named. `--dry-run` reports only. A site's refactoring moved 21 relations by hand
 in four tasks and missed three; this is one command
+
+A new home can be the same key in another registered file of the same kind, or a heading renamed in its own file:
+the old title must be gone, and there must be exactly one heading whose section, with only its title put back to
+the dead one, fingerprints exactly to the relation's `seen`. Any other change in that section — a word, a line of
+a subsection it holds, or its heading level — leaves the relation broken for a person. Two matching headings,
+or a matching heading plus the same key in another file, are ambiguous and left. The evidence must still be a
+quote there. The title is the one change `move` does not judge: the signer sees old -> new, the retired record
+says it, and the new relation's `moved-from` names the old id. A section renamed while being edited still needs
+retire-and-propose.
+
+### `vocabulary` (Python CLI)
+
+There is no command adapter. `python3 "/path/to/plugin/mangsang.py" vocabulary --target "/path/to/project"` lists
+each predicate as this engine reads it; under an entry stored differently, it says what is stored and that
+`--write` writes the reading above. It writes nothing.
+
+`vocabulary --write` rewrites only `mangsang/vocabulary.json`, as the engine reads it — the bytes `register` would
+have written, a one-entry diff for the 2.3 `verifies` entry — and prints each entry written (stored -> read).
+It writes nothing when nothing differs ("nothing to write") or when there is no `vocabulary.json`. No signature:
+it writes the engine's reading, not a judgment. This is the direct way to commit the migrated entry that 2.4.0
+left on disk until a registry-saving command ran.
 
 ### `/mangsang:report`
 
@@ -414,7 +462,9 @@ command at once and written to `vocabulary.json` (a one-entry diff) the next tim
 vocabulary: `register`, `confirm`, `retire` (including `retire --gone`), `move`, or a `concept` subcommand that changes
 a concept. `reconfirm`, `judge consume`, `cq add/revise/retire` and `source add` write only their own record files and
 leave `vocabulary.json` as it is. A project that only reconfirms its newly stale relations still holds the 2.3 entry
-on disk until then; its verdicts are already the new ones. A project's own `verifies` entry and its propagation are
+on disk until then; its verdicts are already the new ones. `check` now says when that entry is still on disk
+(the `vocabulary` line), and `mangsang vocabulary --write` writes it directly; registry-saving commands still
+write it too. A project's own `verifies` entry and its propagation are
 kept. Under the new rule, every `verifies` whose test side changed since its last confirmation
 or re-confirmation goes stale at once, each saying the migration line under `/mangsang:impact` above while its record
 was last written by a release before 2.4.0; a reconfirm under 2.4.0 ends that notice. A `verifies` whose test is what
@@ -596,7 +646,8 @@ what they mean; it reads their `propagates`, the same rule `impact` judges stale
 - Content inside a string or block is known by its syntax alone: an `.env` value quoted across lines, a Dockerfile
   heredoc, a delimiter inside a trailing comment or escaped, an element made `white-space: pre` by CSS elsewhere, and
   `.a :hover` against `.a:hover` are still read as formatting; a `<script>` of a template type is read as JS.
-- Not built yet: repair candidates after a rename; methods, keys below depth 3 and object members (`tailwind.config.js`'s
+- A heading renamed in place with the rest of its section unchanged is carried by `move`. Not built yet: repair
+  candidates for a symbol or key renamed in place, or a section renamed and edited together; methods, keys below depth 3 and object members (`tailwind.config.js`'s
   `theme.colors`) as anchors of their own; languages beyond these (a scanner returning `Scan(texts, deps, hidden)` in
   `anchors.py` is the whole of adding one); reads across files (see above — a relation, today).
 

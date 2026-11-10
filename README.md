@@ -129,6 +129,17 @@ the existing contracts changed (2.2.0's note said no staleness decision changed 
 artifact or lock changes shape and nothing that ran stops running — an adopting project may see relations go stale,
 each with its reason.
 
+2.5.0 is minor: a new command (`vocabulary [--write]`), a new `check` observation and findings kind
+(`vocabulary-read-differently`), and changed contracts of existing commands: `source add --from-transcript` reads
+a message sent mid-turn as a person turn and refuses a turn with no id; `move` carries a heading renamed in place
+when restoring its old title recovers the confirmed section fingerprint; `impact`, `lookup` and `lookup --brief`
+add lines explaining moves and heading renames. `decl`'s default vocabulary is now each caller's own copy (no
+interface change). Not a patch, since there is a new command and field; not a major, since no record, artifact or
+lock changes shape, nothing that ran stops running, and the Python floor stays `>=3.11`. A 2.4.0 project holding
+the 2.3 entry now sees it in `check` and can write it with one command. On one long session's transcript 2.4.0 died
+with a TypeError and 2.5.0 read its four mid-turn messages as person turns, excluding its subagent hand-backs and
+task notifications.
+
 hunsu's `check` fails a linked plugin whose source differs from the
 installed
 copy under one version; for a locally linked plugin, `hunsu install --refresh <plugin>` re-snapshots after the bump.

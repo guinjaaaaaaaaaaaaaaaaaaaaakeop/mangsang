@@ -264,7 +264,7 @@ def decl(target):
     """
     root = os.path.join(target, DECL)
     d = {"registry": load(os.path.join(root, "registry.json"), []),
-         "vocabulary": load(os.path.join(root, "vocabulary.json"), None) or dict(DEFAULT_VOCAB),
+         "vocabulary": load(os.path.join(root, "vocabulary.json"), None) or {k: dict(v) for k, v in DEFAULT_VOCAB.items()},
          "cq": load(os.path.join(root, "cq.json"), []),
          "relations": [], "retired": [], "concepts": [], "cq_declared": [], "sources": []}
     if d["vocabulary"].get("verifies") == LEGACY_VERIFIES:
@@ -275,6 +275,50 @@ def decl(target):
             if name.endswith(".json"):
                 d[key].append(load(os.path.join(folder, name)))
     return d
+
+
+def vocabulary_differences(target, d):
+    """Compare stored entries with the engine's reading; an absent file is defaults, never a migration to write."""
+    path = os.path.join(target, DECL, "vocabulary.json")
+    if not os.path.isfile(path):
+        return []
+    stored = load(path) or {}
+    return [(name, stored.get(name), entry) for name, entry in d["vocabulary"].items() if stored.get(name) != entry]
+
+
+def vocabulary_change(name, stored, read):
+    """Describe both readings without judging either; only the engine's existing migration is reported."""
+    if stored is None:
+        return "%s; this engine reads it as propagates %s" % (name, read.get("propagates", "none"))
+    return "%s as propagates %s; this engine reads it as propagates %s" % (name, (stored or {}).get("propagates", "none"), read.get("propagates", "none"))
+
+
+def cmd_vocabulary(args):
+    """Show the vocabulary as read; --write migrates only an existing differing vocabulary, never other model records."""
+    d = decl(args.target)
+    path = os.path.join(args.target, DECL, "vocabulary.json")
+    differences = vocabulary_differences(args.target, d)
+    if args.write:
+        if not os.path.isfile(path):
+            print("no mangsang/vocabulary.json — nothing to write")
+        elif not differences:
+            print("vocabulary: nothing to write")
+        else:
+            save(path, d["vocabulary"])
+            for name, stored, read in differences:
+                before = "not stored" if stored is None else "propagates " + stored.get("propagates", "none")
+                print("vocabulary.json: %s written as this engine reads it (%s -> %s)" % (name, before, read.get("propagates", "none")))
+        return 0
+    for name, entry in d["vocabulary"].items():
+        print("%s  propagates %s — %s" % (name, entry.get("propagates", "none"), entry.get("means", "")))
+        for changed, stored, read in differences:
+            if changed == name:
+                change = ("%s not stored -> %s" % (name, read.get("propagates", "none"))
+                          if stored is None else vocabulary_change(name, stored, read))
+                print("  stored " + change + " — `mangsang vocabulary --write` writes the line above")
+    if not os.path.isfile(path):
+        print("no mangsang/vocabulary.json — defaults are read; the first command that saves the model writes them")
+    return 0
 
 
 def save_decl(target, d):
@@ -845,6 +889,10 @@ def verifies_migration(r, changed):
 def cmd_impact(args):
     d = decl(args.target)
     stale, broken, unjudged, files = compute_impact(args.target, d, args.only)   # answers and leaves nothing behind: the verdict is what it prints
+    gone = gone_groups(args.target, d, broken, files)
+    grouped = {rid for ids in gone.values() for rid in ids}
+    moved, _ = plan_moves(args.target, d, broken, files, set())
+    move_hints = {r["id"]: move_hint(r, new, signing=True) for r, new in moved if r["id"] not in grouped}
     owed = owed_rereads(d, args.only)
     # a relation stale only through a read nobody related re-reads the wrong sentence: said with it, and grouped when it spans concepts
     unmodeled = unmodeled_reads(args.target, d, stale) if stale else {}
@@ -860,6 +908,10 @@ def cmd_impact(args):
         findings += [{"kind": "broken", "where": "%s %s" % (x["id"], ", ".join(x["dead"])), "text": "dead anchor(s): the relation points at nothing%s" % (
                          "; %s is gone from the tree" % ", ".join(sorted({file_of(a) for a in x["dead"] if gone_from_tree(args.target, file_of(a))}))
                          if any(gone_from_tree(args.target, file_of(a)) for a in x["dead"]) else "")} for x in broken]
+        for finding in findings:
+            rid = finding["where"].split(" ")[0]
+            if finding["kind"] == "broken" and rid in move_hints:
+                finding["text"] += "; " + move_hints[rid]
         # no person read these: a delegation, a judge's verdict applied, an agent's own re-read — observations of the record
         findings += [{"kind": "delegated", "where": "%s %s %s %s" % (r["id"], r["src"], r["predicate"], r["dst"]), "text": "re-confirmed %s" % unread_by_a_person(r["confirmed"])}
                      for r in d["relations"] if isinstance(r.get("confirmed"), dict) and unread_by_a_person(r["confirmed"])]
@@ -892,10 +944,11 @@ def cmd_impact(args):
                 print("\n".join("      " + l for l in (diff or "(%s: no earlier text in git to compare against — the relation was not committed when it was confirmed, or the anchor is a source, which never changes; the change is known by its fingerprint)" % end).rstrip().split("\n")))
     for a, cs, ids in shared:
         print("  shared  " + shared_text(a, cs, ids))
-    gone = gone_groups(args.target, d, broken, files)
     for b in broken:
         if not any(b["id"] in ids for ids in gone.values()):
             print("  broken  %s  dead anchors %s" % (b["id"], b["dead"]))
+            if b["id"] in move_hints:
+                print("      " + move_hints[b["id"]])
     for f, ids in sorted(gone.items()):
         # a file deleted on purpose: its relations are one fact, not N — and `retire --gone` disposes of them as one
         print("  gone    %s — deleted from the tree; %d broken relation(s) on it: %s" % (f, len(ids), ", ".join(ids)))
@@ -1731,6 +1784,11 @@ def cmd_check(args):
     active = [q for q in cq_active(d) if q.get("verify", {}).get("kind") in INVARIANT_KINDS]
     failed = unaskable = 0
     findings = []
+    for name, stored, read in vocabulary_differences(args.target, d):
+        text = "mangsang/vocabulary.json " + ("does not store " if stored is None else "stores ") + vocabulary_change(name, stored, read) + " — `mangsang vocabulary --write` writes what it reads (nothing else changes)"
+        say("  vocabulary   " + text)
+        findings.append({"kind": "vocabulary-read-differently", "layer": "observation", "where": "mangsang/vocabulary.json " + name,
+                         "source": "mangsang", "text": text})
     # optional when absent is right for a consumer; a project that keeps its model says so, and an absent or emptied model is
     # red then — every source model's own checker carried this by hand, and one passed a retired-only model (11-05)
     unmet = None
@@ -2374,7 +2432,10 @@ def cmd_lookup(args):
                   "Not a file with nothing on it: an unseen one." % (args.path, " (tracked by git%s)" % near if tracked is not None and args.path in tracked else ""))
             print("  to watch it: `mangsang register %s`, then relate its anchors to the concepts they realize (`confirm`)" % args.path)
         return 0
-    stale, broken, unjudged, _ = compute_impact(args.target, d, persist=False)
+    stale, broken, unjudged, files = compute_impact(args.target, d, persist=False)
+    moved, _ = plan_moves(args.target, d, broken, files, set())
+    move_hints = {r["id"]: move_hint(r, new) for r, new in moved}
+    broken_ids = {x["id"] for x in broken}
     state = {x["id"]: "STALE now (%s changed since confirmed)" % x["because"] for x in stale}
     state.update({x["id"]: "BROKEN now (%s gone)" % ", ".join(x["dead"]) for x in broken})
     state.update({i: "unjudged (no `seen`, no baseline)" for i in unjudged if i not in state})
@@ -2395,8 +2456,14 @@ def cmd_lookup(args):
             # the relation as it is stored, src predicate dst — never reordered around the looked-up anchor (a reader who copied
             # the line into a proposal got src and dst swapped when the anchor was the dst)
             mark = lambda x: "[%s]" % x if x == a else x
+            note = ("; " + covers[r["id"]]) if r["id"] in covers else ("; changing this anchor makes the relation stale" if moves else "")
+            af, ak = split_anchor(a)
+            if r["id"] in move_hints:
+                note += "; " + move_hints[r["id"]]
+            elif ak.startswith("#") and anchors.kind_of(af) == "markdown" and r["id"] not in broken_ids:
+                note += "; renaming the heading breaks it — `mangsang move` carries a rename while the rest of its section is unchanged"
             print("  %s  %s %s %s — %s%s" % (r["id"], mark(r["src"]), r["predicate"], mark(r["dst"]), state.get(r["id"], "fresh"),
-                                            ("; " + covers[r["id"]]) if r["id"] in covers else ("; changing this anchor makes the relation stale" if moves else "")))
+                                            note))
             print("      \"%s\" — %s" % ("\n        ".join(r.get("evidence", "").split("\n")), who_signed(r.get("confirmed"))))
     print("%d relation(s) on %s, reaching %d concept(s) or anchor(s) — an edit here and their update are one piece of work, not two"
           % (len(rels), args.path, len({item[2] for item in rels})))
@@ -2459,8 +2526,8 @@ BRIEF_LINES = 5
 def lookup_brief(args, d, rels, registered, on_disk):
     """`lookup PATH --brief`: what a reader (jokbo) puts in front of an agent at its first look at a file — one line per concept
     (or other end) the file's confirmed relations reach, its meaning's first sentence, and how many of them are stale when any is.
-    Whole outputs pasted into an agent's context were not read (~43k characters in one cycle); a line per fact is. No ids, no
-    quotes: `lookup PATH` has them. A tracked file the net does not see gets one line saying so; a registered file with nothing
+    Whole outputs pasted into an agent's context were not read (~43k characters in one cycle); a line per fact is.
+    Only the heading-rename cost names relation ids; no quotes: `lookup PATH` has them. A tracked file the net does not see gets one line saying so; a registered file with nothing
     on it, or a path not in the tree, prints nothing — a reader adds no line where there is no fact. A concept: its own line."""
     c = next((c for c in d["concepts"] if "concept:" + c["name"] == args.path), None)
     if c is not None:
@@ -2481,7 +2548,7 @@ def lookup_brief(args, d, rels, registered, on_disk):
         if tracked is None or args.path in tracked:
             print("%s: not registered — the net does not see it (no relation stands on it; edits here are never stale)" % args.path)
         return 0
-    stale, broken, _, _ = compute_impact(args.target, d, persist=False)
+    stale, broken, _, files = compute_impact(args.target, d, persist=False)
     bad = {x["id"] for x in stale} | {x["id"] for x in broken}
     concepts = {"concept:" + c["name"]: c for c in d["concepts"]}
     groups = {}
@@ -2502,6 +2569,20 @@ def lookup_brief(args, d, rels, registered, on_disk):
         k = sum(r["id"] in bad for o in rest for r in groups[o])
         print("… and %d more (%d relation(s)%s) — `mangsang lookup %s` for all"
               % (len(rest), sum(len(groups[o]) for o in rest), "; %d stale" % k if k else "", args.path))
+    f = split_anchor(args.path)[0]
+    headings = {}
+    if anchors.kind_of(f) == "markdown":
+        for r in d["relations"]:
+            for end in ("src", "dst"):
+                ef, key = split_anchor(r[end])
+                if ef == f and key.startswith("#") and key in files.get(f, {}):
+                    headings.setdefault(key, set()).add(r["id"])
+    if headings:
+        keys = sorted(headings)
+        cost = "; ".join(key + " " + ", ".join(sorted(headings[key])) for key in keys[:3])
+        if len(keys) > 3:
+            cost += "; +%d more" % (len(keys) - 3)
+        print("%s: renaming a heading breaks what stands on it (%s) — `mangsang move` carries a rename while the rest of its section is unchanged" % (f, cost))
     return 0
 
 
@@ -2543,19 +2624,31 @@ def concept_map(args, d):
     return 0
 
 
-def cmd_move(args):
-    """A refactoring moved a symbol or a section: the anchor died and the relation on it is `broken`, though the thing it
-    named is right there under another file. Retire-and-repropose by hand for twenty-one relations was a refactoring's
-    afternoon (and three were missed, found by counting). `move` does the mechanical part: for each broken relation whose
-    dead anchor is `file:symbol` or `file#heading`, the registered files are searched for the same key; exactly one home ->
-    the relation is retired (why: moved) and re-confirmed on the new anchor with the same evidence — which must still be a
-    quote there, or the move is refused for that relation. Ambiguous (two homes) or homeless keys are printed, untouched:
-    naming the home is a judgment. `--dry-run` only reports."""
-    if not (args.by or args.delegated or args.dry_run):
-        raise SystemExit("say who moves them (--by) or why the human delegated it (--delegated), or --dry-run to see what would move")
-    d = decl(args.target)
-    _, broken, _, files = compute_impact(args.target, d, persist=False)
-    wanted = set(args.ids or [])
+def renamed_heading(path, text, dead, seen):
+    """Find a unique renamed Markdown heading by restoring only its title and comparing the confirmer's fingerprint.
+    Refuse live old titles, repeated new titles, ambiguity, or any other change within the confirmed section."""
+    if anchors.kind_of(path) != "markdown" or not dead.startswith("#") or not seen:
+        return None
+    heads = list(re.finditer(r"^(#{1,6}) +(.+?)\s*$", text, re.M))
+    titles = [m.group(2).strip() for m in heads]
+    if dead[1:] in titles:
+        return None
+    found = []
+    for m, title in zip(heads, titles):
+        if titles.count(title) != 1:
+            continue
+        # Keep whitespace around the title, the heading level and every other byte intact.
+        start = m.start(2) + len(m.group(2)) - len(m.group(2).lstrip())
+        end = m.end(2) - (len(m.group(2)) - len(m.group(2).rstrip()))
+        restored = text[:start] + dead[1:] + text[end:]
+        if anchors_of(path, restored).get(dead) == seen:
+            found.append("#" + title)
+    return found[0] if len(found) == 1 else None
+
+
+def plan_moves(target, d, broken, files, wanted):
+    """Plan moves without writing: require one home per dead end, no concept drift and the evidence still quoted.
+    An in-place heading rename is a home only when restoring its title recovers the confirmed fingerprint."""
     moved, refused = [], []
     for b in broken:
         r = next((x for x in d["relations"] if x["id"] == b["id"]), None)
@@ -2571,19 +2664,54 @@ def cmd_move(args):
                 why = "%s is not a moved symbol or section" % r[end]
                 break
             # a home is a file of the same kind (config keys as anchors made every common key ambiguous): `homes_of`
-            cands = homes_of(files, r[end])
+            homes = homes_of(files, r[end])
+            cands = [home + key for home in homes]
+            if f in files and anchors.kind_of(f) == "markdown" and key.startswith("#"):
+                with io.open(os.path.join(target, f), encoding="utf-8") as fh:
+                    renamed = renamed_heading(f, fh.read(), key, (r.get("seen") or {}).get(r[end]))
+                if renamed is not None:
+                    cands.append(f + renamed)
             if len(cands) != 1:
-                why = "%s: %s" % (r[end], "no registered file has %s now" % key if not cands else "%s is in %s — say which" % (key, ", ".join(cands)))
+                why = "%s: %s" % (r[end], "no registered file has %s now" % key if not cands else "%s is in %s — say which" % (key, ", ".join(homes if len(homes) == len(cands) else cands)))
                 break
-            new[end] = cands[0] + key
+            new[end] = cands[0]
         if not why and new["src"] == r["src"] and new["dst"] == r["dst"]:
             why = "nothing to move"
-        if not why and not quoted(args.target, r["evidence"], new["src"], new["dst"]):
+        if not why and not quoted(target, r["evidence"], new["src"], new["dst"]):
             why = "the evidence %r is not in the text at %s — the words moved too; propose it anew with the sentence that holds there" % (r["evidence"][:60], new["src"] if new["src"] != r["src"] else new["dst"])
         if why:
             refused.append((r, why))
             continue
         moved.append((r, new))
+    return moved, refused
+
+
+def move_hint(r, new, signing=False):
+    """Describe an already validated move plan; this hint grants no authority and changes no relation."""
+    destinations = []
+    for end in ("src", "dst"):
+        if r[end] != new[end]:
+            renamed = split_anchor(r[end])[0] == split_anchor(new[end])[0]
+            destinations.append(new[end] + " (" + ("renamed: only its title changed since it was confirmed" if renamed else "the same key there") + ")")
+    command = "mangsang move " + r["id"] + (" --by NAME" if signing else "")
+    return "`%s`%s carries it to %s" % (command, " (or --delegated WHY)" if signing else "", "; ".join(destinations))
+
+
+def cmd_move(args):
+    """A refactoring moved a symbol or a section: the anchor died and the relation on it is `broken`, though the thing it
+    named is right there under another file. Retire-and-repropose by hand for twenty-one relations was a refactoring's
+    afternoon (and three were missed, found by counting). `move` does the mechanical part: for each broken relation whose
+    dead anchor is `file:symbol` or `file#heading`, search registered files for the same key and the original Markdown file
+    for a unique title-only rename matching the confirmed fingerprint; exactly one home ->
+    the relation is retired (why: moved) and re-confirmed on the new anchor with the same evidence — which must still be a
+    quote there, or the move is refused for that relation. Ambiguous (two homes) or homeless keys are printed, untouched:
+    naming the home is a judgment. `--dry-run` only reports."""
+    if not (args.by or args.delegated or args.dry_run):
+        raise SystemExit("say who moves them (--by) or why the human delegated it (--delegated), or --dry-run to see what would move")
+    d = decl(args.target)
+    _, broken, _, files = compute_impact(args.target, d, persist=False)
+    wanted = set(args.ids or [])
+    moved, refused = plan_moves(args.target, d, broken, files, wanted)
     for r, why in refused:
         print("  left    %s  %s %s %s — %s" % (r["id"], r["src"], r["predicate"], r["dst"], why))
     for r, new in moved:
@@ -2636,6 +2764,17 @@ def transcript_turns(path):
             t["n"] = n - 1
         msg, when, uid = d.get("message") or {}, d.get("timestamp"), d.get("uuid")
         c = msg.get("content")
+        attachment = d.get("attachment") or {}
+        origin = attachment.get("origin") or {}
+        if (d.get("type") == "attachment" and attachment.get("type") == "queued_command"
+                and not d.get("isMeta") and not attachment.get("isMeta") and attachment.get("commandMode") != "task-notification"
+                and (origin.get("kind") == "human" or (not origin and attachment.get("commandMode", "prompt") == "prompt"))):
+            prompt = attachment.get("prompt")
+            blocks = [{"type": "text", "text": prompt}] if isinstance(prompt, str) else prompt
+            for x in blocks if isinstance(blocks, list) else []:
+                if isinstance(x, dict) and x.get("type") == "text":
+                    turns.append({"kind": "person", "text": x.get("text", ""), "uuid": uid,
+                                  "at": when or attachment.get("timestamp"), "mid-turn": True})
         if d.get("type") == "user" and isinstance(c, str) and not d.get("isMeta"):
             turns.append({"kind": "person", "text": c, "uuid": uid, "at": when})
         elif d.get("type") == "user" and isinstance(c, list):
@@ -2649,7 +2788,7 @@ def transcript_turns(path):
                         # one turn per question answered, its text only what the person picked or typed: the tool's
                         # wrapper ("Your questions have been answered: "Q"="A", … You can now continue…") is the host
                         # talking to the agent, not the person; the question it answers is named, not quoted into it
-                        turns.append({"kind": "answer", "text": a, "uuid": uid if len(got) == 1 else "%s#%d" % (uid, i + 1), "at": when,
+                        turns.append({"kind": "answer", "text": a, "uuid": uid if len(got) == 1 or not uid else "%s#%d" % (uid, i + 1), "at": when,
                                       "answers": ask["uuid"], "question": q})
         elif d.get("type") == "assistant" and isinstance(c, list):
             mid = msg.get("id") or uid
@@ -2711,7 +2850,7 @@ def picked_answers(record, result, questions):
 def turn_named(t, turn_id):
     """--turn ID: the host's id for the record — which names every answer in it when one question form asked several
     (`ID#1`, `ID#2`, …: each its own turn; the listing shows them) — or one of those."""
-    return t["uuid"] == turn_id or t["uuid"].split("#")[0] == turn_id
+    return bool(t.get("uuid")) and (t["uuid"] == turn_id or t["uuid"].split("#")[0] == turn_id)
 
 
 def turn_hit(t, match, turn_id, kind):
@@ -2736,6 +2875,13 @@ def record_place(d):
     """Where in the host's record a phrase sits when it is in no turn: the agent's thinking, a tool call, a tool's output…"""
     msg = d.get("message") or {}
     c = msg.get("content")
+    if d.get("type") == "queue-operation":
+        return "the host's queue of a message typed while the agent worked (queue-operation)"
+    if d.get("type") == "api-request-blob":
+        return "the host's copy of a request to the model, which repeats earlier turns (api-request-blob)"
+    if d.get("type") == "attachment" and (d.get("attachment") or {}).get("type") == "queued_command":
+        a = d["attachment"]
+        return "the host's queued_command attachment (%s)" % ((a.get("origin") or {}).get("kind") or a.get("commandMode") or "host note")
     if d.get("isSidechain"):
         return "a subagent's side conversation"
     if d.get("type") == "assistant" and isinstance(c, list):
@@ -2763,7 +2909,7 @@ def strings_in(x):
 
 
 def turn_line(t):
-    return "  %s %s at %s%s: %s" % (t["kind"], t["uuid"], t["at"], " (answers %s)" % t["answers"] if t.get("answers") else "",
+    return "  %s %s at %s%s: %s" % (t["kind"], t["uuid"] or "no id", t["at"], " (answers %s)" % t["answers"] if t.get("answers") else "",
                                     " ".join(t["text"].split())[:80])
 
 
@@ -2784,7 +2930,7 @@ def why_no_turn(path, turns, match, turn_id, kind):
         # other places say more, so the turns shown are around the first of those
         places = {}
         for n, d in found:
-            places.setdefault(record_place(d), []).append(d.get("uuid"))
+            places.setdefault(record_place(d), []).append(d.get("uuid") or ("at %s" % d["timestamp"] if d.get("timestamp") else "no id"))
         out.append("%s: found in no turn — it is in %s; none of that is something said." % (asked.strip(), "; ".join(
             "%s (%s)" % (k, ", ".join(v[:2]) + (" and %d more" % (len(v) - 2) if len(v) > 2 else "")) for k, v in places.items())))
         n = next((n for n, d in found if d.get("type") != "assistant" or "call" not in record_place(d)), found[0][0])
@@ -2919,6 +3065,8 @@ def cmd_source(args):
                              "(the latest are listed last):\n%s" % ("--turn" if args.turn and not args.match else "--match", len(hits),
                              "\n".join(turn_line(t) for t in hits[-5:])))
         turn = hits[0]
+        if not turn.get("uuid"):
+            raise SystemExit("this turn has no id; keep it with --file - --speaker NAME --locator WHERE")
         if turn["kind"] in ("agent", "question"):
             args.speaker = args.speaker or "Claude (%s)" % (turn.get("model") or "unknown model")
         elif not args.speaker:
@@ -2931,7 +3079,7 @@ def cmd_source(args):
             args.speaker = listed[0]
             print("speaker: %s — the one person in mangsang/people.json (--speaker NAME, when another said it)" % listed[0])
         session = os.path.splitext(os.path.basename(args.from_transcript))[0]
-        args.locator = args.locator or "session %s, %s %s at %s%s" % (session, turn["kind"], turn["uuid"], turn["at"],
+        args.locator = args.locator or "session %s, %s %s at %s%s" % (session, turn["kind"], turn["uuid"], str(turn["at"]) + (", sent mid-turn" if turn.get("mid-turn") else ""),
                                                                       ", answering %s" % turn["answers"] if turn.get("answers") and args.kind == "answer" and not turn.get("question") else
                                                                       ", answering question %s: \"%s\"" % (turn["answers"], turn["question"]) if turn.get("question") else "")
         if turn.get("question") and not args.replies_to:
@@ -3424,9 +3572,11 @@ def sign_as_agent(args):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="mangsang", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("register", "confirm", "observe", "impact", "cq", "check", "retire", "reconfirm", "judge", "lookup", "move", "concept", "source", "report"):
+    for name in ("register", "confirm", "observe", "impact", "cq", "check", "retire", "reconfirm", "judge", "lookup", "move", "concept", "source", "report", "vocabulary"):
         p = sub.add_parser(name)
         p.add_argument("--target", default=".")
+        if name == "vocabulary":
+            p.add_argument("--write", action="store_true", help="write the engine's reading to an existing vocabulary.json; change nothing else")
         if name == "register":
             p.add_argument("paths", nargs="+")
         if name == "confirm":
@@ -3510,7 +3660,7 @@ def main(argv=None):
         sign_as_agent(args)
     return {"register": cmd_register, "confirm": cmd_confirm, "observe": cmd_observe, "impact": cmd_impact,
             "cq": cmd_cq, "check": cmd_check, "retire": cmd_retire, "reconfirm": cmd_reconfirm, "judge": cmd_judge,
-            "lookup": cmd_lookup, "move": cmd_move, "concept": cmd_concept, "source": cmd_source, "report": cmd_report}[args.cmd](args)
+            "lookup": cmd_lookup, "move": cmd_move, "concept": cmd_concept, "source": cmd_source, "report": cmd_report, "vocabulary": cmd_vocabulary}[args.cmd](args)
 
 
 if __name__ == "__main__":

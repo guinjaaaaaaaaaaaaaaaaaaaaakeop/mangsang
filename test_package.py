@@ -34,6 +34,7 @@ COMMANDS = {
 SUBCOMMANDS = [
     "register", "confirm", "observe", "impact", "cq", "check", "retire",
     "reconfirm", "judge", "lookup", "move", "concept", "source", "report",
+    "vocabulary",
 ]
 FORBIDDEN_PARTS = {
     "AGENTS.md", "CLAUDE.md", "hunsu.json", "hunsu.lock.json",
@@ -652,6 +653,15 @@ class TestInstalledCopyIsolated(_TempMixin, unittest.TestCase):
                 self.assertRegex(h.stdout, r"\b%s\b" % re.escape(sub))
         w = s["worker_help"]
         self.assertEqual(w.returncode, 0, w.stderr)
+
+    def test_help_choices_are_exactly_the_subcommands(self):
+        """The usage line's {a,b,...} group is the parser's own list: a word in the help's prose is not a subcommand."""
+        self.pre()
+        h = self.state()["help"]
+        self.assertEqual(h.returncode, 0, h.stderr)
+        m = re.search(r"\{([a-z,-]+)\}", h.stdout)
+        self.assertIsNotNone(m, h.stdout[:400])
+        self.assertEqual(set(m.group(1).split(",")), set(SUBCOMMANDS))
 
     def test_fixture_workflow_steps_succeed(self):
         self.pre()
