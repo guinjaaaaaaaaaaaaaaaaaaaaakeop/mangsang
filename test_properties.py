@@ -195,7 +195,7 @@ def test_any_sequence_of_reconfirm_revise_and_rename_keeps_history_and_answerabi
             for op in ops:
                 rid = mangsang.decl(tmp)["relations"][0]["id"]
                 if op == "reconfirm":
-                    code, out = run("reconfirm", rid, "--by", "lee", "--target", tmp)
+                    code, out = run("reconfirm", rid, "--by", "lee", "--why", "re-read: the sentence still holds", "--target", tmp)
                     assert code == 0, out
                     if stale or last_by != "lee":
                         expect["rel_history"] += 1
@@ -233,7 +233,7 @@ def test_any_sequence_of_reconfirm_revise_and_rename_keeps_history_and_answerabi
                 # a re-confirmation right after a change makes impact green again; then nothing is stale
                 if op in ("revise", "edit"):
                     assert run("impact", "--target", tmp)[0] == 1, (ops, op)
-                    assert run("reconfirm", rid, "--by", "lee", "--target", tmp)[0] == 0
+                    assert run("reconfirm", rid, "--by", "lee", "--why", "re-read: the sentence still holds", "--target", tmp)[0] == 0
                     expect["rel_history"] += 1  # the relation was stale: recorded whoever re-reads it
                     last_by, stale = "lee", False
                 assert run("impact", "--target", tmp)[0] == 0, (ops, op, run("impact", "--target", tmp)[1])
@@ -263,7 +263,7 @@ def test_coverage_and_projection_are_deterministic_and_monotone_in_relations():
             uncovered_before = None
             for step, i in enumerate(order[:k]):
                 write(os.path.join(tmp, "proposals.json"), {"relations": [{"src": "plan.md#Q%d" % i, "predicate": "realizes", "dst": "concept:c", "evidence": "rule %d." % i}]})
-                assert run("confirm", "proposals.json", "--delegated", "prop", "--target", tmp)[0] == 0
+                assert run("confirm", "proposals.json", "--by", "kim", "--target", tmp)[0] == 0
                 d = mangsang.decl(tmp)
                 files, _ = mangsang.snapshot(tmp, d["registry"])
                 all_anchors = ["%s%s" % (f, kk) for f, ks in files.items() for kk in ks]
@@ -481,7 +481,7 @@ def test_a_required_invariant_holds_exactly_while_what_it_names_stands():
                     assert run("concept", "drift", "c%d" % i, "--why", "w", "--by", "kim", "--target", tmp)[0] == 0
                     drift[i] = True
                 elif op == "reaffirm" and (drift[i] or owes[i]):
-                    assert run("concept", "reaffirm", "c%d" % i, "--by", "kim", "--target", tmp)[0] == 0
+                    assert run("concept", "reaffirm", "c%d" % i, "--by", "kim", "--why", "read against what realizes it now", "--target", tmp)[0] == 0
                     drift[i] = owes[i] = False
                 elif op == "retire-q" and asked[i]:
                     assert run("cq", "retire", "q%d" % i, "--why", "w", "--target", tmp)[0] == 0

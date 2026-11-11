@@ -34,7 +34,7 @@ COMMANDS = {
 SUBCOMMANDS = [
     "register", "confirm", "observe", "impact", "cq", "check", "retire",
     "reconfirm", "judge", "lookup", "move", "concept", "source", "report",
-    "vocabulary",
+    "vocabulary", "outcomes", "review",
 ]
 FORBIDDEN_PARTS = {
     "AGENTS.md", "CLAUDE.md", "hunsu.json", "hunsu.lock.json",

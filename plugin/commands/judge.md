@@ -1,6 +1,6 @@
 ---
-description: The judge round for stale relations — request packs both texts, the change itself and what the changed side reads, and the quote; consume applies still-true signed by the judge (host and model) and applied by the agent (or --by NAME --approved-in source:ID), and prints drifted/cannot-tell for a human
-argument-hint: request --out DIR [--ids ID..] | consume --response FILE [--by NAME --approved-in source:ID]
+description: Request a bound packet; consume still-true verdicts with the judge’s whole evidence as why, at, read and stale outcome
+argument-hint: request --out DIR [--ids ID...] | consume --response FILE [--by NAME --approved-in source:ID] [--judge "HOST MODEL"]
 ---
 !`python3 "${CLAUDE_PLUGIN_ROOT}/mangsang.py" judge $ARGUMENTS --target .`
 

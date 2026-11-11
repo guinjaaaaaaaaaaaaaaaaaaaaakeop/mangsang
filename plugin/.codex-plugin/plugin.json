@@ -1,6 +1,6 @@
 {
   "name": "mangsang",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "engines": {
     "python": ">=3.11"
   },
@@ -8,7 +8,7 @@
     "mangsang/",
     ".mangsang/"
   ],
-  "description": "The coherence manager for every artifact in a project — plan, code, tests.",
+  "description": "Stores relations between anchors, signed by the person who judged them, a delegation citing their recorded words, or the agent itself with its reason; reports what went stale.",
   "author": {
     "name": "guineeeeeeeeeeeeeeeeeeeeeeeerm"
   },
@@ -16,7 +16,7 @@
   "interface": {
     "displayName": "mangsang",
     "shortDescription": "The coherence manager for every artifact in a project — plan, code, tests.",
-    "longDescription": "The coherence manager for every artifact in a project — plan, code, tests. Stores the relations a human confirmed between anchors (a document section, a function, a test), fingerprints them, and says which relation went stale when one end changed. Machines keep it because the next agent has no memory and nobody can read everything.",
+    "longDescription": "The coherence manager for every artifact in a project — plan, code, tests. Stores relations signed by whoever judged them: a person, a delegation citing the person's recorded words, or the agent itself with its reason. Relations connect anchors (a document section, a function, a test), fingerprints them, and says which relation went stale when one end changed. Machines keep it because the next agent has no memory and nobody can read everything.",
     "developerName": "guineeeeeeeeeeeeeeeeeeeeeeeerm",
     "category": "Productivity",
     "capabilities": [

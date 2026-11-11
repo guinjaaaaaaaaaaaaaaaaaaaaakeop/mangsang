@@ -1,6 +1,6 @@
 ---
-description: Report stale and broken relations (grouped by a deleted file, with the one `retire --gone` for them) and concepts owing a re-read; exit 1 when anything is unresolved. --only ANCHOR-PREFIX.. for a slice's check, --findings for a reviewer
-argument-hint: [--show] [--findings] [--only ANCHOR-PREFIX...]
+description: List stale, broken, owed and disputed relations; --files scopes exact files, --only prefixes; exit 1 for unresolved work in scope
+argument-hint: [--findings] [--show] [--only PREFIX...] [--files FILE...]
 ---
 !`python3 "${CLAUDE_PLUGIN_ROOT}/mangsang.py" impact $ARGUMENTS --target .`
 

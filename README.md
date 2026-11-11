@@ -1,7 +1,7 @@
 # mangsang — source repository
 
 mangsang is the net-shaped (網狀) coherence model of a project: named concepts, the documents, code and tests that
-realize them, relations a person confirmed between them, and which of those went stale when one end changed. What it
+realize them, relations signed by whoever judged them, and which of those went stale when one end changed. What it
 does and how to use it is [plugin/README.md](plugin/README.md) — the user documentation, shipped with every
 installation. This page is about the repository: installing it versus working on it.
 
@@ -139,6 +139,20 @@ lock changes shape, nothing that ran stops running, and the Python floor stays `
 the 2.3 entry now sees it in `check` and can write it with one command. On one long session's transcript 2.4.0 died
 with a TypeError and 2.5.0 read its four mid-turn messages as person turns, excluding its subagent hand-backs and
 task notifications.
+
+2.6.0 is minor: new commands (`outcomes`, `review`), new reason, time, read, outcome and review fields, and changed
+contracts. Reconfirm, move and concept reaffirm need `--why`; `--delegated` must cite a person's kept source;
+confirm accepts the agent's own signature with a reason. Move keeps `seen` for what it did not judge. Check says
+unverified and untested without an invariant; a projection's test medium needs a `verifies`. `lookup --brief`
+gives at most two lines; `impact --files` scopes exact files. Adopting scripts or skills with missing reasons or
+free-text delegations are refused: add `--why`, and record the person's words or sign as the agent. Check adds
+observations (`unrecorded-delegation N`, unverified/untested concepts, `reviewed by a person: 0 of M`). A projection
+invariant naming `test` goes FAILED for each concept whose test only realizes it: relate `TEST verifies CODE`
+only where the test calls the symbol and asserts on what it does, or narrow the invariant with its reason —
+never add a verifies where the test only names the symbol. The coherence role can take `--files {files}` once
+the runner substitutes it. Not a patch: new commands and fields. Not a major: existing record fields retain their
+shape, nothing that ran stops running except refused unreasoned or unrecorded signatures (the contract), and
+the Python floor is unchanged.
 
 hunsu's `check` fails a linked plugin whose source differs from the
 installed

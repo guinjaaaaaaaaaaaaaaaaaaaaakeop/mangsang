@@ -235,7 +235,7 @@ class TestProvenance(Env):
         code, out = self.main({}, "confirm", os.path.join(self.pj, "proposals.json"), "--by", "tester", "--target", self.pj)
         self.assertEqual(code, 0, out)
         rels = {r["dst"]: r for r in mangsang.decl(self.pj)["relations"]}
-        self.assertEqual(rels["memo.py:add"]["confirmed"], {"by": "tester"})
+        self.assertEqual(rels["memo.py:add"]["confirmed"].get("by"), "tester")
         self.rid = rels["memo.py:add"]["id"]
         self.other = os.path.join(self.pj, "mangsang", "relations", rels["memo.py:list_"]["id"] + ".json")
         with open(self.other, "rb") as fh:
@@ -243,23 +243,37 @@ class TestProvenance(Env):
         write(os.path.join(self.pj, "memo.py"), CODE.replace("return 1", "return 2"))   # only `add` moves: one stale relation
 
     def reconfirmed(self, markers):
-        code, out = self.main(markers, "reconfirm", self.rid, "--target", self.pj)
+        code, out = self.main(markers, "reconfirm", self.rid, "--why", "add still appends; only its return moved", "--target", self.pj)
         self.assertEqual(code, 0, out)
         r = next(x for x in mangsang.decl(self.pj)["relations"] if x["id"] == self.rid)
         with open(self.other, "rb") as fh:
             self.assertEqual(fh.read(), self.other_bytes, "an old signature is never relabeled")
         return r["confirmed"]
 
+    def test_A2_reconfirm_by_an_agent_without_why_is_refused_and_with_why_keeps_the_reason(self):
+        path = os.path.join(self.pj, "mangsang", "relations", self.rid + ".json")
+        with open(path, "rb") as fh:
+            before = fh.read()
+        code, out = self.main({"AGENT_HOST": "claude-code"}, "reconfirm", self.rid, "--target", self.pj)
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("--why", out)
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), before, "a refused reconfirm writes nothing")
+        c = self.reconfirmed({"AGENT_HOST": "claude-code"})
+        self.assertEqual(c.get("agent"), "Claude Code", c)
+        self.assertEqual(c.get("why"), "add still appends; only its return moved", c)
+        self.assertRegex(str(c.get("at")), r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
     def test_R7_reconfirm_under_explicit_codex_thread_signs_that_thread(self):
-        self.assertEqual(self.reconfirmed({"AGENT_HOST": "codex", "CODEX_THREAD_ID": "T"}), {"agent": "Codex (thread T)"})
+        self.assertEqual(self.reconfirmed({"AGENT_HOST": "codex", "CODEX_THREAD_ID": "T"}).get("agent"), "Codex (thread T)")
 
     def test_R7_reconfirm_under_mixed_reproduction_1_signs_generic_codex(self):
         self.assertEqual(self.reconfirmed({"AGENT_HOST": "codex", "AGENT_WORKER": "1", "CLAUDECODE": "1",
-                                           "CLAUDE_CODE_SESSION_ID": SESSION}), {"agent": "Codex"})
+                                           "CLAUDE_CODE_SESSION_ID": SESSION}).get("agent"), "Codex")
 
     def test_R7_reconfirm_under_explicit_claude_with_stale_thread_signs_claude(self):
         self.assertEqual(self.reconfirmed({"AGENT_HOST": "claude-code", "CODEX_THREAD_ID": "stale-parent",
-                                           "CLAUDE_CODE_SESSION_ID": SESSION}), {"agent": "Claude (%s)" % MODEL})
+                                           "CLAUDE_CODE_SESSION_ID": SESSION}).get("agent"), "Claude (%s)" % MODEL)
 
 
 import hostcall  # noqa: E402  (the vendored adapter beside the engine, in plugin/)

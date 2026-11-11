@@ -1,6 +1,6 @@
 ---
-description: Stale relations were re-read and still hold; `seen` becomes what the tree has now — signed by the person (--by), a delegation, or (neither, run by an agent) the agent's own; a fresh relation records nothing
-argument-hint: <id>... [--by NAME --approved-in source:ID | --delegated WHY] [--evidence "..."]
+description: Re-read relations with a reason; retain why, at, comparison read and stale outcome; an unchanged fresh relation records nothing
+argument-hint: <id>... --why "..." [--by NAME --approved-in source:ID | --delegated source:ID] [--evidence "..."]
 ---
 !`python3 "${CLAUDE_PLUGIN_ROOT}/mangsang.py" reconfirm $ARGUMENTS --target .`
 

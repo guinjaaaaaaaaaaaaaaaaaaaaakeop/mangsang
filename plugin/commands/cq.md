@@ -1,6 +1,6 @@
 ---
-description: Ask the domain questions (answered-by a concept's means) and audit that the answers are alive; add/revise/retire declare them
-argument-hint: [add|revise|retire ID --text .. --verify '{..}' --by NAME] [--findings]
+description: Ask domain questions or declare them with a reason and signature; retirement keeps why and at, unsigned allowed at a terminal
+argument-hint: [run | add|revise|retire ID] [--text "..."] [--verify JSON] [--why "..."] [--by NAME --approved-in source:ID | --delegated source:ID] [--findings]
 ---
 !`python3 "${CLAUDE_PLUGIN_ROOT}/mangsang.py" cq $ARGUMENTS --target .`
 

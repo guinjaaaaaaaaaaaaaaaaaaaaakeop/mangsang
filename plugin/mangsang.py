@@ -27,14 +27,14 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 characters), then how many relations are stale or broken when any are, and how many tracked files
                                 are unseen and how many registered ones nothing relates to (by directory, the recently changed
                                 first); an empty net prints nothing
-  confirm <proposals.json> --by NAME | --delegated WHY
-                                store relations after checking: anchors exist, predicate is in the vocabulary, no duplicates; the
+  confirm <proposals.json> [--why WHY] [--by NAME --approved-in source:ID | --delegated source:ID]
+                                neither signer flag: the agent’s own judgment, with a reason; store relations after checking: anchors exist, predicate is in the vocabulary, no duplicates; the
                                 rejected stay in the file, each with why (a file not registered: its `register` command) — fix, run again
   observe [--reset [--at REV]]  this machine's change list: --reset takes a baseline (from git at REV if given), otherwise prints what moved since it
-  impact [--findings] [--only ANCHOR-PREFIX...]
+  impact [--findings] [--only ANCHOR-PREFIX...] [--files FILE...]
                                 observe, then events x relations -> stale / broken (grouped by file when the file is gone), and the concepts
                                 owing a re-read (`owed`; cq fails them). exit 1 when anything is unresolved (usable as a check);
-                                --only judges only relations touching those anchors (a slice's check); --findings prints `dwitbuk/findings@1`
+                                --files scopes exact files (empty means none), --only prefixes; --findings prints `dwitbuk/findings@1`
   judge request --out DIR [--ids ID...]   the stale relations as a packet: the possibly-stale text, the changed text, the quote confirmed.
                                 DIR is a directory (an existing one is used as is): the packet is DIR/judge-request.json, its path printed;
                                 an earlier round's request and response there are moved aside, named by their time
@@ -46,7 +46,7 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
   cq [run]                      ask the competency questions; audits both directions — a question whose presuppositions fail is UNANSWERABLE
                                 (the model moved out from under it), model content no question examines is UNQUESTIONED; exit 1 on any of the three.
                                 A question declared `{"kind": "open"}` is asked before anything answers it: listed OPEN, an observation, not a failure
-  cq add|revise|retire ID       declare a question (--text + --verify JSON, --by|--delegated) — refused if it cannot be asked of the current model;
+  cq add|revise|retire ID       declare a question (--text + --verify JSON, --why WHY, optional person/source signature) — refused if it cannot be asked of the current model;
                                 retiring keeps the record (--why). One file per CQ under mangsang/cq/; legacy cq.json still read
   report [--out FILE] [--html FILE]
                                 the net as one page for a person: concepts and what realizes them, the questions and their state,
@@ -62,19 +62,25 @@ sections that realize it. Relations tie projections to concepts (`realizes`) and
                                 nothing on it / excepted (with its reason) / not in the tree (read-only) — size the edit as code + relations. Also an anchor
                                 (`concept:NAME`, `file:symbol`), including relations on what reads, holds or lies inside the edited anchor;
                                 or a relation id (that relation, whole)
-  lookup <path> --brief         the same as at most five lines, one per concept (or other end) reached: its meaning's first sentence
-                                (and the next, when the first is a bare name like "첫 화면."), cut at ~160 characters,
-                                and `(N relation(s); K stale)` when any is stale; no ids, no quotes. A tracked file the net does not see
-                                gets one line; registered with nothing on it, or not in the tree, prints nothing — a reader's first look
-  move [ID...] --by NAME | --delegated WHY [--dry-run]   after a refactoring: a broken relation whose dead `file:symbol` / `file#heading` has exactly one
-                                new home is retired (why: moved) and re-confirmed there with the same evidence; ambiguous or homeless ones are left for a person
-  reconfirm <id>... [--by NAME | --delegated WHY] [--evidence "..."]
+  lookup <path> --brief         at most two lines: relations and reached concepts, stale/broken/disputed counts, then a heading-rename
+                                warning; registered with no relations and check-failing unregistered files are said
+  move [ID...] --why WHY [--by NAME --approved-in source:ID | --delegated source:ID] [--dry-run]
+                                carry unambiguous moves; preserve seen for text not judged, keep read; retire the old as moved
+  vocabulary [--write]          list the engine’s predicate reading; --write stores it
+  outcomes [--since REV|DATE] [--json]
+                                read-only counts of handled staleness and what stays open
+  review queue [--concept NAME] [--limit N] [--markdown | --json]
+  review status [--concept NAME]
+  review accept|reject ID... --by NAME --approved-in source:ID [--why WHY]
+                                a person's recorded review; rejection requires why; accept also takes concept:NAME
+
+  reconfirm <id>... --why WHY [--by NAME --approved-in source:ID | --delegated source:ID] [--evidence "..."]
                                 a re-read stale relation still holds: `seen` becomes what the tree has now; the evidence must still be in the text.
                                 Already fresh records nothing unless the quote or person changes; older fingerprint shapes still upgrade.
                                 Run by an agent with neither flag, it is the agent's own re-read, signed `{agent: ...}` — never a person's name
 
-Two places. `mangsang/` is the project's knowledge (registry, vocabulary, cq, one file per relation) — committed, changed only when a human
-confirms. `.mangsang/` holds this machine's baseline for `observe` — not committed, and nothing a judgment depends on: staleness is judged
+Two places. `mangsang/` is the project's knowledge (registry, vocabulary, cq, one file per relation) — committed, changed by signed judgments.
+`.mangsang/` holds this machine's baseline for `observe` — not committed, and nothing a judgment depends on: staleness is judged
 against `seen` in each relation, so a fresh clone answers the same as the machine that confirmed.
 mangsang never proposes a relation and never judges meaning; it checks, stores, fingerprints and diffs.
 `source add` keeps what people said as anchors (`mangsang/sources/<id>.json`); a model can be grounded in a conversation as
@@ -161,19 +167,64 @@ def running_agent():
 RECORD_KINDS = ("relations", "retired", "concepts", "cq", "sources")   # the folders whose files are record objects: each says which mangsang wrote it
 
 
-def signature(by, delegated):
-    """The judgment's author line. A --delegated value matching a delegation id (D-xxxx, chongdae's `delegate`)
-    is stored as a structured reference — machine-readable, so no reason string is pasted N times — but mangsang
-    never resolves it: whose delegation it is and whether it exists is the record-reader's audit (dwitbuk), not
-    this engine's coupling. Any other value stays a free-form why-string, as before. A person's name put there by an
-    agent cites where the person approved (`approved-in`) and, when that approval is a reply to the agent's own
-    proposal, the proposal (`approval-of`): a one-word yes to an agent's list is a weaker ground than the person's own
-    words, and the record says which it was."""
+def signature(args, why=None, required=False, optional=False, defer_reason=False):
+    """Validate the judgment's authority and reason before any record is written."""
+    by, delegated = args.by, args.delegated
+    reason = why if why is not None else getattr(args, "why", None)
+    if by and delegated:
+        raise SystemExit("pass exactly one of --by NAME or --delegated source:ID")
     if by:
-        return {"by": by, **({"approved-in": APPROVED_IN} if APPROVED_IN else {}), **({"approval-of": APPROVAL_OF} if APPROVED_IN and APPROVAL_OF else {})}
-    if delegated and DELEGATION_REF.match(delegated.strip()):
-        return {"delegated": {"ref": delegated.strip()}}
-    return {"delegated": delegated}
+        sig = {"by": by, **({"approved-in": APPROVED_IN} if APPROVED_IN else {}),
+               **({"approval-of": APPROVAL_OF} if APPROVED_IN and APPROVAL_OF else {})}
+    elif delegated:
+        ref = delegated.strip()
+        if re.fullmatch(r"D-[0-9a-f]+", ref):
+            raise SystemExit('this D-id cannot be checked here; record the person\'s words with mangsang source add ID ... and pass --delegated source:ID --why "..."; the D-id may be named inside --why as a note')
+        sid = ref.removeprefix("source:")
+        src = next((x for x in decl(args.target)["sources"] if x["id"] == sid), None)
+        if not src:
+            raise SystemExit("keep the person's words with mangsang source add ID ... and pass --delegated source:ID --why ...; an agent's own judgment uses neither --by nor --delegated, with --why")
+        roster = people(args.target) or {}
+        if not roster.get("people"):
+            raise SystemExit("a delegation needs people.json listing the person (asked, never derived from an account or email) before their words can be kept")
+        speaker = str(src.get("speaker", "")).strip()
+        if speaker not in roster["people"] or any(speaker.startswith(x) for x in roster.get("agents", [])):
+            raise SystemExit("%s's words: a delegation cites a person's words listed in people.json" % speaker)
+        sig = {"delegated": {"source": "source:" + sid, "speaker": speaker}}
+    elif running_agent():
+        sig = {"agent": running_agent()}
+    elif optional:
+        sig = {}
+    else:
+        raise SystemExit("pass --by NAME to sign this judgment")
+    if not defer_reason and (required or delegated or sig.get("agent")) and not (reason or "").strip():
+        forms = {
+            "confirm": 'confirm PROPOSALS --why "why the relations hold"',
+            "reconfirm": 'reconfirm ID --why "what was compared and why the relation still holds"',
+            "move": 'move ID --why "what was compared and why the relation holds at its new home"',
+            "retire": 'retire ID --why "why the relation is retired"',
+            "concept": {
+                "add": 'concept add NAME --means "one sentence" --why "why this meaning holds"',
+                "revise": 'concept revise NAME --means "the new sentence" --why "why this meaning holds"',
+                "reaffirm": 'concept reaffirm NAME --why "what was compared and why the sentence still holds"',
+                "drift": 'concept drift NAME --why "what no longer holds"',
+            },
+            "cq": {
+                "add": 'cq add ID --text "the question" --verify \'{"kind":"open"}\' --why "why this question is declared"',
+                "revise": 'cq revise ID --text "the question" --verify \'{"kind":"open"}\' --why "why this question is revised"',
+                "retire": 'cq retire ID --why "why this question is retired"',
+            },
+        }
+        form = forms[args.cmd]
+        if isinstance(form, dict):
+            form = form[args.mode]
+        raise SystemExit("a reason is required: " + form)
+    if (reason or "").strip():
+        sig["why"] = reason
+    sig["at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return sig
+
+
 LEGACY_VERIFIES = {"propagates": "dst->src", "means": "src (a test) proves dst; when dst changes the test may be stale"}
 DEFAULT_VOCAB = {
     "documents": {"propagates": "dst->src", "means": "src (a document section) describes dst's behavior; when dst changes the section may be stale"},
@@ -521,8 +572,7 @@ def rel_id(r):
 
 
 def cmd_confirm(args):
-    if not (args.by or args.delegated):
-        raise SystemExit("say who confirmed (--by) or why the human delegated it (--delegated)")
+    sig = signature(args, defer_reason=True)
     d = decl(args.target)
     files, unreadable = snapshot(args.target, d["registry"])
     known = {r["id"] for r in d["relations"]}
@@ -533,7 +583,8 @@ def cmd_confirm(args):
         raise SystemExit("%s has no `relations`" % args.proposals)
     kept, rejected = [], []
     for p in proposals:
-        why = None
+        reason = p.get("why") or args.why
+        why = "no reason — pass --why or give this proposal a why" if not (reason or "").strip() and (sig.get("agent") or sig.get("delegated")) else None
         if p.get("predicate") not in d["vocabulary"]:
             why = "predicate %r is not in the vocabulary (%s)" % (p.get("predicate"), ", ".join(d["vocabulary"]))
         for end in ("src", "dst"):
@@ -553,33 +604,35 @@ def cmd_confirm(args):
         if rid and rid in known:
             why = "duplicate of %s" % rid
         if why:
-            rejected.append({**p, "why": why})
+            rejected.append({**p, "rejected": why})
             continue
         known.add(rid)
         # `seen`: the fingerprints the human confirmed against. Staleness is judged against these, not against a machine's baseline,
         # so a relation confirmed on one branch stays fresh through a merge unless the other branch changed what it saw.
         kept.append({"id": rid, "src": p["src"], "predicate": p["predicate"], "dst": p["dst"], "evidence": p["evidence"],
                      "seen": {a: files[split_anchor(a)[0]][split_anchor(a)[1]] for a in (p["src"], p["dst"])},
-                     "confirmed": signature(args.by, args.delegated)})
+                     "confirmed": {**signature(args, why=reason), "read": [confirm_read(args.target, a, files) for a in (p["src"], p["dst"])]}})
     d["relations"] += kept
     save_decl(args.target, d)
     # what was confirmed is in relations/; what was rejected stays in the proposals file, each entry with why, so fixing it and
     # running the same command again is the route — the file used to be consumed whole, and guin-site's six rejected
     # proposals (five on a plan document nobody had registered) were left only as printed lines
     if rejected:
-        save(args.proposals, {"relations": [{**{k: v for k, v in r.items() if k != "why"}, "rejected": r["why"]} for r in rejected]})
+        save(args.proposals, {"relations": rejected})
     else:
         os.remove(args.proposals)
     print("confirmed %d / rejected %d (%s)" % (len(kept), len(rejected), "the rejected kept in %s, each with why" % args.proposals if rejected else "proposals file consumed"))
     for r in rejected:
-        print("  rejected %s %s %s — %s" % (r.get("src"), r.get("predicate"), r.get("dst"), r["why"]))
+        print("  rejected %s %s %s — %s" % (r.get("src"), r.get("predicate"), r.get("dst"), r["rejected"]))
+    if kept and sig.get("agent"):
+        print("the agent's own judgment — no person read these relations")
     if rejected:
         import shlex
         unreg = sorted({f for r in rejected for f in (split_anchor(r.get("src", ""))[0], split_anchor(r.get("dst", ""))[0])
                         if f and f not in files and f not in ("concept", "source") and os.path.exists(os.path.join(args.target, f))})
         if unreg:
             print("  not registered: `register %s`" % " ".join(shlex.quote(f) for f in unreg))
-        print("  fix them (or delete the ones that were wrong) and run `confirm %s --by NAME|--delegated WHY` again — the confirmed ones are not in it any more"
+        print("  fix them (or delete the ones that were wrong) and run `confirm %s --why \"...\"` again — the confirmed ones are not in it any more"
               % shlex.quote(args.proposals))
     return 1 if rejected else 0
 
@@ -625,6 +678,33 @@ def diff_events(base, files):
     return events
 
 
+def touched(target, files, anchor, r, ev=None, unjudged=None):
+    f, key = split_anchor(anchor)
+    if anchor in r.get("seen", {}):
+        if files[f][key] == r["seen"][anchor]:
+            return False
+        # fingerprint-format compatibility: `seen` written before the current format holds an older shape — a raw
+        # text hash (pre-token era), a numeric-token hash (pre-tok_name era), or the anchor's own tokens alone (before
+        # a fingerprint covered what the anchor reads). If any recomputation over the current bytes equals the stored
+        # value, the bytes the confirmer read have not changed — only the fingerprint format did. Not stale; the record
+        # upgrades itself on the next confirm/reconfirm. (What the anchor reads may have moved meanwhile; an old
+        # `seen` cannot tell, and says so only by being upgraded.)
+        texts = texts_of(target, f)
+        if not (texts and key in texts):
+            return True
+        old = r["seen"][anchor]
+        # (a Markdown `seen` from before trailing blank lines left the fingerprint was a raw hash of the section as it stood —
+        # often the file's last section, ending at one newline: that shape is tried too)
+        return not (fp(texts[key]) == old or fp(texts[key], f) == old or fp_legacy_numeric(texts[key], f) == old
+                    or (anchors.kind_of(f) == "markdown" and fp(texts[key].rstrip() + "\n") == old))
+    if ev is None:
+        if unjudged is not None:
+            unjudged.append(r["id"])
+        return False
+    e = ev.get(f, {})
+    return key in e.get("changed", []) or (key == "" and bool(e))
+
+
 def compute_impact(target, d, only=None, persist=False):
     """(stale, broken, unjudged, files). Stale = an anchor the relation propagates from differs from what its confirmer saw (`seen`);
     relations without `seen` are judged against this machine's baseline, or listed as unjudged when there is none. Reads the tree
@@ -638,31 +718,6 @@ def compute_impact(target, d, only=None, persist=False):
         f, key = split_anchor(anchor)
         return f in files and key in files[f]
 
-    def touched(anchor, r):
-        f, key = split_anchor(anchor)
-        if anchor in r.get("seen", {}):
-            if files[f][key] == r["seen"][anchor]:
-                return False
-            # fingerprint-format compatibility: `seen` written before the current format holds an older shape — a raw
-            # text hash (pre-token era), a numeric-token hash (pre-tok_name era), or the anchor's own tokens alone (before
-            # a fingerprint covered what the anchor reads). If any recomputation over the current bytes equals the stored
-            # value, the bytes the confirmer read have not changed — only the fingerprint format did. Not stale; the record
-            # upgrades itself on the next confirm/reconfirm. (What the anchor reads may have moved meanwhile; an old
-            # `seen` cannot tell, and says so only by being upgraded.)
-            texts = texts_of(target, f)
-            if not (texts and key in texts):
-                return True
-            old = r["seen"][anchor]
-            # (a Markdown `seen` from before trailing blank lines left the fingerprint was a raw hash of the section as it stood —
-            # often the file's last section, ending at one newline: that shape is tried too)
-            return not (fp(texts[key]) == old or fp(texts[key], f) == old or fp_legacy_numeric(texts[key], f) == old
-                        or (anchors.kind_of(f) == "markdown" and fp(texts[key].rstrip() + "\n") == old))
-        if ev is None:
-            unjudged.append(r["id"])
-            return False
-        e = ev.get(f, {})
-        return key in e.get("changed", []) or (key == "" and bool(e))
-
     stale, broken = [], []
     for r in d["relations"]:
         if only and not any(a.startswith(tuple(only)) for a in (r["src"], r["dst"])):
@@ -672,7 +727,7 @@ def compute_impact(target, d, only=None, persist=False):
             broken.append({"id": r["id"], "dead": dead})
             continue
         prop = d["vocabulary"].get(r["predicate"], {}).get("propagates", "none")
-        changed = [a for a, ok in ((r["dst"], prop in ("dst->src", "both")), (r["src"], prop in ("src->dst", "both"))) if ok and touched(a, r)]
+        changed = [a for a, ok in ((r["dst"], prop in ("dst->src", "both")), (r["src"], prop in ("src->dst", "both"))) if ok and touched(target, files, a, r, ev, unjudged)]
         if changed:
             # `because` is the end that actually changed — for `both` it used to name dst whatever had moved, so a section
             # edit read as "<- concept:x" and `--show` went looking for a change in the concept
@@ -682,54 +737,139 @@ def compute_impact(target, d, only=None, persist=False):
     return stale, broken, sorted(set(unjudged)), files
 
 
-def what_changed(target, r, anchor):
-    """The anchor's text as its confirmer saw it and as it reads now, as a unified diff — so a person re-reading a stale
-    relation reads the change, not just the fact of one. `seen` keeps fingerprints, not text; git keeps the text: the commit
-    that last wrote the relation's file is when it was confirmed, and the anchor is read from the tree at that commit
-    (a concept's `means` from its file then). When the anchor's own text is what it was and something it reads moved — a
-    constant, a helper, an import — that part is diffed, named. None when there is no such commit (the relation was never
-    committed)."""
-    import difflib, subprocess
-    git = lambda *a: subprocess.run(["git", *a], cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    for folder in ("relations", "retired"):
-        c = git("log", "-1", "--format=%H", "--", "%s/%s/%s.json" % (DECL, folder, r["id"])).stdout.strip()
-        if c:
-            break
-    else:
-        return None
+def current_parts(target, anchor):
     f, key = split_anchor(anchor)
-    # `REV:path` in git is the repository root's path; `REV:./path` is this directory's — and a target is often a
-    # directory inside a repository (a playground of several models, a project in a monorepo): the first form never
-    # found anything there and the message blamed a missing commit
-    if f == "concept":
-        old = git("show", "%s:./%s/concepts/%s.json" % (c, DECL, key.lstrip(":")))
-        old_text = json.loads(old.stdout).get("means") if old.returncode == 0 and old.stdout.strip() else None
-        new_text = (texts_of(target, f) or {}).get(key)
-        old_parts = [(key, old_text)] if old_text is not None else None
-        new_parts = [(key, new_text)] if new_text is not None else None
-    elif f == "source":
-        return None   # what was said does not change
-    else:
-        old = git("show", "%s:./%s" % (c, f))
-        old_parts = (anchor_parts(f, old.stdout.replace("\r\n", "\n")) or {}).get(key) if old.returncode == 0 else None
-        new_parts = (anchor_parts(os.path.join(target, f)) or {}).get(key)
-    if old_parts is None or new_parts is None:
-        return None
-    olds, news = dict(old_parts), dict(new_parts)
-    nl = lambda t: t if t.endswith("\n") else t + "\n"   # a concept's meaning is one line with no newline: without one, the - and + lines ran together
+    if f in ("concept", "source"):
+        text = (texts_of(target, f) or {}).get(key)
+        return [(key, text)] if text is not None else None
+    return (anchor_parts(os.path.join(target, f)) or {}).get(key)
+
+
+def text_sha(parts):
+    """Hash full text, including same-file reads in anchors.parts order."""
+    return hashlib.sha256("\x01".join(t for _, t in parts).encode("utf-8")).hexdigest()
+
+
+def earlier_text(target, r, anchor):
+    """Find only a git version whose fingerprint matches the recorded seen."""
+    import subprocess
+    git = lambda *a: subprocess.run(["git", *a], cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if git("rev-parse", "--is-inside-work-tree").stdout.strip() != "true":
+        return None, "no git history here"
+    shallow = git("rev-parse", "--is-shallow-repository").stdout.strip() == "true"
+    candidates = [anchor]
+    if r.get("moved-from"):
+        old = load(os.path.join(target, DECL, "retired", r["moved-from"] + ".json"))
+        for end in ("src", "dst"):
+            if r[end] == anchor and old.get(end) and old[end] not in candidates:
+                candidates.append(old[end])
+    relation_paths = ["%s/%s/%s.json" % (DECL, folder, r["id"]) for folder in ("relations", "retired")]
+    commits = git("log", "-20", "--format=%H", "--", *relation_paths).stdout.splitlines()
+    anchor_paths = []
+    for candidate in candidates:
+        f, key = split_anchor(candidate)
+        anchor_paths.append("%s/concepts/%s.json" % (DECL, key.lstrip(":")) if f == "concept" else f)
+    commits += git("log", "-20", "--format=%H", "--", *anchor_paths).stdout.splitlines()
+    seen = (r.get("seen") or {}).get(anchor)
+    for commit in dict.fromkeys(commits):
+        for candidate in candidates:
+            f, key = split_anchor(candidate)
+            path = "%s/concepts/%s.json" % (DECL, key.lstrip(":")) if f == "concept" else f
+            got = git("show", "%s:./%s" % (commit, path))
+            if got.returncode:
+                continue
+            text = got.stdout.replace("\r\n", "\n")
+            if f == "concept":
+                try:
+                    parts = [(key, json.loads(text)["means"])]
+                except (ValueError, KeyError):
+                    continue
+            elif f == "source":
+                continue
+            else:
+                parts = (anchor_parts(f, text) or {}).get(key)
+            if not parts:
+                continue
+            own = parts[0][1]
+            fps = (fp_parts(f, parts), fp(own), fp(own, f), fp_legacy_numeric(own, f))
+            if seen is not None and (seen in fps or (anchors.kind_of(f) == "markdown" and fp(own.rstrip() + "\n") == seen)):
+                return commit, parts
+    return None, ("a shallow clone: " if shallow else "") + "git holds no version that fingerprints to what the confirmer saw"
+
+
+def read_entry(target, r, anchor, files, new_anchor=None):
+    """The exact comparison, capped for storage and all printed views."""
+    import difflib
+    dest = new_anchor or anchor
+    f, key = split_anchor(dest)
+    entry = {"anchor": dest, "seen": (r.get("seen") or {}).get(anchor), "now": files.get(f, {}).get(key)}
+    commit, old = earlier_text(target, r, anchor)
+    new = current_parts(target, dest)
+    if commit is None or new is None:
+        entry["earlier"] = old if commit is None else "the current anchor is gone"
+        return entry
+    olds, news = dict(old), dict(new)
+    old_key = split_anchor(anchor)[1]
+    if old_key != key:
+        olds[key] = olds.pop(old_key, "")
+    nl = lambda t: t if t.endswith("\n") else t + "\n"
     out = []
-    for label in [l for l, _ in new_parts] + [l for l, _ in old_parts if l not in news]:
+    for label in list(news) + [k for k in olds if k not in news]:
         o, n = olds.get(label, ""), news.get(label, "")
         if o == n:
             continue
-        # the anchor itself, another declaration of its file it reads, or an import binding it reads
-        name = anchor if label == key else ("%s%s, read by %s" % (f, label, anchor) if not label.startswith("import ") else "%s: `%s`, read by %s" % (f, label, anchor))
-        out.append("".join(difflib.unified_diff(nl(o).splitlines(True), nl(n).splitlines(True), "%s @ %s" % (name, c[:8]), "%s @ now" % name, n=1)))
-    if not out:
-        # the words are the same and the fingerprint is not: the rule that cuts the anchor changed under it (a title heading's
-        # section, a token-fingerprint format) — nothing to re-read; a reconfirm records the new fingerprint
-        return "(the text of %s is exactly what it was at %s — only its fingerprint's rule changed; nothing to re-read)" % (anchor, c[:8])
-    return "".join(out)
+        name = dest if label == key else ("%s%s, read by %s" % (f, label, dest) if not label.startswith("import ") else "%s: `%s`, read by %s" % (f, label, dest))
+        out.append("".join(difflib.unified_diff(nl(o).splitlines(True), nl(n).splitlines(True),
+                                             "%s @ %s" % (name, commit[:8]), "%s @ now" % name, n=1)))
+    diff = "".join(out)
+    if not diff:
+        diff = "(the text of %s is exactly what it was at %s — only its fingerprint's rule changed; nothing to re-read)" % (dest, commit[:8])
+    cut = len(diff) > 4000
+    if cut:
+        marker = "\n… (diff cut)\n"
+        diff = diff[:4000 - len(marker)] + marker
+    entry.update(against=commit, text_sha256={"seen": text_sha(old), "now": text_sha(new)}, diff=diff, cut=cut)
+    return entry
+
+
+def confirm_read(target, anchor, files):
+    f, key = split_anchor(anchor)
+    return {"anchor": anchor, "fp": files[f][key], "text_sha256": text_sha(current_parts(target, anchor))}
+
+
+def reread(target, r, files):
+    return [read_entry(target, r, a, files) for a in (r["src"], r["dst"])
+            if a not in (r.get("seen") or {}) or touched(target, files, a, r)]
+
+
+def what_changed(target, r, anchor, files):
+    entry = read_entry(target, r, anchor, files)
+    return entry.get("diff") or entry.get("earlier")
+
+
+def reread_outcome(target, r, files, stale_ids, evidence=None):
+    if r["id"] not in stale_ids:
+        return {}
+    both = all(a not in (r.get("seen") or {}) or touched(target, files, a, r) for a in (r["src"], r["dst"]))
+    return {"outcome": "other-end-updated" if both else "re-quoted" if evidence is not None and evidence != r["evidence"] else "held"}
+
+
+def retirement_outcome(r, stale_ids, broken_ids):
+    was = "broken" if r["id"] in broken_ids else "stale" if r["id"] in stale_ids else "fresh"
+    return {"was": was, **({"outcome": "retired"} if was != "fresh" else {})}
+
+
+def concept_outcome(d, name, outcome, ids):
+    found = [r["id"] for r in d["relations"] if r["id"] in ids and "concept:" + name in (r["src"], r["dst"])]
+    return {"outcome": outcome, "stale": found} if found else {}
+
+
+def concept_read(target, d, c):
+    files, _ = snapshot(target, d["registry"])
+    return {"means_sha256": text_sha([("", c["means"])]),
+            "realized_by": [{"anchor": r["src"], "fp": files.get(split_anchor(r["src"])[0], {}).get(split_anchor(r["src"])[1])}
+                            for r in d["relations"] if r["predicate"] == "realizes" and r["dst"] == "concept:" + c["name"]],
+            "lost": [{"id": r["id"], "anchor": r["src"]} for r in d["retired"] if r["id"] in c.get("owes", [])]}
 
 
 def unread_by_a_person(sig):
@@ -737,11 +877,11 @@ def unread_by_a_person(sig):
     applied, or by the agent on its own."""
     if sig.get("delegated"):
         dl = sig["delegated"]
-        return "by delegation: %s" % (("ref " + dl["ref"]) if isinstance(dl, dict) else dl)
+        return who_signed(sig) if isinstance(dl, dict) and "source" in dl else "by delegation: %s" % (("ref " + dl["ref"]) if isinstance(dl, dict) else dl)
     if sig.get("judge") and not sig.get("approved-in"):
         return "by the judge %s, applied by %s: %s" % (sig["judge"], sig.get("applied-by") or "?", sig.get("why", ""))
     if sig.get("agent"):
-        return "by the agent %s, on its own" % sig["agent"]
+        return "by the agent %s, on its own" % sig["agent"] + (" — " + first_clause(sig["why"]) if sig.get("why") else "")
     return None
 
 
@@ -870,7 +1010,7 @@ def shared_text(a, cs, ids):
 
 def owed_text(c, lost):
     return ("concept:%s lost projection(s) %s since its sentence was affirmed — the questions it answers FAIL in `cq` until "
-            "`concept revise %s --means \"...\"` (it no longer holds) or `concept reaffirm %s --by NAME|--delegated WHY` (it does); "
+            "`concept revise %s --means \"...\"` (it no longer holds) or `concept reaffirm %s --why \"...\"` (it does); "
             "reconfirming what remains does not answer it" % (c["name"], ", ".join("%s (%s)" % x for x in lost), c["name"], c["name"]))
 
 
@@ -889,11 +1029,54 @@ def verifies_migration(r, changed):
 def cmd_impact(args):
     d = decl(args.target)
     stale, broken, unjudged, files = compute_impact(args.target, d, args.only)   # answers and leaves nothing behind: the verdict is what it prints
+    requested = getattr(args, "files", None)
+    scope_files = None
+    if requested is not None:
+        scope_files = set()
+        for path in requested:
+            if os.path.isabs(path):
+                relative = os.path.relpath(os.path.realpath(path), os.path.realpath(args.target))
+                if relative != ".." and not relative.startswith(".." + os.sep):
+                    path = relative
+            path = path.replace(os.sep, "/")
+            if path.startswith("./"):
+                path = path[2:]
+            scope_files.add(path)
+
+    def in_scope(*ends):
+        return ((not args.only or any(a.startswith(tuple(args.only)) for a in ends)) and
+                (scope_files is None or any(file_of(a) in scope_files for a in ends)))
+
+    selected = {r["id"] for r in d["relations"] if in_scope(r["src"], r["dst"])}
+    stale = [x for x in stale if x["id"] in selected]
+    broken = [x for x in broken if x["id"] in selected]
+    unjudged = [rid for rid in unjudged if rid in selected]
+    if scope_files is not None and not args.findings:
+        print("scope: %d file(s), %d relation(s) stand on them" % (len(scope_files), len(selected)))
+        if not scope_files:
+            print("nothing is in scope")
+        unregistered_files = scope_files - {e["path"] for e in d["registry"]}
+        if unregistered_files:
+            print("not registered: " + ", ".join(sorted(unregistered_files)))
+    disputes = []
+    waiting = []
+    for r in d["relations"]:
+        if not in_scope(r["src"], r["dst"]):
+            continue
+        state = review_state(d, r, files)
+        if state == "disputed-unrevised":
+            last = person_reviews(r)[-1]
+            text = "disputed %s %s %s %s — rejected by %s (%s): %s — revise it (change the projection, then reconfirm) or retire it" % (
+                r["id"], r["src"], r["predicate"], r["dst"], last["by"], last.get("approved-in", "source not recorded"), first_clause(last.get("why", "")))
+            disputes.append((r["id"], text))
+        elif state == "disputed-revised":
+            waiting.append((r["id"], review_description(d, r, files)))
     gone = gone_groups(args.target, d, broken, files)
     grouped = {rid for ids in gone.values() for rid in ids}
     moved, _ = plan_moves(args.target, d, broken, files, set())
     move_hints = {r["id"]: move_hint(r, new, signing=True) for r, new in moved if r["id"] not in grouped}
-    owed = owed_rereads(d, args.only)
+    owed = [(c, lost) for c, lost in owed_rereads(d)
+            if any(in_scope("concept:" + c["name"], src) for _, src in lost)]
     # a relation stale only through a read nobody related re-reads the wrong sentence: said with it, and grouped when it spans concepts
     unmodeled = unmodeled_reads(args.target, d, stale) if stale else {}
     shared = shared_reads(d, stale, unmodeled)
@@ -908,16 +1091,18 @@ def cmd_impact(args):
         findings += [{"kind": "broken", "where": "%s %s" % (x["id"], ", ".join(x["dead"])), "text": "dead anchor(s): the relation points at nothing%s" % (
                          "; %s is gone from the tree" % ", ".join(sorted({file_of(a) for a in x["dead"] if gone_from_tree(args.target, file_of(a))}))
                          if any(gone_from_tree(args.target, file_of(a)) for a in x["dead"]) else "")} for x in broken]
+        findings += [{"kind": "disputed", "where": rid, "text": text} for rid, text in disputes]
+        findings += [{"kind": "person-review", "layer": "observation", "where": rid, "text": text} for rid, text in waiting]
         for finding in findings:
             rid = finding["where"].split(" ")[0]
             if finding["kind"] == "broken" and rid in move_hints:
                 finding["text"] += "; " + move_hints[rid]
         # no person read these: a delegation, a judge's verdict applied, an agent's own re-read — observations of the record
         findings += [{"kind": "delegated", "where": "%s %s %s %s" % (r["id"], r["src"], r["predicate"], r["dst"]), "text": "re-confirmed %s" % unread_by_a_person(r["confirmed"])}
-                     for r in d["relations"] if isinstance(r.get("confirmed"), dict) and unread_by_a_person(r["confirmed"])]
+                     for r in d["relations"] if (scope_files is None or r["id"] in selected) and isinstance(r.get("confirmed"), dict) and unread_by_a_person(r["confirmed"])]
         findings += [{"kind": "owed-reread", "where": "concept:" + c["name"], "text": owed_text(c, lost)} for c, lost in owed]
         print(json.dumps({"artifact-type": "dwitbuk/findings@1", "source": "mangsang", "standing": True, "findings": findings}, ensure_ascii=False, indent=1))
-        return 1 if stale or broken or owed else 0
+        return 1 if stale or broken or owed or disputes else 0
     held = {}
     for x in stale:
         rel = next((r for r in d["relations"] if r["id"] == x["id"]), None) or {}
@@ -940,7 +1125,7 @@ def cmd_impact(args):
             # every end that moved: a relation whose section and concept both changed shows both (it used to show neither —
             # "A and B" is no anchor, and the diff was looked up by it)
             for end in x.get("changed") or [x["because"]]:
-                diff = what_changed(args.target, rel, end) if rel else None
+                diff = what_changed(args.target, rel, end, files) if rel else None
                 print("\n".join("      " + l for l in (diff or "(%s: no earlier text in git to compare against — the relation was not committed when it was confirmed, or the anchor is a source, which never changes; the change is known by its fingerprint)" % end).rstrip().split("\n")))
     for a, cs, ids in shared:
         print("  shared  " + shared_text(a, cs, ids))
@@ -963,10 +1148,14 @@ def cmd_impact(args):
     for c, lost in owed:
         # not a relation's state, and still the session's to act on: every question the concept answers fails until it is read
         print("  owed    " + owed_text(c, lost))
+    for rid, text in disputes:
+        print("  " + text)
+    for rid, text in waiting:
+        print("  %s — %s" % (rid, text))
     parts = [x for x in ("only %s" % ", ".join(args.only) if args.only else "",
                          "%d stale or broken relation(s), %d concept(s) owing a re-read" % (len(stale) + len(broken), len(owed)) if owed else "") if x]
-    print("unresolved_total = %d%s" % (len(stale) + len(broken) + len(owed), " (%s)" % "; ".join(parts) if parts else ""))
-    return 1 if stale or broken or owed else 0
+    print("unresolved_total = %d%s" % (len({e["id"] for e in stale + broken} | {rid for rid, _ in disputes}) + len(owed), " (%s)" % "; ".join(parts) if parts else ""))
+    return 1 if stale or broken or owed or disputes else 0
 
 
 JUDGE_REQUEST, JUDGMENT = "mangsang/judge-request@1", "mangsang/judgment@1"
@@ -1018,7 +1207,7 @@ def cmd_judge(args):
             # nothing to judge and said still-true — applied as a delegation. The packet carries the change itself (the diff since the
             # confirming commit, when git has it) and the declarations the changed side reads now, so the judge reads what a person would.
             ends = x.get("changed") or [x["because"]]
-            diffs = [what_changed(args.target, r, end) for end in ends]
+            diffs = [what_changed(args.target, r, end, files) for end in ends]
             reads = {}
             for end in ends:
                 f, key = split_anchor(end)
@@ -1119,7 +1308,8 @@ def cmd_judge(args):
             rejected.append("%s: drifted must quote the sentence verbatim from the stale text" % rid)
         else:
             kept.append(it)
-    files, _ = snapshot(args.target, d["registry"])
+    stale, _, _, files = compute_impact(args.target, d)
+    stale_ids = {x["id"] for x in stale}
     applied = []
     for it in kept:
         r = rels[it["relation"]]
@@ -1131,10 +1321,12 @@ def cmd_judge(args):
         elif it["verdict"] == "still-true":
             # the one safe application: what a human would do after reading — recorded as a delegation, never as a person's confirmation
             if all(split_anchor(a)[0] in files and split_anchor(a)[1] in files[split_anchor(a)[0]] for a in (r["src"], r["dst"])) and quoted(args.target, r["evidence"], r["src"], r["dst"]):
+                read = reread(args.target, r, files)
+                outcome = reread_outcome(args.target, r, files, stale_ids)
                 was_seen = r.get("seen")
                 r["seen"] = {a: files[split_anchor(a)[0]][split_anchor(a)[1]] for a in (r["src"], r["dst"])}
                 r.setdefault("history", []).append({"confirmed": r.get("confirmed"), "seen": was_seen, "evidence": r["evidence"]})
-                r["confirmed"] = {"judge": judge, **applied_by, "why": it["evidence"][:200]}
+                r["confirmed"] = {"judge": judge, **applied_by, "why": it["evidence"], "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "read": read, **outcome}
                 save(os.path.join(args.target, DECL, "relations", r["id"] + ".json"), r)
                 applied.append(r["id"])
             else:
@@ -1545,30 +1737,54 @@ def files_only_invariants(target, active):
     return out
 
 
-def unverified_concepts(d, active):
-    """[(concept, its code anchors, its test anchors)] — a concept realized in the media named `code` and `test` of the active
-    `projection` invariants, none of whose code anchors is the `dst` of a `verifies`: a change to its code asks no test
-    whether it still proves it. A `verifies` of the whole file does not count for a symbol in it — one such relation would
-    silence every concept with code there, whether or not the test calls their symbols. A projection invariant holds on `realizes` alone; three source models (118
-    relations, 11-06) had no `verifies` at all. Nothing when the vocabulary has no `verifies`."""
-    if "verifies" not in d["vocabulary"]:
-        return []
+def test_file(path):
+    """The derived test medium, by basename or a complete directory segment."""
+    parts = path.replace(os.sep, "/").split("/")
+    return (any(x in {"test", "tests", "__tests__", "spec"} for x in parts[:-1]) or
+            bool(re.fullmatch(r"test_.*\.py|.*_test\.py|conftest\.py|.*_test\.go|.*\.(?:test|spec)\.[^.]+", parts[-1])))
+
+
+def media_rule(active, invariant=None):
+    """Code and test predicates, with declared prefixes overriding each derived medium."""
     media = {}
-    for q in active:
-        if q.get("verify", {}).get("kind") == "projection":
-            for m, ps in (q["verify"].get("media") or {}).items():
-                media.setdefault(m, set()).update(p for p in ps if isinstance(p, str))
-    code, test = tuple(sorted(media.get("code", ()))), tuple(sorted(media.get("test", ())))
-    if not code or not test:
-        return []
-    verified = {r["dst"] for r in d["relations"] if r["predicate"] == "verifies"}
+    for q in ([invariant] if invariant is not None else active):
+        v = q.get("verify", {})
+        if v.get("kind") == "projection":
+            for medium, prefixes in (v.get("media") or {}).items():
+                media.setdefault(medium, set()).update(prefixes)
+
+    def is_test(a):
+        f = file_of(a)
+        return f is not None and (a.startswith(tuple(media["test"])) if "test" in media else test_file(f))
+
+    def is_code(a):
+        f = file_of(a)
+        return f is not None and not is_test(a) and (a.startswith(tuple(media["code"])) if "code" in media
+                                                    else anchors.kind_of(f) in {"python", "js", "component"})
+    return is_code, is_test
+
+
+def proof_of(d, name, is_code, is_test):
+    """Exact projection targets and the tests that verify them; realizes is navigation."""
+    pro = {r["src"] for r in d["relations"] if r["predicate"] == "realizes" and
+           r["dst"] == "concept:" + name and file_of(r["src"]) is not None}
+    code = sorted(a for a in pro if is_code(a))
+    targets = code or sorted(a for a in pro if not is_test(a))
+    return {"pro": sorted(pro), "code": code, "targets": targets, "tests": sorted(a for a in pro if is_test(a)),
+            "verifying": sorted(r["id"] for r in d["relations"] if r["predicate"] == "verifies" and
+                                is_test(r["src"]) and r["dst"] in targets)}
+
+
+def unverified_concepts(d, active):
+    """Code without proof, including concepts with no test relation at all."""
+    is_code, is_test = media_rule(active)
     out = []
     for c in sorted(d["concepts"], key=lambda c: c["name"]):
-        pro = {r["src"] for r in d["relations"] if r["predicate"] == "realizes" and r["dst"] == "concept:" + c["name"]}
-        cs = sorted(a for a in pro if a.startswith(code) and not a.startswith(test))
-        ts = sorted(a for a in pro if a.startswith(test))
-        if cs and ts and not any(a in verified for a in cs):
-            out.append((c["name"], cs, ts))
+        proof = proof_of(d, c["name"], is_code, is_test)
+        if proof["code"] and not proof["verifying"]:
+            related = bool(proof["tests"]) or any(r["predicate"] == "verifies" and is_test(r["src"]) and
+                                                r["dst"] in proof["pro"] for r in d["relations"])
+            out.append((c["name"], proof["code"], proof["tests"], related))
     return out
 
 
@@ -1744,10 +1960,17 @@ def eval_invariant(d, files, all_anchors, q, target="."):
     if v.get("kind") == "projection":
         media = v.get("media") or {}
         missing = []
+        is_code, is_test = media_rule([], q)
         for c in d["concepts"]:
+            proof = proof_of(d, c["name"], is_code, is_test)
             pro = [r["src"] for r in d["relations"] if r["predicate"] == "realizes" and r["dst"] == "concept:" + c["name"]]
             for medium, prefixes in media.items():
-                if not any(a.startswith(tuple(prefixes)) for a in pro):
+                if medium == "test":
+                    if not proof["verifying"]:
+                        reaches = "its code: " + ", ".join(proof["code"]) if proof["code"] else "any of its projections: " + ", ".join(proof["targets"])
+                        missing.append("%s lacks test (no `verifies` from %s reaches %s; a test's realizes is navigation, not proof)"
+                                       % (c["name"], ", ".join(prefixes), reaches))
+                elif not any(a.startswith(tuple(prefixes)) for a in pro):
                     missing.append("%s lacks %s" % (c["name"], medium))
         return not missing, "%d concept(s), %d gap(s)%s" % (len(d["concepts"]), len(missing), ("; ".join([": "] + missing).replace(": ; ", ": ") if missing else ""))
     if v.get("kind") == "registered":
@@ -1784,6 +2007,18 @@ def cmd_check(args):
     active = [q for q in cq_active(d) if q.get("verify", {}).get("kind") in INVARIANT_KINDS]
     failed = unaskable = 0
     findings = []
+    if d["relations"]:
+        text = person_review_observation(d, files)
+        say("  " + text)
+        findings.append({"kind": "person-review", "layer": "observation", "where": "relations", "text": text})
+    standing = [r.get("confirmed") or {} for r in d["relations"]] + [c.get("declared") or {} for c in d["concepts"]] + [q.get("declared") or {} for q in cq_active(d)]
+    unrecorded = sum(1 for sig in standing if isinstance(sig.get("delegated"), str) or
+                     isinstance(sig.get("delegated"), dict) and "ref" in sig["delegated"])
+    if unrecorded:
+        text = "%d standing judgments have unrecorded delegations; new delegations cite source:ID" % unrecorded
+        say("  unrecorded-delegation " + text)
+        findings.append({"kind": "unrecorded-delegation", "layer": "observation", "source": "mangsang",
+                         "where": "standing judgments", "text": text})
     for name, stored, read in vocabulary_differences(args.target, d):
         text = "mangsang/vocabulary.json " + ("does not store " if stored is None else "stores ") + vocabulary_change(name, stored, read) + " — `mangsang vocabulary --write` writes what it reads (nothing else changes)"
         say("  vocabulary   " + text)
@@ -1962,14 +2197,16 @@ def cmd_check(args):
         say("      and give a `registered` invariant their folder, so the next file there fails `check` instead: mangsang cq revise %s --verify %s "
             "--by NAME (each path there that is a file can go: the folder asks of it) — or name the files it does not claim in its `except`, "
             "with the reason where the project keeps its reasons" % (qid, shlex.quote(json.dumps(wider, ensure_ascii=False))))
-    # a projection invariant holds on `realizes` alone: a concept whose code no `verifies` reaches is changed without any test
-    # being asked whether it still proves it (three source models, 118 relations, no `verifies`: 11-06)
-    for name, cs, ts in unverified_concepts(d, active):
-        say("  %-12s concept:%s — %d test projection(s), and no `verifies` reaches any of its %d code anchor(s) (%s%s): a change to its code "
-            "asks no test whether it still proves it — relate `TEST verifies CODE` where a test calls the symbol and asserts on what it does"
-            % ("unverified", name, len(ts), len(cs), ", ".join(cs[:4]), " … +%d" % (len(cs) - 4) if len(cs) > 4 else ""))
-        findings.append({"kind": "unverified-code", "layer": "observation", "where": "concept:" + name, "source": "mangsang",
-                         "text": "realized in code (%s) and in tests (%s); no `verifies` has any of its code anchors as dst" % (", ".join(cs[:6]), ", ".join(ts[:6]))})
+    for name, cs, ts, related in unverified_concepts(d, active):
+        kind = "unverified" if related else "untested"
+        text = ("%d test projection(s), and no `verifies` from a test reaches its code (%s): a change to its code "
+                "asks no test whether it still proves it — relate `TEST verifies CODE` where a test calls the symbol and asserts on what it does"
+                % (len(ts), ", ".join(cs))) if related else "realized in code (%s) and no test relates to it" % ", ".join(cs)
+        if "verifies" not in d["vocabulary"]:
+            text += "; the vocabulary has no `verifies`"
+        say("  %-12s concept:%s — %s" % (kind, name, text))
+        findings.append({"kind": kind + "-code", "layer": "observation", "where": "concept:" + name,
+                         "source": "mangsang", "text": text})
     loose = ungrounded_sources(d, args.target)
     if loose:
         say("  %-12s %d thing(s) a person said ground nothing — no relation uses them, no signature or registered document cites them: %s" % ("ungrounded", len(loose), ", ".join("source:" + i for i in loose)))
@@ -2099,8 +2336,6 @@ def cq_declare(args):
     if args.mode in ("add", "revise"):
         if not args.id or not re.fullmatch(r"[\w-]+", args.id):
             raise SystemExit("a CQ id is a word: letters, digits, _ or -")
-        if not (args.by or args.delegated):
-            raise SystemExit("say who asks this question (--by) or why the human delegated it (--delegated)")
         if args.mode == "add" and (args.id in byid or args.id in legacy):
             raise SystemExit("CQ %s exists — `cq revise` changes it" % args.id)
         if args.mode == "revise" and args.id not in byid:
@@ -2128,7 +2363,7 @@ def cq_declare(args):
             if problems:
                 raise SystemExit("CQ %s requires what does not stand in the model now:\n  %s\n(a required invariant keeps what the model holds — "
                                  "make it stand first, or leave it out)" % (args.id, "\n  ".join("%s %s" % p for p in problems)))
-        q["declared"] = signature(args.by, args.delegated)
+        q["declared"] = signature(args)
         save(os.path.join(folder, args.id + ".json"), q)
         print("CQ %s %s: %s" % (args.id, "declared" if args.mode == "add" else "revised", q["text"]))
         return 0
@@ -2138,7 +2373,7 @@ def cq_declare(args):
             raise SystemExit("no declared CQ %s" % args.id)
         if not args.why:
             raise SystemExit("--why: a retired question is a decision — what made it no longer worth asking?")
-        q["retired"] = {"why": args.why}
+        q["retired"] = signature(args, required=True, optional=True)
         save(os.path.join(folder, args.id + ".json"), q)
         print("CQ %s retired: %s (kept in the record)" % (args.id, args.why))
         return 0
@@ -2169,11 +2404,12 @@ def owe_for(d, r):
 
 def owes_line(c):
     return ("  concept %s lost a projection: its sentence owes a re-read (%s) — `concept revise %s --means \"...\"` if it no longer holds, "
-            "`concept reaffirm %s --by|--delegated` if it does; until then the questions it answers fail"
+            "`concept reaffirm %s --why \"...\"` if it does; until then the questions it answers fail"
             % (c["name"], ", ".join(c["owes"]), c["name"], c["name"]))
 
 
 def cmd_retire(args):
+    sig = signature(args, required=True, optional=True)
     if args.gone:
         if args.id:
             raise SystemExit("retire takes a relation id or --gone FILE.., not both")
@@ -2184,8 +2420,10 @@ def cmd_retire(args):
     r = next((x for x in d["relations"] if x["id"] == args.id), None)
     if not r:
         raise SystemExit("no relation %s" % args.id)
+    stale, broken, _, _ = compute_impact(args.target, d)
+    retirement = {**sig, **retirement_outcome(r, {x["id"] for x in stale}, {x["id"] for x in broken})}
     d["relations"].remove(r)
-    d["retired"].append({**r, "retired": {"why": args.why}})
+    d["retired"].append({**r, "retired": retirement})
     owed = owe_for(d, r)
     save_decl(args.target, d)
     print("retired %s (%s %s %s) — kept in `retired`" % (r["id"], r["src"], r["predicate"], r["dst"]))
@@ -2224,12 +2462,13 @@ def retire_gone(args):
         if not under:
             raise SystemExit("%s: not registered, and no relation stands on it — nothing for the net to retire" % q)
         files |= under
+    sig = signature(args, required=True, optional=True)
     hits = [r for r in d["relations"] if any(file_of(a) in files for a in (r["src"], r["dst"]))]
     for r in hits:
         d["relations"].remove(r)
     owed = {}
     for r in hits:
-        d["retired"].append({**r, "retired": {"why": args.why, "gone": sorted({file_of(a) for a in (r["src"], r["dst"]) if file_of(a) in files})}})
+        d["retired"].append({**r, "retired": {**sig, "was": "broken", "outcome": "retired", "gone": sorted({file_of(a) for a in (r["src"], r["dst"]) if file_of(a) in files})}})
     for r in hits:
         c = owe_for(d, r)
         if c is not None:
@@ -2248,12 +2487,10 @@ def retire_gone(args):
 
 def cmd_reconfirm(args):
     """A stale relation that still holds after someone read it. Only what the tree has now is recorded; a dead anchor is refused (retire it)."""
-    if not (args.by or args.delegated or running_agent()):
-        raise SystemExit("say who re-read it (--by) or why the human delegated it (--delegated)")
-    # an agent that re-read it itself signs as itself: {"agent": ...} — no person's name, no made-up delegation
-    sig = signature(args.by, args.delegated) if (args.by or args.delegated) else {"agent": running_agent()}
+    sig = signature(args, required=True)
     d = decl(args.target)
-    files, _ = snapshot(args.target, d["registry"])
+    stale, _, _, files = compute_impact(args.target, d)
+    stale_ids = {x["id"] for x in stale}
     root = os.path.join(args.target, DECL, "relations")
     for rid in args.ids:
         r = next((x for x in d["relations"] if x["id"] == rid), None)
@@ -2274,9 +2511,11 @@ def cmd_reconfirm(args):
         for a in (r["src"], r["dst"]):   # what the person re-read: the change itself, printed with the record of it
             if (r.get("seen") or {}).get(a) == files[split_anchor(a)[0]][split_anchor(a)[1]]:
                 continue   # this end did not move: nothing of it to re-read (it used to say "only its fingerprint's rule changed")
-            diff = what_changed(args.target, r, a)
+            diff = what_changed(args.target, r, a, files)
             if diff:
                 print("  %s changed since %s was confirmed:\n%s" % (a, rid, "\n".join("      " + l for l in diff.rstrip().split("\n"))))
+        read = reread(args.target, r, files)
+        outcome = reread_outcome(args.target, r, files, stale_ids, args.evidence)
         was = {"confirmed": r["confirmed"], "seen": r.get("seen"), "evidence": r["evidence"]}
         if args.evidence:
             r["evidence"] = args.evidence
@@ -2286,7 +2525,7 @@ def cmd_reconfirm(args):
         # and how many times this relation has been re-read stay in the file (they used to be overwritten — a record with no history)
         r.setdefault("history", []).append(was)
         r["seen"] = {a: files[split_anchor(a)[0]][split_anchor(a)[1]] for a in (r["src"], r["dst"])}
-        r["confirmed"] = dict(sig)
+        r["confirmed"] = {**sig, "read": read, **outcome}
         save(os.path.join(root, rid + ".json"), r)   # save_decl never rewrites an existing relation; this is the one command that does
         print("re-confirmed %s (%s %s %s)%s" % (rid, r["src"], r["predicate"], r["dst"], " as %s's own re-read — no person's" % sig["agent"] if sig.get("agent") else ""))
     return 0
@@ -2308,8 +2547,10 @@ def who_signed(sig):
     if sig.get("judge"):
         return "judged by %s, applied by %s" % (sig["judge"], sig.get("applied-by") or "?") + (" (read in %s)" % sig["approved-in"] if sig.get("approved-in") else "")
     if sig.get("agent"):
-        return "by the agent %s, on its own" % sig["agent"]
+        return "by the agent %s, on its own" % sig["agent"] + (" — " + first_clause(sig["why"]) if sig.get("why") else "")
     dl = sig.get("delegated")
+    if isinstance(dl, dict) and "source" in dl:
+        return "delegated: %s's words (%s)" % (dl["speaker"], dl["source"]) + (" — " + first_clause(sig["why"]) if sig.get("why") else "")
     if isinstance(dl, dict):
         return "delegated: ref %s" % dl.get("ref", "?")
     return "delegated: %s" % first_clause(dl or "?") if dl else "unsigned"
@@ -2464,6 +2705,7 @@ def cmd_lookup(args):
                 note += "; renaming the heading breaks it — `mangsang move` carries a rename while the rest of its section is unchanged"
             print("  %s  %s %s %s — %s%s" % (r["id"], mark(r["src"]), r["predicate"], mark(r["dst"]), state.get(r["id"], "fresh"),
                                             note))
+            print("      " + review_description(d, r, files))
             print("      \"%s\" — %s" % ("\n        ".join(r.get("evidence", "").split("\n")), who_signed(r.get("confirmed"))))
     print("%d relation(s) on %s, reaching %d concept(s) or anchor(s) — an edit here and their update are one piece of work, not two"
           % (len(rels), args.path, len({item[2] for item in rels})))
@@ -2485,7 +2727,7 @@ def lookup_relation(args, d):
             return 0
         print("no relation %s — `lookup` takes a relation id, `concept:NAME`, a file (as registered) or an anchor in one" % args.path)
         return 1
-    stale, broken, unjudged, _ = compute_impact(args.target, d, persist=False)
+    stale, broken, unjudged, files = compute_impact(args.target, d, persist=False)
     state = {x["id"]: "STALE now (%s changed since confirmed)" % x["because"] for x in stale}
     state.update({x["id"]: "BROKEN now (%s gone)" % ", ".join(x["dead"]) for x in broken})
     state.update({i: "unjudged (no `seen`, no baseline)" for i in unjudged if i not in state})
@@ -2498,6 +2740,10 @@ def lookup_relation(args, d):
     print("  %s  %s %s %s — %s" % (r["id"], r["src"], r["predicate"], r["dst"], state.get(r["id"], "fresh")))
     print("      \"%s\" — %s%s" % ("\n        ".join(r.get("evidence", "").split("\n")), who_signed(r.get("confirmed")),
                                   "; re-confirmed %d time(s)" % len(r["history"]) if r.get("history") else ""))
+    print("      " + review_description(d, r, files))
+    moved, _ = plan_moves(args.target, d, broken, files, {r["id"]})
+    for old, new in moved:
+        print("      " + move_hint(old, new))
     files = sorted({split_anchor(a)[0] for a in (r["src"], r["dst"])} - {"concept", "source"})
     if files:
         print("everything else on its file(s): %s" % "; ".join("`mangsang lookup %s`" % f for f in files))
@@ -2538,37 +2784,47 @@ def lookup_brief(args, d, rels, registered, on_disk):
                                                len(rels), "; %d stale" % k if k else ""))
         return 0
     if not rels:
-        if registered or not on_disk:
+        if not on_disk:
+            return 0
+        if registered:
+            if not split_anchor(args.path)[1]:
+                print("%s: registered, but no relation stands on it — impact never sees an edit here; relate what it carries (`mangsang check` lists it as unrelated)" % args.path)
             return 0
         tracked = tracked_files(args.target)
         exceptions = lookup_excepts(args.target, d, split_anchor(args.path)[0])
         if exceptions:
             print("%s: excepted — %s" % (args.path, "; ".join(first_clause(why) for _, _, why in exceptions)))
             return 0
+        if tracked is not None and args.path in tracked:
+            for q in cq_active(d):
+                v = q.get("verify", {})
+                if v.get("kind") == "registered":
+                    prefix = next((p for p in v.get("paths", []) if args.path.startswith(p)), None)
+                    if prefix is not None:
+                        print("%s: not registered, and `check` fails on it (%s asks of %s) — register and relate it, or except it with its reason"
+                              % (args.path, q["id"], prefix))
+                        return 0
         if tracked is None or args.path in tracked:
             print("%s: not registered — the net does not see it (no relation stands on it; edits here are never stale)" % args.path)
         return 0
     stale, broken, _, files = compute_impact(args.target, d, persist=False)
-    bad = {x["id"] for x in stale} | {x["id"] for x in broken}
+    bad = {x["id"] for x in stale + broken}
     concepts = {"concept:" + c["name"]: c for c in d["concepts"]}
     groups = {}
     for r, a, other, _ in rels:
         groups.setdefault(other, []).append(r)
-    order = sorted(groups, key=lambda o: (-sum(r["id"] in bad for r in groups[o]), not o.startswith("concept:"), -len(groups[o]), o))
-    shown = order if len(order) <= BRIEF_LINES else order[:BRIEF_LINES - 1]
-    for other in shown:
-        rs = groups[other]
-        k = sum(r["id"] in bad for r in rs)
-        c = concepts.get(other)
-        say = first_sentence(c.get("means", "")) if c else ", ".join(sorted({r["predicate"] for r in rs}))
-        if c and c.get("drift"):
-            say += " [DRIFTED, known not to hold: %s]" % first_clause(c["drift"].get("why", "?"), 80)
-        print("%s — %s%s" % (other, say, " (%d relation(s); %d stale)" % (len(rs), k) if k else ""))
-    if len(shown) < len(order):
-        rest = order[len(shown):]
-        k = sum(r["id"] in bad for o in rest for r in groups[o])
-        print("… and %d more (%d relation(s)%s) — `mangsang lookup %s` for all"
-              % (len(rest), sum(len(groups[o]) for o in rest), "; %d stale" % k if k else "", args.path))
+    names = sorted((o for o in groups if o in concepts),
+                   key=lambda o: (-sum(r["id"] in bad for r in groups[o]), o))
+    on = ", ".join(n + (" [drifted]" if concepts[n].get("drift") else "") for n in names[:3])
+    if len(names) > 3:
+        on += " and %d more" % (len(names) - 3)
+    if not names:
+        on = "%d other anchor(s)" % len(groups)
+    k = sum(r["id"] in bad for r, _, _, _ in rels)
+    disputed = sum(review_state(d, r, files) == "disputed-unrevised" for r, _, _, _ in rels)
+    print("%s: %d relation(s) stand on it, on %s%s%s — an edit here stales them; re-reading them belongs to the same task (`mangsang lookup %s`)"
+          % (args.path, len(rels), on, "; %d stale or broken now" % k if k else "",
+             "; %d disputed" % disputed if disputed else "", args.path))
     f = split_anchor(args.path)[0]
     headings = {}
     if anchors.kind_of(f) == "markdown":
@@ -2654,6 +2910,9 @@ def plan_moves(target, d, broken, files, wanted):
         r = next((x for x in d["relations"] if x["id"] == b["id"]), None)
         if not r or (wanted and r["id"] not in wanted):
             continue
+        if review_state(d, r, files) == "disputed-unrevised":
+            refused.append((r, "disputed by %s — revise it and have it reviewed again, or retire it" % person_reviews(r)[-1]["by"]))
+            continue
         new = dict(r)
         why = drift_refusal(d, drifted_end(d, r["src"], r["dst"])) if drifted_end(d, r["src"], r["dst"]) else None
         for end in ("src", "dst") if not why else ():
@@ -2693,8 +2952,8 @@ def move_hint(r, new, signing=False):
         if r[end] != new[end]:
             renamed = split_anchor(r[end])[0] == split_anchor(new[end])[0]
             destinations.append(new[end] + " (" + ("renamed: only its title changed since it was confirmed" if renamed else "the same key there") + ")")
-    command = "mangsang move " + r["id"] + (" --by NAME" if signing else "")
-    return "`%s`%s carries it to %s" % (command, " (or --delegated WHY)" if signing else "", "; ".join(destinations))
+    command = "mangsang move " + r["id"] + ' --why "..."'
+    return "`%s` carries it to %s" % (command, "; ".join(destinations))
 
 
 def cmd_move(args):
@@ -2706,8 +2965,7 @@ def cmd_move(args):
     the relation is retired (why: moved) and re-confirmed on the new anchor with the same evidence — which must still be a
     quote there, or the move is refused for that relation. Ambiguous (two homes) or homeless keys are printed, untouched:
     naming the home is a judgment. `--dry-run` only reports."""
-    if not (args.by or args.delegated or args.dry_run):
-        raise SystemExit("say who moves them (--by) or why the human delegated it (--delegated), or --dry-run to see what would move")
+    sig = signature(args, required=True) if not args.dry_run else None
     d = decl(args.target)
     _, broken, _, files = compute_impact(args.target, d, persist=False)
     wanted = set(args.ids or [])
@@ -2723,16 +2981,39 @@ def cmd_move(args):
     known = {x["id"] for x in d["relations"]}
     for r, new in moved:
         d["relations"].remove(r)
-        d["retired"].append({**r, "retired": {"why": "moved: %s %s %s -> %s %s %s" % (r["src"], r["predicate"], r["dst"], new["src"], new["predicate"], new["dst"])}})
+        d["retired"].append({**r, "retired": {**sig, "was": "broken", "outcome": "moved", "why": "moved: %s %s %s -> %s %s %s; %s" % (r["src"], r["predicate"], r["dst"], new["src"], new["predicate"], new["dst"], sig["why"])}})
         nid = rel_id(new)
         if nid in known:
             print("  (the relation already exists at %s as %s; the old one is retired)" % (new["src"], nid))
             continue
         known.add(nid)
+        seen, read = {}, []
+        for end in ("src", "dst"):
+            old, dest = r[end], new[end]
+            before = (r.get("seen") or {}).get(old)
+            now = files[split_anchor(dest)[0]][split_anchor(dest)[1]]
+            if old != dest:
+                entry = {"anchor": dest, "moved_from": old, "seen": before, "now": now}
+                if split_anchor(old)[0] == split_anchor(dest)[0]:
+                    entry["title"] = "%s -> %s" % (split_anchor(old)[1], split_anchor(dest)[1])
+                    seen[dest] = now
+                else:
+                    entry["same_key"] = True
+                    if before != now:
+                        entry.update(read_entry(args.target, r, old, files, dest))
+                    if old in (r.get("seen") or {}):
+                        seen[dest] = before
+                read.append(entry)
+            elif old in (r.get("seen") or {}):
+                seen[dest] = before
         d["relations"].append({"id": nid, "src": new["src"], "predicate": new["predicate"], "dst": new["dst"], "evidence": r["evidence"],
-                               "seen": {a: files[split_anchor(a)[0]][split_anchor(a)[1]] for a in (new["src"], new["dst"])},
-                               "confirmed": signature(args.by, args.delegated), "moved-from": r["id"]})
+                               "seen": seen,
+                               "confirmed": {**sig, "read": read}, "moved-from": r["id"]})
     save_decl(args.target, d)
+    stale, _, _, _ = compute_impact(args.target, d)
+    for item in stale:
+        if item["id"] in {rel_id(new) for _, new in moved}:
+            print('%s is stale at its new home — re-read: reconfirm %s --why "what was compared and why the relation still holds"' % (item["id"], item["id"]))
     print("%d relation(s) moved (the old ones retired with why: moved), %d left for a person" % (len(moved), len(refused)))
     return 0 if not refused else 1
 
@@ -3148,8 +3429,10 @@ def signed(sig):
     if sig.get("judge"):
         return "judged by %s, applied by %s" % (esc(sig["judge"]), esc(sig.get("applied-by") or "?")) + (" (read in `%s`)" % sig["approved-in"] if sig.get("approved-in") else "")
     if sig.get("agent"):
-        return "by the agent %s, on its own" % esc(sig["agent"])
+        return esc(who_signed(sig))
     dl = sig.get("delegated")
+    if isinstance(dl, dict) and "source" in dl:
+        return esc(who_signed(sig))
     why = ("ref " + dl["ref"]) if isinstance(dl, dict) else esc(dl)
     return "delegated: %s" % (why if len(why) <= 80 else why[:77] + "…")   # the whole reason is in the record; a page of twenty relations need not repeat it twenty times
 
@@ -3364,17 +3647,20 @@ def cmd_concept(args):
     that is the net replacing the document as the place where meaning lives."""
     d = decl(args.target)
     byname = {c["name"]: c for c in d["concepts"]}
+    stale_ids = set()
+    if args.mode in ("revise", "drift"):
+        stale, _, _, _ = compute_impact(args.target, d)
+        stale_ids = {x["id"] for x in stale}
     if args.mode == "add":
         if not re.fullmatch(r"[\w-]+", args.name or ""):
             raise SystemExit("a concept name is a word: letters, digits, _ or -")
         if not (args.means or "").strip():
             raise SystemExit("say what %r means (--means \"one sentence\") — a name without a meaning is a label, not a concept" % args.name)
-        if not (args.by or args.delegated):
-            raise SystemExit("say who declared it (--by) or why the human delegated it (--delegated)")
+        sig = signature(args)
         if args.name in byname:
             raise SystemExit("concept %s exists — `concept revise` changes what it means (and stales its projections)" % args.name)
         d["concepts"].append({"name": args.name, "means": args.means.strip(),
-                              "declared": signature(args.by, args.delegated)})
+                              "declared": dict(sig)})
         save_decl(args.target, d)
         print("concept %s: %s — projections relate to it as `<anchor> realizes concept:%s`" % (args.name, args.means.strip(), args.name))
         return 0
@@ -3384,14 +3670,13 @@ def cmd_concept(args):
             raise SystemExit("no concept %s" % args.name)
         if not (args.means or "").strip():
             raise SystemExit("--means \"the new sentence\"")
-        if not (args.by or args.delegated):
-            raise SystemExit("say who revised it (--by) or why the human delegated it (--delegated)")
-        c.setdefault("history", []).append({"means": c["means"], "declared": c["declared"], **({"owed": c["owes"]} if c.get("owes") else {}),
+        sig = signature(args)
+        c.setdefault("history", []).append({"means": c["means"], "declared": c["declared"], **concept_outcome(d, args.name, "revised", stale_ids), **({"owed": c["owes"]} if c.get("owes") else {}),
                                             **({"drift": c["drift"]} if c.get("drift") else {})})   # what the word meant before, and on whose word
         c.pop("owes", None)   # a new sentence answers what was owed: every projection goes stale and is re-read against it
         c.pop("drift", None)   # and what was marked wrong: the new sentence is the revision it waited for
         c["means"] = args.means.strip()
-        c["declared"] = signature(args.by, args.delegated)
+        c["declared"] = dict(sig)
         save_decl(args.target, d)
         n = sum(1 for r in d["relations"] if "concept:" + args.name in (r["src"], r["dst"]))
         print("concept %s now means: %s — %d projection relation(s) will go stale; that is the point" % (args.name, c["means"], n))
@@ -3400,12 +3685,11 @@ def cmd_concept(args):
         c = byname.get(args.name)
         if not c:
             raise SystemExit("no concept %s" % args.name)
-        if not (args.by or args.delegated):
-            raise SystemExit("say who re-read it (--by) or why the human delegated it (--delegated)")
+        sig = signature(args, required=True)
         if not c.get("owes") and not c.get("drift"):
             raise SystemExit("concept %s owes nothing — reaffirm answers a retired projection or a drift mark; it has neither" % args.name)
         # the sentence stands, read against what realizes it now: recorded as a judgment beside the declaration, with what it answered
-        c.setdefault("history", []).append({"reaffirmed": signature(args.by, args.delegated), **({"owed": c.pop("owes")} if c.get("owes") else {}),
+        c.setdefault("history", []).append({"reaffirmed": {**sig, "read": concept_read(args.target, d, c)}, **({"owed": c.pop("owes")} if c.get("owes") else {}),
                                             **({"drift": c.pop("drift")} if c.get("drift") else {})})
         save_decl(args.target, d)
         now = [r["src"] for r in d["relations"] if r["predicate"] == "realizes" and r["dst"] == "concept:" + args.name]
@@ -3420,12 +3704,10 @@ def cmd_concept(args):
             raise SystemExit("no concept %s" % args.name)
         if not (args.why or "").strip():
             raise SystemExit("say what no longer holds (--why \"...\") — the mark is read where the sentence is")
-        if not (args.by or args.delegated or running_agent()):
-            raise SystemExit("say who marked it (--by) or why the human delegated it (--delegated)")
-        sig = signature(args.by, args.delegated) if (args.by or args.delegated) else {"agent": running_agent()}
+        sig = signature(args, why=" ".join(args.why.split()), required=True)
         if c.get("drift"):
             c.setdefault("history", []).append({"drift": c["drift"]})
-        c["drift"] = {"why": " ".join(args.why.split()), "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **sig}
+        c["drift"] = {**concept_outcome(d, args.name, "drifted", stale_ids), **sig}
         save_decl(args.target, d)
         asked = [q["id"] for q in cq_active(d) if args.name in ((q.get("verify") or {}).get("concepts") or [])]
         print("concept %s marked drifted: \"%s\" — %s. Until `concept revise %s --means \"...\"` (or `concept reaffirm %s`): cq says DRIFTED for %s; "
@@ -3448,6 +3730,9 @@ def cmd_concept(args):
                 r["src"], r["dst"] = (new_a if r["src"] == old_a else r["src"]), (new_a if r["dst"] == old_a else r["dst"])
                 if old_a in r.get("seen", {}):
                     r["seen"][new_a] = r["seen"].pop(old_a)
+                for review in r.get("reviews", []):
+                    if old_a in (review.get("seen") or {}):
+                        review["seen"][new_a] = review["seen"].pop(old_a)
                 r["id"] = rel_id(r)
                 save(os.path.join(root, r["id"] + ".json"), r)
                 moved += 1
@@ -3540,7 +3825,7 @@ def concept_show(args, d):
 
 
 def signing(p):
-    """The judgment's author: `--by NAME` (with `--approved-in` when an agent runs it) or `--delegated WHY`."""
+    """The judgment's author: `--by NAME` (with `--approved-in` when an agent runs it) or `--delegated source:ID`; an agent signs itself with neither and with `--why`."""
     p.add_argument("--by", default=None)
     p.add_argument("--approved-in", default=None, help="with --by, when an agent runs this: source:ID where that person approved")
     p.add_argument("--delegated", default=None)
@@ -3557,7 +3842,7 @@ def sign_as_agent(args):
     src = next((x for x in decl(args.target)["sources"] if x["id"] == ref), None) if ref else None
     if not src:
         raise SystemExit("an agent signs --by %s only with --approved-in source:ID — the source where %s approved this; "
-                         "otherwise sign --delegated \"<why>\"" % (args.by, args.by))
+                         "otherwise sign as the agent: neither --by nor --delegated, with --why" % (args.by, args.by))
     if src.get("speaker") != args.by:
         raise SystemExit("--approved-in source:%s was said by %s, not %s" % (ref, src.get("speaker"), args.by))
     global APPROVED_IN, APPROVAL_OF
@@ -3569,12 +3854,358 @@ def sign_as_agent(args):
     APPROVAL_OF = "source:" + asked["id"] if asked and any(str(asked.get("speaker", "")).startswith(a) for a in roster.get("agents", [])) else None
 
 
+
+def confirmation_entries(r):
+    return list(r.get("history", [])) + ([{"confirmed": r["confirmed"], "seen": r.get("seen"), "evidence": r.get("evidence")}] if r.get("confirmed") else [])
+
+
+def person_reviews(r):
+    """Old confirmations precede explicit reviews; stable time order preserves undated provenance."""
+    entries = [{**e["confirmed"], "verdict": "accepted", "seen": e.get("seen"), "evidence": e.get("evidence")}
+               for e in confirmation_entries(r) if e.get("confirmed", {}).get("by")]
+    entries.extend(r.get("reviews", []))
+    return sorted(entries, key=lambda e: e.get("at") or "")
+
+
+def end_fingerprints(r, files):
+    return {a: files.get(split_anchor(a)[0], {}).get(split_anchor(a)[1]) for a in (r["src"], r["dst"])}
+
+
+def review_state(d, r, files):
+    reviews = person_reviews(r)
+    if not reviews:
+        return "never"
+    last = reviews[-1]
+    if last["verdict"] == "rejected":
+        return "disputed-unrevised" if r.get("seen") == last.get("seen") and r.get("evidence") == last.get("evidence") else "disputed-revised"
+    return "reviewed" if last.get("seen") == end_fingerprints(r, files) and last.get("evidence") == r.get("evidence") else "reviewed-earlier"
+
+
+def meaning_reviews(c):
+    return ([c["declared"]] if c.get("declared", {}).get("by") else []) + [e for e in c.get("reviews", []) if e.get("means") == c["means"] and e.get("verdict") == "accepted"]
+
+
+def relation_concept(r):
+    return next((a[len("concept:"):] for a in (r["src"], r["dst"]) if a.startswith("concept:")), "(between artifacts)")
+
+
+def review_counts(d, relations, files):
+    states = [review_state(d, r, files) for r in relations]
+    return {"relations": len(states), "reviewed": states.count("reviewed"), "earlier": states.count("reviewed-earlier"),
+            "never": states.count("never"), "disputed": sum(x.startswith("disputed") for x in states)}
+
+
+def person_review_observation(d, files):
+    n = review_counts(d, d["relations"], files)
+    return ("reviewed by a person: %d of %d relation(s); %d changed since review; %d disputed; meanings signed by a person: %d of %d"
+            % (n["reviewed"], n["relations"], n["earlier"], n["disputed"], sum(bool(meaning_reviews(c)) for c in d["concepts"]), len(d["concepts"])))
+
+
+def review_description(d, r, files):
+    state = review_state(d, r, files)
+    if state == "never":
+        return "never reviewed"
+    last = person_reviews(r)[-1]
+    if state.startswith("disputed"):
+        return "disputed by %s: %s%s" % (last["by"], first_clause(last.get("why", "")),
+                                         "; revised since — awaiting the person's review" if state == "disputed-revised" else "")
+    return "%s by %s on %s" % ("reviewed at an earlier text" if state == "reviewed-earlier" else "reviewed", last["by"], last.get("at", "date not recorded"))
+
+
+def cmd_review(args):
+    d = decl(args.target)
+    files, _ = snapshot(args.target, d["registry"])
+    if args.mode == "queue":
+        if args.limit < 0:
+            raise SystemExit("--limit must be nonnegative")
+        packet = review_queue(args.target, d, files, args.concept, args.limit)
+        if args.json:
+            render_review_json(packet)
+        elif args.markdown:
+            render_review_markdown(packet)
+        else:
+            render_review_text(packet)
+        return 0
+    if args.mode == "status":
+        concepts = {c["name"]: c for c in d["concepts"] if not args.concept or c["name"] == args.concept}
+        rels = [r for r in d["relations"] if not args.concept or relation_concept(r) == args.concept]
+        groups = sorted(set(concepts) | {relation_concept(r) for r in rels})
+        for name in groups + ["total"]:
+            n = review_counts(d, rels if name == "total" else [r for r in rels if relation_concept(r) == name], files)
+            meaning = ""
+            if name in concepts:
+                meaning = "; meaning signed by a person: " + ("yes" if meaning_reviews(concepts[name]) else "no")
+            print(("concept:" + name if name in concepts else name) + " — relations {relations}, reviewed {reviewed}, at an earlier text {earlier}, never {never}, disputed {disputed}".format(**n) + meaning)
+        return 0
+    roster = people(args.target) or {}
+    if not args.by or args.by not in roster.get("people", []) or any(args.by.startswith(a) for a in roster.get("agents", [])):
+        raise SystemExit("record the person's name in mangsang/people.json people first; review requires --by NAME")
+    if not args.approved_in or not args.approved_in.startswith("source:"):
+        raise SystemExit("keep the person's words with source add ID first; review requires --approved-in source:ID")
+    source = next((x for x in d["sources"] if "source:" + x["id"] == args.approved_in), None)
+    if not source:
+        raise SystemExit("keep %s first with source add ID" % args.approved_in)
+    if source.get("speaker") != args.by:
+        raise SystemExit("%s holds %s's words, not %s's; record their words with source add first" % (args.approved_in, source.get("speaker"), args.by))
+    if args.mode == "reject" and not (args.why or "").strip():
+        raise SystemExit("review reject requires --why")
+    if not args.ids:
+        raise SystemExit("review accept|reject requires IDs")
+    pending = []
+    for ident in args.ids:
+        if ident.startswith("concept:"):
+            name = ident[len("concept:"):]
+            if args.mode == "reject":
+                raise SystemExit("use concept drift %s --why ... --by NAME --approved-in source:ID" % name)
+            record = next((c for c in d["concepts"] if c["name"] == name), None)
+            if not record:
+                raise SystemExit("no concept %s" % name)
+            fields, folder, key = {"means": record["means"]}, "concepts", name
+        else:
+            ident = "R-" + ident[2:].lower() if RELATION_ID.fullmatch(ident) else ident
+            record = next((r for r in d["relations"] if r["id"] == ident), None)
+            if not record:
+                retired = any(r["id"] == ident for r in d["retired"])
+                raise SystemExit("%s is retired" % ident if retired else "no relation %s" % ident)
+            now = end_fingerprints(record, files)
+            if any(v is None for v in now.values()):
+                raise SystemExit("%s: broken relation, an anchor is gone" % ident)
+            if now != record.get("seen"):
+                raise SystemExit("%s: re-read it first — `reconfirm %s --why ...`, then the person reviews what was re-read" % (ident, ident))
+            if not quoted(args.target, record["evidence"], record["src"], record["dst"]):
+                raise SystemExit("%s: evidence is no longer in its text" % ident)
+            fields, folder, key = {"seen": now, "evidence": record["evidence"]}, "relations", ident
+        entry = {"by": args.by, "approved-in": args.approved_in, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                 "verdict": "accepted" if args.mode == "accept" else "rejected", **fields}
+        if args.why:
+            entry["why"] = args.why
+        pending.append((ident, record, folder, key, entry))
+    for ident, record, folder, key, entry in pending:
+        record.setdefault("reviews", []).append(entry)
+        save(os.path.join(args.target, DECL, folder, key + ".json"), record)
+        print("reviewed %s %s by %s (%s)%s" % (ident, entry["verdict"], args.by, args.approved_in,
+              ": disputed until it is revised and the person reviews it again, or it is retired" if args.mode == "reject" else ""))
+    return 0
+
+
+def review_queue(target, d, files, concept=None, limit=15):
+    """Build one packet; renderers do not select or reclassify its entries."""
+    concepts = {c["name"]: c for c in d["concepts"] if not concept or c["name"] == concept}
+    rels = [r for r in d["relations"] if not concept or relation_concept(r) == concept]
+    groups = {}
+    for r in rels:
+        groups.setdefault(relation_concept(r), []).append(r)
+    entries, held, disputed = [], {}, 0
+    for name, c in sorted(concepts.items()):
+        if not meaning_reviews(c):
+            count = len(groups.get(name, []))
+            entries.append({"kind": "concept", "id": "concept:" + name, "concept": name, "state": "unsigned", "meaning": c["means"],
+                            "signed": who_signed(c.get("declared")), "waiting": count, "excerpts": {}, "quote": "", "why": "", "changed": [],
+                            "command": "mangsang review accept concept:%s --by NAME --approved-in source:ID" % name,
+                            "revise": 'mangsang concept revise %s --means "..." --by NAME --approved-in source:ID' % name})
+            if not concept and count:
+                held[name] = count
+    names = sorted(n for n in groups if n != "(between artifacts)" and n not in held)
+    # Stable sorts express descending recency/count and ascending name without reversing names.
+    names.sort(key=lambda n: sum(len(r.get("history", [])) for r in groups[n]), reverse=True)
+    names.sort(key=lambda n: max((x.get("at") or "" for x in meaning_reviews(concepts[n])), default="") if n in concepts else "", reverse=True)
+    if "(between artifacts)" in groups:
+        names.append("(between artifacts)")
+    tiers = {"disputed-revised": 0, "never": 1, "reviewed-earlier": 2}
+    disputed = sum(review_state(d, r, files) == "disputed-unrevised" for r in rels)
+    for name in names:
+        selected = [r for r in groups[name] if review_state(d, r, files) in tiers]
+        selected.sort(key=lambda r: (tiers[review_state(d, r, files)], -len(r.get("history", [])), r["id"]))
+        for r in selected:
+            state = review_state(d, r, files)
+            last = (person_reviews(r) or [{}])[-1]
+            excerpts = {}
+            quote = " ".join(r["evidence"].split())
+            for a in (r["src"], r["dst"]):
+                f, key = split_anchor(a)
+                if f == "concept":
+                    continue
+                text = " ".join(((texts_of(target, f) or {}).get(key) or "").split())
+                pos = text.find(quote) if quote else -1
+                start = max(0, min(pos - (240 - len(quote)) // 2, len(text) - 240)) if pos >= 0 else 0
+                excerpts[a] = text[start:start + 240]
+            changed = []
+            if last:
+                changed = [a + " changed since review" for a, now in end_fingerprints(r, files).items() if now != (last.get("seen") or {}).get(a)]
+                if last.get("evidence") != r["evidence"]:
+                    changed.append('quote: "%s" → "%s"' % (last.get("evidence", ""), r["evidence"]))
+            description = review_description(d, r, files)
+            if state == "disputed-revised":
+                description = "disputed by %s, revised since" % last["by"]
+            entries.append({"kind": "relation", "id": r["id"], "concept": name, "state": state, "description": description,
+                            "relation": "%s %s %s" % (r["src"], r["predicate"], r["dst"]), "meaning": concepts.get(name, {}).get("means", ""),
+                            "excerpts": excerpts, "quote": r["evidence"], "signed": who_signed({k: v for k, v in (r.get("confirmed") or {}).items() if k != "why"}),
+                            "why": (r.get("confirmed", {}).get("why") or "")[:200], "changed": changed,
+                            "rejection": last.get("why", "") if last.get("verdict") == "rejected" else "",
+                            "command": "mangsang review accept %s --by NAME --approved-in source:ID" % r["id"],
+                            "reject": 'mangsang review reject %s --by NAME --approved-in source:ID --why "..."' % r["id"]})
+    return {"artifact-type": "mangsang/review-queue@1", "entries": entries[:limit], "held": held, "disputed": disputed,
+            "total": {"entries": len(entries), "shown": min(limit, len(entries)), **review_counts(d, rels, files)}}
+
+
+def review_packet_lines(e):
+    if e["kind"] == "concept":
+        return [e["id"] + " — " + e["meaning"], "declared: " + e["signed"], "%d relations wait on this meaning" % e["waiting"], e["command"], e["revise"]]
+    return ([e["id"] + " " + e["relation"] + " — " + e["description"]]
+            + (["means: " + e["meaning"]] if e["meaning"] else [])
+            + [a + ": " + t for a, t in e["excerpts"].items()]
+            + ['quote: "%s"' % e["quote"], "signed: " + e["signed"] + ("; " + e["why"] if e["why"] else "")]
+            + e["changed"] + (["rejected because: " + e["rejection"]] if e["rejection"] else []) + [e["command"], e["reject"]])
+
+
+def review_queue_closing(packet):
+    return ["concept:%s — %d relations held until its meaning is signed" % (n, count) for n, count in packet["held"].items()] + [
+        "%d disputed relations await revision or retirement" % packet["disputed"],
+        "%d of %d queue entries shown" % (packet["total"]["shown"], packet["total"]["entries"])]
+
+
+def render_review_text(packet):
+    print("review queue")
+    for e in packet["entries"]:
+        lines = review_packet_lines(e)
+        print(lines[0])
+        for line in lines[1:]:
+            print("  " + line)
+    for line in review_queue_closing(packet):
+        print(line)
+
+
+def render_review_markdown(packet):
+    print("# Review queue")
+    group = None
+    for e in packet["entries"]:
+        if e["concept"] != group:
+            group = e["concept"]
+            print("\n## " + ("between artifacts" if group == "(between artifacts)" else "concept:" + group) + "\n")
+        lines = review_packet_lines(e)
+        print("- " + lines[0])
+        for line in lines[1:]:
+            print("  " + line)
+    print("\n" + "\n".join(review_queue_closing(packet)))
+
+
+def render_review_json(packet):
+    print(json.dumps(packet, ensure_ascii=False, indent=1))
+
+
+OUTCOME_CLASSES = ("held", "re-quoted", "other-end-updated", "moved", "retired", "revised", "drifted", "unknown")
+
+
+def cmd_outcomes(args):
+    """Measure records, including uncommitted entries; never persist observations."""
+    import subprocess
+    git = lambda *a: subprocess.run(["git", *a], cwd=args.target, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    since = None
+    if args.since:
+        if git("rev-parse", "--is-inside-work-tree").stdout.strip() != "true":
+            print("outcomes --since requires git history")
+            return 2
+        if re.match(r"^\d{4}-\d\d-\d\d(?:T|$)", args.since):
+            rev = git("rev-list", "-1", "--before=" + args.since, "HEAD")
+        else:
+            rev = git("rev-parse", "--verify", "--end-of-options", args.since + "^{commit}")
+        if rev.returncode:
+            print("cannot resolve git revision/date: " + args.since)
+            return 2
+        sha = rev.stdout.strip()
+        if sha:
+            since = {"rev": sha, "date": git("show", "-s", "--format=%cI", sha).stdout.strip()}
+
+    def old_record(folder, key):
+        if not since:
+            return {}
+        result = git("show", "%s:./%s/%s/%s.json" % (since["rev"], DECL, folder, key))
+        return json.loads(result.stdout) if result.returncode == 0 else {}
+
+    def empty():
+        return {**dict.fromkeys(OUTCOME_CLASSES, 0), "open": {"stale": 0, "broken": 0, "owed": False}}
+
+    groups = {}
+    def group(name):
+        return groups.setdefault(name, empty())
+
+    def count(name, entry, legacy=False):
+        kind = entry.get("outcome") or ("unknown" if legacy and not entry.get("at") else None)
+        if kind in OUTCOME_CLASSES:
+            group(name)[kind] += 1
+
+    d = decl(args.target)
+    for r in d["relations"] + d["retired"]:
+        old = old_record("relations", r["id"]) or old_record("retired", r["id"])
+        name = relation_concept(r)
+        entries = confirmation_entries(r)
+        for e in entries[max(1, len(confirmation_entries(old))):]:
+            count(name, e["confirmed"], legacy=True)
+        if r.get("retired") and not old.get("retired"):
+            count(name, r["retired"], legacy=True)
+    for c in d["concepts"]:
+        old = old_record("concepts", c["name"])
+        # A current drift moved into history remains the same event, not a second handling.
+        old_marks = [x["drift"] for x in old.get("history", []) if x.get("drift")] + ([old["drift"]] if old.get("drift") else [])
+        marks = [x["drift"] for x in c.get("history", []) if x.get("drift")] + ([c["drift"]] if c.get("drift") else [])
+        for e in c.get("history", [])[len(old.get("history", [])):]:
+            if e.get("outcome"):
+                for rid in e.get("stale", []):
+                    count(c["name"], e)
+        for mark in marks:
+            if any(mark.get("at") == prev.get("at") for prev in old_marks):
+                continue
+            for rid in mark.get("stale", []):
+                count(c["name"], mark)
+    stale, broken, _, _ = compute_impact(args.target, d)
+    by_id = {r["id"]: r for r in d["relations"]}
+    for kind, entries in (("stale", stale), ("broken", broken)):
+        for e in entries:
+            group(relation_concept(by_id[e["id"]]))["open"][kind] += 1
+    for c, lost in owed_rereads(d):
+        group(c["name"])["open"]["owed"] = True
+    total = empty()
+    for g in groups.values():
+        for kind in OUTCOME_CLASSES:
+            total[kind] += g[kind]
+        for kind in ("stale", "broken"):
+            total["open"][kind] += g["open"][kind]
+        total["open"]["owed"] |= g["open"]["owed"]
+    changed = sum(total[k] for k in ("re-quoted", "other-end-updated", "retired", "revised", "drifted"))
+    known = sum(total[k] for k in OUTCOME_CLASSES if k != "unknown")
+    if args.json:
+        print(json.dumps({"artifact-type": "mangsang/outcomes@1", "since": since, "classes": list(OUTCOME_CLASSES),
+                          "concepts": groups, "total": total, "changed": changed, "known": known}, ensure_ascii=False, indent=1))
+        return 0
+    print("outcomes since %s (%s %s)" % (args.since, since["rev"][:8], since["date"]) if since else "outcomes over the whole record")
+    for name, g in [("concept:" + n if n != "(between artifacts)" else n, groups[n]) for n in sorted(groups)] + [("total", total)]:
+        print(name + " — " + " · ".join("%s %d" % (k, g[k]) for k in OUTCOME_CLASSES) + "; open: %d stale, %d broken%s" %
+              (g["open"]["stale"], g["open"]["broken"], ", owes a re-read" if g["open"]["owed"] else ""))
+    print("led to a change: %d of %d handled with a known outcome (re-quoted, other-end-updated, retired, revised, drifted); held %d, moved %d; unknown %d (recorded before outcomes existed)" %
+          (changed, known, total["held"], total["moved"], total["unknown"]))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="mangsang", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("register", "confirm", "observe", "impact", "cq", "check", "retire", "reconfirm", "judge", "lookup", "move", "concept", "source", "report", "vocabulary"):
+    for name in ("register", "confirm", "observe", "impact", "cq", "check", "retire", "reconfirm", "judge", "lookup", "move", "concept", "source", "report", "vocabulary", "review", "outcomes"):
         p = sub.add_parser(name)
         p.add_argument("--target", default=".")
+        if name == "outcomes":
+            p.add_argument("--since")
+            p.add_argument("--json", action="store_true")
+        if name == "review":
+            p.add_argument("mode", choices=["accept", "reject", "queue", "status"])
+            p.add_argument("ids", nargs="*")
+            p.add_argument("--by")
+            p.add_argument("--approved-in")
+            p.add_argument("--why")
+            p.add_argument("--concept")
+            p.add_argument("--limit", type=int, default=15)
+            formats = p.add_mutually_exclusive_group()
+            formats.add_argument("--markdown", action="store_true")
+            formats.add_argument("--json", action="store_true")
         if name == "vocabulary":
             p.add_argument("--write", action="store_true", help="write the engine's reading to an existing vocabulary.json; change nothing else")
         if name == "register":
@@ -3595,6 +4226,7 @@ def main(argv=None):
             p.add_argument("--require-model", action="store_true", help="the project keeps its model: FAILED when mangsang/ is absent or holds no concept, no active relation or no active invariant")
         if name == "impact":
             p.add_argument("--findings", action="store_true", help="print stale/broken as dwitbuk/findings@1 JSON")
+            p.add_argument("--files", nargs="*", default=None, help="scope impact to exact files; present with no files selects nothing")
             p.add_argument("--only", nargs="*", default=None, help="judge only relations touching these anchor prefixes (a slice's check)")
             p.add_argument("--show", action="store_true", help="for each stale relation, print what changed: the anchor's text when it was confirmed (from git) against now")
         if name == "judge":
@@ -3609,7 +4241,10 @@ def main(argv=None):
         if name == "observe":
             p.add_argument("--reset", action="store_true")
             p.add_argument("--at", default=None, help="with --reset: take the baseline from git at this revision (e.g. the merge base)")
+        if name in ("confirm", "reconfirm", "move"):
+            p.add_argument("--why", default=None)
         if name == "retire":
+            signing(p)
             p.add_argument("id", nargs="?", default=None)
             p.add_argument("--why", required=True)
             p.add_argument("--gone", "--deleted", nargs="+", default=None, metavar="FILE",
@@ -3619,7 +4254,7 @@ def main(argv=None):
             p.add_argument("ids", nargs="+")
             signing(p)
             p.description = ("a re-read stale relation still holds. Sign --by NAME (with --approved-in source:ID when an agent runs it) or "
-                             "--delegated WHY; an agent that re-read it itself passes neither and is recorded as itself ({\"agent\": ...})")
+                             "--delegated source:ID; an agent that re-read it itself passes neither, with --why, and is recorded as itself ({\"agent\": ...})")
             p.add_argument("--evidence", default=None, help="the sentence that holds now, when the old quote is gone from the text (one id at a time)")
         if name == "lookup":
             p.add_argument("path", help="a file (as registered): print the confirmed relations standing on it — the concept's meaning, the quote, who confirmed, fresh or stale — before you touch it. "
@@ -3656,11 +4291,11 @@ def main(argv=None):
     args = ap.parse_args(argv)
     global APPROVED_IN, APPROVAL_OF
     APPROVED_IN = APPROVAL_OF = None   # one command's approval is not the next one's (main runs many times in one process: the self-check)
-    if getattr(args, "by", None) and args.cmd != "judge":
+    if getattr(args, "by", None) and args.cmd not in ("judge", "review"):
         sign_as_agent(args)
     return {"register": cmd_register, "confirm": cmd_confirm, "observe": cmd_observe, "impact": cmd_impact,
             "cq": cmd_cq, "check": cmd_check, "retire": cmd_retire, "reconfirm": cmd_reconfirm, "judge": cmd_judge,
-            "lookup": cmd_lookup, "move": cmd_move, "concept": cmd_concept, "source": cmd_source, "report": cmd_report, "vocabulary": cmd_vocabulary}[args.cmd](args)
+            "lookup": cmd_lookup, "move": cmd_move, "concept": cmd_concept, "source": cmd_source, "report": cmd_report, "vocabulary": cmd_vocabulary, "review": cmd_review, "outcomes": cmd_outcomes}[args.cmd](args)
 
 
 if __name__ == "__main__":
